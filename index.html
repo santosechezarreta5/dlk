@@ -421,15 +421,12 @@ window.SUPABASE_CONFIG = {
         <!-- Modo display -->
         <span id="fx-a3500-display" style="cursor:pointer" onclick="editA3500()" title="Click para editar manualmente">
           <span class="fx-bid" id="fx-a3500-bid">—</span>
-          <span> / </span>
-          <span class="fx-ask" id="fx-a3500-ask">—</span>
+          <span style="display:none" id="fx-a3500-ask">—</span>
           <span style="font-size:.55rem;color:var(--muted2);margin-left:6px;opacity:.7">✎</span>
         </span>
         <!-- Modo edición (oculto por default) -->
         <span id="fx-a3500-edit" style="display:none;align-items:center;gap:4px">
-          <input type="number" step="0.01" id="fx-a3500-bid-inp" style="width:70px;font-family:'IBM Plex Mono',monospace;font-size:.65rem;padding:2px 4px;background:var(--s1);border:1px solid var(--blue);color:var(--text);border-radius:3px;outline:none">
-          <span style="color:var(--muted2)"> / </span>
-          <input type="number" step="0.01" id="fx-a3500-ask-inp" style="width:70px;font-family:'IBM Plex Mono',monospace;font-size:.65rem;padding:2px 4px;background:var(--s1);border:1px solid var(--blue);color:var(--text);border-radius:3px;outline:none">
+          <input type="number" step="0.01" id="fx-a3500-val-inp" style="width:90px;font-family:'IBM Plex Mono',monospace;font-size:.65rem;padding:2px 4px;background:var(--s1);border:1px solid var(--blue);color:var(--text);border-radius:3px;outline:none" placeholder="ej: 1380.50">
           <button onclick="saveA3500()" style="background:var(--teal);color:#0a1a18;border:0;padding:2px 6px;border-radius:3px;font-size:.55rem;font-weight:700;cursor:pointer">OK</button>
           <button onclick="cancelA3500()" style="background:transparent;color:var(--muted2);border:1px solid var(--border);padding:2px 6px;border-radius:3px;font-size:.55rem;cursor:pointer">×</button>
         </span>
@@ -738,11 +735,12 @@ window.SUPABASE_CONFIG = {
         <div class="cst">Flujos de Caja</div>
         <div style="font-size:.6rem;color:var(--muted2);margin-bottom:8px;line-height:1.6">
           Precio usado para descuento: <span id="cf-precio-ref" style="color:var(--teal);font-weight:600">—</span>
+          &nbsp;·&nbsp; Valores en <strong style="color:var(--text2)">USD</strong> (% sobre 100 VN)
           &nbsp;·&nbsp; Pagos pasados marcados en gris
         </div>
         <div style="overflow-x:auto">
           <table class="cashflow-table">
-            <thead><tr><th>Fecha</th><th>Días</th><th>Cap.Vig.</th><th class="cf-int">Interés</th><th class="cf-amort">Amort.</th><th class="cf-total">Total</th><th>VP(TIR)</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Días</th><th>Cap.Vig.</th><th class="cf-int">Interés (USD)</th><th class="cf-amort">Amort. (USD)</th><th class="cf-total">Total (USD)</th><th>VP(TIR)</th></tr></thead>
             <tbody id="cf-tbody"></tbody>
           </table>
         </div>
@@ -2596,10 +2594,12 @@ function generateAmortSchedule(){
   // Limpiar tabla
   tbody.innerHTML = '';
 
-  // Calcular cuota base con 4 decimales, ajustar la última para cerrar 100%
+  // Calcular cuota base truncada a 2 decimales. La última absorbe el redondeo.
+  // Ej: 100/3 = 33.3333... → base=33.33 / 33.33 / última=100-33.33*2=33.34
+  // Ej: 100/4 = 25.0000  → base=25.00 / 25.00 / 25.00 / 25.00 (sin ajuste)
   const baseRaw = 100 / count;
-  const base = Math.floor(baseRaw * 10000) / 10000; // truncar a 4 decimales
-  const lastAdjust = parseFloat((100 - base * (count - 1)).toFixed(4));
+  const base = Math.floor(baseRaw * 100) / 100;
+  const lastAdjust = parseFloat((100 - base * (count - 1)).toFixed(2));
 
   // Generar filas
   const baseDate = new Date(fechaIni + 'T12:00:00');
@@ -2608,12 +2608,15 @@ function generateAmortSchedule(){
     d.setMonth(d.getMonth() + periodMonths * i);
     const iso = d.toISOString().substring(0, 10);
     const pct = (i === count - 1) ? lastAdjust : base;
-    addAmortRow(iso, pct.toFixed(4).replace(/\.?0+$/,''));
+    addAmortRow(iso, pct.toFixed(2));
   }
   // Mostrar feedback
   const prev = document.getElementById('gen-amort-preview');
   if(prev){
-    prev.textContent = `✓ ${count} cuotas generadas (${base.toFixed(4).replace(/\.?0+$/,'')}% c/u, última: ${lastAdjust}%)`;
+    const sameValue = Math.abs(base - lastAdjust) < 0.001;
+    prev.textContent = sameValue
+      ? `✓ ${count} cuotas generadas (${base.toFixed(2)}% c/u)`
+      : `✓ ${count} cuotas generadas (${base.toFixed(2)}% c/u, última: ${lastAdjust.toFixed(2)}%)`;
     prev.style.color = 'var(--teal)';
     setTimeout(()=>{ prev.textContent=''; }, 4000);
   }
@@ -2787,36 +2790,37 @@ function calcFromPanel(){
     const fut = futMap[k];
     const isPast = x.isPast;
 
-    const totalARS = usdToArs(x.total);
-    const intARS   = usdToArs(x.interes);
-    const amoARS   = x.amort>0 ? usdToArs(x.amort) : 0;
+    // Valores en USD (% sobre 100 VN). Mostramos 4 decimales para precisión.
+    const intUSD   = x.interes;
+    const amoUSD   = x.amort > 0 ? x.amort : 0;
+    const totalUSD = x.total;
 
-    let vpARS = null;
+    let vpUSD = null;
     let dias  = '—';
     if(fut){
       const t = fut.dias/365;
-      const vpUSD = fut.total/Math.pow(1+r,t);
+      vpUSD = fut.total/Math.pow(1+r,t);
       svp += vpUSD;
-      vpARS = usdToArs(vpUSD);
       dias = fut.dias;
     }
 
-    const fmt = v => v ? '$'+v.toLocaleString('es-AR',{maximumFractionDigits:0}) : '—';
+    // Formato USD con 4 decimales (sobre 100 VN)
+    const fmtUSD = v => (v!=null && v>0) ? v.toFixed(4) : '—';
     const tr = document.createElement('tr');
     if(isPast) tr.style.cssText = 'color:var(--muted2);opacity:.55';
     tr.innerHTML =
       `<td>${x.fecha.toLocaleDateString('es-AR')}${isPast?' <span style="font-size:.55rem;color:var(--muted2)">(pagado)</span>':''}</td>`+
       `<td>${dias}</td>`+
       `<td style="color:var(--muted2)">${x.capital.toFixed(0)}</td>`+
-      `<td class="cf-int">${intARS>0?fmt(intARS):'—'}</td>`+
-      `<td class="cf-amort">${amoARS>0?fmt(amoARS):'—'}</td>`+
-      `<td class="cf-total">${(intARS>0||amoARS>0)?fmt(totalARS):'—'}</td>`+
-      `<td>${vpARS!=null?fmt(vpARS):'—'}</td>`;
+      `<td class="cf-int">${fmtUSD(intUSD)}</td>`+
+      `<td class="cf-amort">${fmtUSD(amoUSD)}</td>`+
+      `<td class="cf-total">${(intUSD>0||amoUSD>0)?fmtUSD(totalUSD):'—'}</td>`+
+      `<td>${vpUSD!=null?vpUSD.toFixed(4):'—'}</td>`;
     cfT.appendChild(tr);
   });
 
   const tot=document.createElement('tr');
-  tot.innerHTML=`<td colspan="6" style="color:var(--muted2)">Suma VP (≈ precio sucio)</td><td class="c-teal">$${usdToArs(svp).toLocaleString('es-AR',{maximumFractionDigits:0})}</td>`;
+  tot.innerHTML=`<td colspan="6" style="color:var(--muted2)">Suma VP (≈ precio sucio en %VN USD)</td><td class="c-teal">${svp.toFixed(4)}</td>`;
   cfT.appendChild(tot);
 
   // Mostrar el precio usado para descuento arriba de la tabla
@@ -3743,13 +3747,14 @@ function editA3500(){
   document.getElementById('fx-a3500-display').style.display = 'none';
   const ed = document.getElementById('fx-a3500-edit');
   ed.style.display = 'inline-flex';
-  // Pre-llenar con valor actual
-  const bid = FX.a3500Bid != null ? FX.a3500Bid.toFixed(2) : '';
-  const ask = FX.a3500Ask != null ? FX.a3500Ask.toFixed(2) : '';
-  document.getElementById('fx-a3500-bid-inp').value = bid;
-  document.getElementById('fx-a3500-ask-inp').value = ask;
-  document.getElementById('fx-a3500-bid-inp').focus();
-  document.getElementById('fx-a3500-bid-inp').select();
+  // Pre-llenar con valor actual (mid)
+  const mid = (FX.a3500Bid && FX.a3500Ask)
+    ? (FX.a3500Bid + FX.a3500Ask)/2
+    : (FX.a3500Bid || FX.a3500Ask || null);
+  const inp = document.getElementById('fx-a3500-val-inp');
+  inp.value = mid != null ? mid.toFixed(2) : '';
+  inp.focus();
+  inp.select();
 }
 
 function cancelA3500(){
@@ -3758,19 +3763,18 @@ function cancelA3500(){
 }
 
 function saveA3500(){
-  const bid = parseFloat(document.getElementById('fx-a3500-bid-inp').value);
-  const ask = parseFloat(document.getElementById('fx-a3500-ask-inp').value);
-  if(isNaN(bid) || bid <= 0 || isNaN(ask) || ask <= 0){
-    alert('Ingresá valores válidos para bid y ask.');
+  const v = parseFloat(document.getElementById('fx-a3500-val-inp').value);
+  if(isNaN(v) || v <= 0){
+    alert('Ingresá un valor válido para el A3500.');
     return;
   }
   FX_MANUAL_A3500.active = true;
-  FX_MANUAL_A3500.bid = bid;
-  FX_MANUAL_A3500.ask = ask;
+  FX_MANUAL_A3500.bid = v;
+  FX_MANUAL_A3500.ask = v;
   try { localStorage.setItem(LS_FX_MANUAL_A3500, JSON.stringify(FX_MANUAL_A3500)); } catch(_){}
-  // Aplicar inmediatamente
-  FX.a3500Bid = bid;
-  FX.a3500Ask = ask;
+  // Aplicar inmediatamente (bid = ask = mismo valor)
+  FX.a3500Bid = v;
+  FX.a3500Ask = v;
   cancelA3500();
   refreshAfterA3500Change();
 }
@@ -3780,7 +3784,6 @@ function resetA3500(){
   FX_MANUAL_A3500.bid = null;
   FX_MANUAL_A3500.ask = null;
   try { localStorage.removeItem(LS_FX_MANUAL_A3500); } catch(_){}
-  // Restaurar al último valor de mercado conocido
   if(FX_MARKET_A3500.bid != null) FX.a3500Bid = FX_MARKET_A3500.bid;
   if(FX_MARKET_A3500.ask != null) FX.a3500Ask = FX_MARKET_A3500.ask;
   refreshAfterA3500Change();
