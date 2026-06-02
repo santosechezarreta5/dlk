@@ -1865,9 +1865,12 @@ function setTypeTab(type){
   // Show/hide HD currency selector
   const hdCurr=document.getElementById('hd-currency-tabs');
   if(hdCurr) hdCurr.style.display=isHD?'flex':'none';
-  // Close panel and re-render
-  try{ closePanel(); }catch(_){}
-  render();
+  // Cerrar panel solo si hay un bono abierto (evita interferir con el panel de alertas)
+  if(ACTIVE_TK){
+    try{ closePanel(); }catch(_){}
+  } else {
+    render();
+  }
 }
 
 function setHdCurrencyView(view){
