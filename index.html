@@ -4364,10 +4364,13 @@ function aROp(ci,ri,v){ alertConds[ci].rules[ri].op=v; saveAC(); }
 function aRVal(ci,ri,v){ alertConds[ci].rules[ri].value=v; saveAC(); }
 
 // ── Evaluación ────────────────────────────────────────────────────────────────
+// Campos de precio/tasa que el contexto de moneda puede sobreescribir.
+// OJO: 'moneda' NO va acá — es un campo del bono (DL/USD), no del contexto.
+const ACTX_FIELDS = new Set(['bid','ask','bidTna','askTna']);
 function aGetVal(b, field, ctx){
   if(field==='venc_year') return b.venc?parseInt(b.venc.substring(0,4)):null;
-  // ctx permite sobreescribir bid/ask/bidTna/askTna para evaluar en otra moneda
-  if(ctx && field in ctx) return ctx[field]??null;
+  // ctx solo sobreescribe precios/tasas para evaluar en otra moneda
+  if(ctx && ACTX_FIELDS.has(field) && field in ctx) return ctx[field]??null;
   return b[field]??null;
 }
 function aEvalRuleCtx(b, r, ctx){
