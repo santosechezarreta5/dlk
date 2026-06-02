@@ -63,14 +63,14 @@ header{position:sticky;top:0;z-index:200;background:rgba(7,9,15,.93);backdrop-fi
 main{max-width:1680px;margin:0 auto;padding:28px;position:relative;z-index:1;transition:margin-right .3s ease;}
 main.shifted{margin-right:var(--panel-w);}
 .hero{margin-bottom:20px;}
-.h-title{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(1.8rem,3.5vw,3rem);letter-spacing:-.04em;line-height:1;background:linear-gradient(130deg,#e2e8f0 0%,var(--blue-l) 55%,var(--sky) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.h-title{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(1.2rem,2.2vw,1.7rem);letter-spacing:-.03em;line-height:1;background:linear-gradient(130deg,#e2e8f0 0%,var(--blue-l) 55%,var(--sky) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
 .h-sub{font-size:.57rem;color:var(--muted2);letter-spacing:.1em;text-transform:uppercase;margin-top:5px;}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:20px;}
-.stat{background:var(--s1);padding:12px 15px;transition:background .15s;}
+.stat{background:var(--s1);padding:7px 12px;transition:background .15s;}
 .stat:hover{background:var(--s2);}
-.sl{font-size:.5rem;color:var(--muted2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px;}
-.sv{font-family:'Syne',sans-serif;font-weight:700;font-size:1.45rem;letter-spacing:-.03em;}
-.ss{font-size:.5rem;color:var(--muted2);margin-top:2px;}
+.sl{font-size:.46rem;color:var(--muted2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;}
+.sv{font-family:'Syne',sans-serif;font-weight:700;font-size:1rem;letter-spacing:-.03em;}
+.ss{font-size:.46rem;color:var(--muted2);margin-top:1px;}
 .c-blue{color:var(--blue-l);}.c-sky{color:var(--sky);}.c-teal{color:var(--teal);}.c-amber{color:var(--amber);}.c-red{color:var(--red);}.c-ind{color:var(--indigo);}
 .alert{border-radius:6px;padding:9px 15px;font-size:.61rem;margin-bottom:14px;display:none;line-height:1.7;}
 .alert.show{display:block;}
@@ -398,16 +398,12 @@ window.SUPABASE_CONFIG = {
 </div>
 <main id="main-content">
   <div class="hero">
-    <div class="h-title">Bonos Corporativos AR · Dollar Linked</div>
+    <div class="h-title">BONOS CORPORATIVOS AR</div>
     <div class="h-sub">// data912.com + dolarapi.com · <span id="bond-count">64</span> instrumentos · Auto-refresh 30s · Click para calculadora</div>
   </div>
   <div class="stats">
     <div class="stat"><div class="sl">Mostrando</div><div class="sv c-blue" id="s0">—</div><div class="ss">instrumentos</div></div>
     <div class="stat"><div class="sl">Con precio</div><div class="sv c-sky" id="s1">—</div><div class="ss">datos mercado</div></div>
-    <div class="stat"><div class="sl">TIR Promedio</div><div class="sv c-teal" id="s2">—</div><div class="ss">rendimiento anual</div></div>
-    <div class="stat"><div class="sl">Precio Prom.</div><div class="sv c-blue" id="s3">—</div><div class="ss">ARS · VN 100k</div></div>
-    <div class="stat"><div class="sl">Callables</div><div class="sv c-ind" id="s6">—</div><div class="ss">en vista</div></div>
-    <div class="stat"><div class="sl">Vol. Total</div><div class="sv c-amber" id="s4">—</div><div class="ss">ARS millones</div></div>
     <div class="stat"><div class="sl">Actualización</div><div class="sv c-sky" style="font-size:.95rem" id="s5">—</div><div class="ss">hora Bs. As.</div></div>
   </div>
   <div class="alert warn" id="warn-bar"></div>
@@ -1927,10 +1923,6 @@ function render(){
   const wt=data.filter(b=>b.tir!=null),wp=data.filter(b=>b.precio!=null),wv=data.filter(b=>b.vol!=null);
   document.getElementById('cnt').textContent=data.length;
   document.getElementById('s0').textContent=data.length;
-  document.getElementById('s2').textContent=wt.length?(wt.reduce((s,b)=>s+Number(b.tir),0)/wt.length).toFixed(2)+'%':'—';
-  document.getElementById('s3').textContent=wp.length?'$ '+(wp.reduce((s,b)=>s+Number(b.precio),0)/wp.length).toLocaleString('es-AR',{maximumFractionDigits:0}):'—';
-  document.getElementById('s4').textContent=wv.length?wv.reduce((s,b)=>s+Number(b.vol),0).toFixed(0):'—';
-  document.getElementById('s6').textContent=data.filter(b=>b.callable==='Si').length;
   const typeBondsCount=activeType==='DL'?bonds.filter(b=>b.moneda==='DL').length:bonds.filter(b=>b.moneda!=='DL').length;
   document.getElementById('bond-count').textContent=typeBondsCount;
   document.getElementById('total-count').textContent=typeBondsCount;
@@ -3890,11 +3882,7 @@ function resetInlinePrice(e, tk){
 
 function updateStatsOnly(){
   const data=visible();
-  const wt=data.filter(b=>b.tir!=null),wp=data.filter(b=>b.precio!=null),wv=data.filter(b=>b.vol!=null);
   document.getElementById('s0').textContent=data.length;
-  document.getElementById('s2').textContent=wt.length?(wt.reduce((s,b)=>s+Number(b.tir),0)/wt.length).toFixed(2)+'%':'—';
-  document.getElementById('s3').textContent=wp.length?'$ '+(wp.reduce((s,b)=>s+Number(b.precio),0)/wp.length).toLocaleString('es-AR',{maximumFractionDigits:0}):'—';
-  document.getElementById('s6').textContent=data.filter(b=>b.callable==='Si').length;
   drawYield(data);
 }
 
