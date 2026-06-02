@@ -1339,7 +1339,16 @@ async function reloadCatalog(opts){
       };
     });
   }
-  const catalog = await Catalog.loadAll();
+  const catalogRaw = await Catalog.loadAll();
+  // Mergear con BASE_META: los bonos de Supabase tienen prioridad,
+  // pero cualquier bono en BASE_META que no esté en Supabase (ej: bonos HD)
+  // siempre se incluye.
+  const catalogMap = {};
+  catalogRaw.forEach(b => catalogMap[b.ticker] = b);
+  Object.entries(BASE_META).forEach(([tk, m]) => {
+    if(!catalogMap[tk]) catalogRaw.push({ticker:tk, ...m});
+  });
+  const catalog = catalogRaw;
   const today = new Date(); today.setHours(0,0,0,0);
   bonds = catalog
     .map(m => ({
