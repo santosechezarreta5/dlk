@@ -297,7 +297,8 @@ th .resize-handle:hover,th .resize-handle.dragging{background:var(--blue);opacit
 .cond-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
 .cond-name{flex:1;font-family:'IBM Plex Mono',monospace;font-size:.65rem;padding:4px 8px;background:#07090f;border:1px solid #1e2d42;border-radius:4px;color:#f1f5f9;outline:none;}
 .cond-name:focus{border-color:#fbbf24;}
-.rule-row{display:flex;align-items:center;gap:5px;margin-bottom:5px;flex-wrap:wrap;}
+.rules-wrap{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px;}
+.rule-row{display:inline-flex;align-items:center;gap:4px;flex-wrap:nowrap;background:#070c14;border:1px solid #1e2d42;border-radius:4px;padding:3px 6px;}
 .rule-sel,.rule-inp{font-family:'IBM Plex Mono',monospace;font-size:.6rem;padding:4px 6px;background:#07090f;border:1px solid #1e2d42;border-radius:4px;color:#f1f5f9;outline:none;}
 .rule-sel:focus,.rule-inp:focus{border-color:#3b82f6;}
 .rule-inp{width:100px;}
@@ -4255,17 +4256,18 @@ function buildCondUI(){
       <input class="cond-name" value="${escA(c.name)}" placeholder="Nombre…" oninput="aName(${ci},this.value)">
       <button class="btn-del-cond" onclick="aDel(${ci})">✕ Eliminar</button>`;
     card.appendChild(head);
-    // Rules
+    // Rules — contenedor horizontal
     const rules=document.createElement('div');
+    rules.className='rules-wrap';
     rules.id='arules-'+ci;
     card.appendChild(rules);
     buildRulesUI(ci, rules, c.rules);
-    // Add rule btn
+    // Botón inline al final de la fila de reglas
     const addR=document.createElement('button');
     addR.className='btn-add-rule';
-    addR.textContent='+ Agregar filtro';
+    addR.textContent='+ Agregar';
     addR.onclick=()=>aAddRule(ci);
-    card.appendChild(addR);
+    rules.appendChild(addR);
     list.appendChild(card);
   });
 }
@@ -4282,6 +4284,12 @@ function aFieldOpts(field){
 function buildRulesUI(ci, container, rules){
   container.innerHTML='';
   rules.forEach((r,ri)=>{
+    if(ri>0){
+      const sep=document.createElement('span');
+      sep.textContent='Y';
+      sep.style.cssText='font-size:.5rem;color:#475569;letter-spacing:.06em;font-family:"IBM Plex Mono",monospace;flex-shrink:0;';
+      container.appendChild(sep);
+    }
     const isNum    = ANUM.has(r.field);
     const isDrop   = ADROPDOWN.has(r.field);
     const ops      = isNum ? AOPS_N : AOPS_S;
