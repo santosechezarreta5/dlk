@@ -1436,7 +1436,11 @@ async function fetchAll(){
         b.precio_usd_eq = (b.precio!=null&&a3500Mid) ? parseFloat((b.precio/a3500Mid).toFixed(4)) : null;
         const rv=pn(it.v); b.vol=(rv!=null&&rv>0)?parseFloat((rv/1e6).toFixed(2)):null;
         b.open=null; b.precio_cable=null;
-        if(b.precio_usd_eq!=null&&b.precio_usd_eq>0) recalcTIR(b);
+        if(b.precio_usd_eq!=null&&b.precio_usd_eq>0){
+          recalcTIR(b);
+          if(b.bid_ars){const bc=calcTIRForPrice(b,b.bid_ars);b.bidTna=bc?bc.tna:null;}
+          if(b.ask_ars){const ac=calcTIRForPrice(b,b.ask_ars);b.askTna=ac?ac.tna:null;}
+        }
 
       } else {
         // ── HARD DOLLAR: cotiza en USD, usa sufijos D (MEP), O (ARS), C (Cable) ─
@@ -1466,7 +1470,11 @@ async function fetchAll(){
         b.marketVp=b.vp; b.marketPrecio=b.precio;
         const rv=itD?pn(itD.v):null; b.vol=(rv!=null&&rv>0)?parseFloat((rv/1e6).toFixed(2)):null;
         b.open=null;
-        if(b.precio_usd_eq!=null&&b.precio_usd_eq>0) recalcTIR(b);
+        if(b.precio_usd_eq!=null&&b.precio_usd_eq>0){
+          recalcTIR(b);
+          if(b.bid_usd){const bc=calcTIRForPrice(b,b.bid_usd);b.bidTna=bc?bc.tna:null;}
+          if(b.ask_usd){const ac=calcTIRForPrice(b,b.ask_usd);b.askTna=ac?ac.tna:null;}
+        }
       }
     });
 
@@ -1478,7 +1486,7 @@ async function fetchAll(){
     if(ACTIVE_TK&&!manualPrecio){const ab=bonds.find(b=>b.ticker===ACTIVE_TK);if(ab&&ab.precio)document.getElementById('inp-precio').value=ab.precio.toFixed(0);}
     render();
     if(typeof updateDLEquiv==='function') updateDLEquiv();
-    evaluateAlerts();
+    try{ evaluateAlerts(); }catch(e){ console.error('[evaluateAlerts]',e); }
   }catch(e){
     console.error('[fetchAll] Error:', e);
     setS('err','Sin proxy');
