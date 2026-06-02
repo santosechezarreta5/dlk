@@ -451,6 +451,24 @@ window.SUPABASE_CONFIG = {
         <span class="fx-ask fx-canje" id="fx-brecha-ask">—</span>
       </div>
     </div>
+    <!-- Cable -->
+    <div class="fx-group">
+      <div class="fx-name">USD Cable</div>
+      <div class="fx-val">
+        <span class="fx-bid" id="fx-cable-bid">—</span>
+        <span> / </span>
+        <span class="fx-ask" id="fx-cable-ask">—</span>
+      </div>
+    </div>
+    <!-- Canje MEP/Cable -->
+    <div class="fx-group">
+      <div class="fx-name">Canje</div>
+      <div class="fx-val">
+        <span class="fx-bid fx-canje" id="fx-canje-bid">—</span>
+        <span> / </span>
+        <span class="fx-ask fx-canje" id="fx-canje-ask">—</span>
+      </div>
+    </div>
     <div class="fx-label fx-loading" id="fx-ts" style="margin-left:auto"></div>
   </div>
   <div class="chart-panel">
@@ -459,6 +477,18 @@ window.SUPABASE_CONFIG = {
       <div class="cp-legend" id="chart-legend"></div>
     </div>
     <svg class="chart" viewBox="0 0 920 220" height="220" id="ysvg"></svg>
+  </div>
+  <!-- ── Pestañas tipo bono DL / HD ──────────────────────────────── -->
+  <div id="type-tabs" style="display:flex;gap:6px;padding:10px 18px 6px;background:var(--bg);">
+    <button id="typetab-dl" onclick="setTypeTab('DL')" class="typetab" style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.06em;padding:6px 18px;border-radius:20px;cursor:pointer;border:1px solid var(--teal);background:rgba(45,212,191,.12);color:var(--teal);">DL · Dollar Linked</button>
+    <button id="typetab-hd" onclick="setTypeTab('HD')" class="typetab" style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.06em;padding:6px 18px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">HD · Hard Dollar</button>
+    <!-- Selector de moneda para HD (solo visible en tab HD) -->
+    <div id="hd-currency-tabs" style="display:none;margin-left:12px;display:none;align-items:center;gap:4px;">
+      <span style="font-size:.52rem;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-right:4px;">Ver en</span>
+      <button id="hdtab-mep"   onclick="setHdCurrencyView('mep')"   style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--teal);background:rgba(45,212,191,.1);color:var(--teal);">USD MEP</button>
+      <button id="hdtab-ars"   onclick="setHdCurrencyView('ars')"   style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">ARS</button>
+      <button id="hdtab-cable" onclick="setHdCurrencyView('cable')" style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">Cable</button>
+    </div>
   </div>
   <div class="filter-wrap">
     <div class="filter-row"><span class="fl">Emisor</span>
@@ -494,6 +524,16 @@ window.SUPABASE_CONFIG = {
       <button class="fb on" data-f="call" data-v="all">Todos</button>
       <button class="fb" data-f="call" data-v="Si">Callable</button>
       <button class="fb" data-f="call" data-v="No">No callable</button>
+    </div>
+    <div class="filter-row" id="filter-row-leg" style="display:none"><span class="fl">Legislación</span>
+      <button class="fb on" data-f="leg" data-v="all">Todos</button>
+      <button class="fb" data-f="leg" data-v="Argentina">Argentina</button>
+      <button class="fb" data-f="leg" data-v="Nueva York">Nueva York</button>
+    </div>
+    <div class="filter-row" id="filter-row-jur" style="display:none"><span class="fl">Jurisdicción</span>
+      <button class="fb on" data-f="jur" data-v="all">Todos</button>
+      <button class="fb" data-f="jur" data-v="Argentina">Argentina</button>
+      <button class="fb" data-f="jur" data-v="Estados Unidos">EE.UU.</button>
     </div>
     <div class="filter-bottom">
       <input class="srch" type="text" placeholder="Buscar ticker o emisor…" id="srch">
@@ -604,7 +644,7 @@ window.SUPABASE_CONFIG = {
         <div class="cst">Precio y Tasa</div>
         <div class="form-grid">
           <div class="form-group">
-            <label class="form-label">Precio ARS (por VN 100k) <span class="manual-badge" id="badge-price" style="display:none">MANUAL</span></label>
+            <label class="form-label"><span id="price-label-text">Precio ARS (por VN 100k)</span> <span class="manual-badge" id="badge-price" style="display:none">MANUAL</span></label>
             <input class="form-input" id="inp-precio" type="number" step="100" placeholder="e.g. 138500">
             <button class="btn-reset" id="btn-reset-precio" onclick="resetPrecio()">↺ Volver a mercado</button>
           </div>
@@ -936,6 +976,175 @@ const BASE_META={
 'YMCRO':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2023-09-12',fecha_inicio_int:'2024-03-12',venc:'2028-09-12',cupon:0,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'DL',valor_residual:1.0,amortSched:[]},
 'YMCTO':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2023-10-10',fecha_inicio_int:'2024-04-10',venc:'2026-10-10',cupon:0,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'DL',valor_residual:1.0,amortSched:[]},
 'YMCWO':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-07-01',fecha_inicio_int:'2025-01-01',venc:'2026-07-01',cupon:1.0,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'DL',valor_residual:1.0,amortSched:[]},
+// ── Hard Dollar (HD) ─────────────────────────────────────────────────────────────────────────────
+'AERBO':{emisor:'AA 200',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-12-23',fecha_inicio_int:'2025-06-23',venc:'2026-12-15',cupon:5.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'AFCHO':{emisor:'Comafi',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-08-19',fecha_inicio_int:'2026-02-19',venc:'2026-08-19',cupon:6.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'BCCKO':{emisor:'CMF',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-08-29',fecha_inicio_int:'2026-02-28',venc:'2026-08-29',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'BF35O':{emisor:'BBVA',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-06-03',fecha_inicio_int:'2025-12-03',venc:'2026-06-03',cupon:5.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'BF37O':{emisor:'BBVA',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-08-22',fecha_inicio_int:'2026-02-22',venc:'2026-08-22',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'BYCUO':{emisor:'Galicia',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-05-27',fecha_inicio_int:'2025-11-27',venc:'2026-05-29',cupon:5.9,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'BYCVO':{emisor:'Galicia',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-08-14',fecha_inicio_int:'2026-02-14',venc:'2026-08-31',cupon:6.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'CAC8O':{emisor:'CAPEX',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-04-29',fecha_inicio_int:'2024-07-29',venc:'2026-06-29',cupon:5.95,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CACBO':{emisor:'CAPEX',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-06-17',fecha_inicio_int:'2025-09-17',venc:'2028-06-16',cupon:7.75,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CIC7O':{emisor:'CNH',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-12',fecha_inicio_int:'2025-05-12',venc:'2026-11-12',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CIC8O':{emisor:'CNH',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-12',fecha_inicio_int:'2025-05-12',venc:'2028-11-12',cupon:7.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CIC9O':{emisor:'CNH',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-05-21',fecha_inicio_int:'2025-11-21',venc:'2027-05-21',cupon:8.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CP36O':{emisor:'CGC',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-10',fecha_inicio_int:'2025-04-10',venc:'2027-10-10',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'CP37O':{emisor:'CGC',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-03-10',fecha_inicio_int:'2025-09-10',venc:'2027-03-10',cupon:7,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'CS44O':{emisor:'CRESUD',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-01-17',fecha_inicio_int:'2024-07-17',venc:'2027-01-17',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CS45O':{emisor:'CRESUD',sector:'Infraestructura',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2024-04-22',fecha_inicio_int:'2024-10-22',venc:'2026-08-22',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CS47O':{emisor:'CRESUD',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-15',fecha_inicio_int:'2025-05-15',venc:'2028-11-15',cupon:7,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CS48O':{emisor:'CRESUD',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-07-11',fecha_inicio_int:'2026-01-11',venc:'2028-07-11',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CS49O':{emisor:'CRESUD',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-09-02',fecha_inicio_int:'2026-03-02',venc:'2027-09-02',cupon:7.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'DNC3O':{emisor:'EDENOR',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-03-07',fecha_inicio_int:'2024-05-22',venc:'2026-11-22',cupon:9.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'DNC5O':{emisor:'EDENOR',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-08-05',fecha_inicio_int:'2025-02-05',venc:'2028-08-05',cupon:9.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'DNC8O':{emisor:'EDENOR',sector:'Energía (otros)',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2025-08-07',fecha_inicio_int:'2026-02-07',venc:'2026-08-07',cupon:8.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'EAC3O':{emisor:'MSU GREEN ENERGY',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-12-20',fecha_inicio_int:'2025-06-20',venc:'2028-12-20',cupon:8.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'GN43O':{emisor:'GENNEIA',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-03-08',fecha_inicio_int:'2024-09-08',venc:'2027-03-08',cupon:6.25,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'GN47O':{emisor:'GENNEIA',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-17',fecha_inicio_int:'2025-04-17',venc:'2028-10-17',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'GN48O':{emisor:'GENNEIA',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-03-05',fecha_inicio_int:'2025-09-05',venc:'2028-03-05',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'HJCBO':{emisor:'John Deere',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-05-30',fecha_inicio_int:'2024-08-30',venc:'2026-05-30',cupon:6,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'HJCFO':{emisor:'John Deere',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-21',fecha_inicio_int:'2025-04-21',venc:'2026-10-21',cupon:5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'HJCGO':{emisor:'John Deere',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-21',fecha_inicio_int:'2025-04-21',venc:'2028-10-21',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'HJCHO':{emisor:'John Deere',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-01-17',fecha_inicio_int:'2025-07-17',venc:'2028-01-17',cupon:7,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'HJCIO':{emisor:'John Deere',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-05-27',fecha_inicio_int:'2025-11-27',venc:'2027-05-27',cupon:7.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'HJCJO':{emisor:'John Deere',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-07-25',fecha_inicio_int:'2026-01-25',venc:'2027-07-25',cupon:8.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'IRCJO':{emisor:'IRSA',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-02-28',fecha_inicio_int:'2024-08-28',venc:'2027-02-28',cupon:7,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'IRCLO':{emisor:'IRSA',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-06-10',fecha_inicio_int:'2024-12-10',venc:'2026-06-10',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'IRCNO':{emisor:'IRSA',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-23',fecha_inicio_int:'2025-07-23',venc:'2027-10-23',cupon:5.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'IRCOO':{emisor:'IRSA',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-23',fecha_inicio_int:'2025-07-23',venc:'2029-10-23',cupon:7.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'LDCGO':{emisor:'Ledesma',sector:'Consumo',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-02-04',fecha_inicio_int:'2025-05-04',venc:'2027-10-04',cupon:7,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'LMS7O':{emisor:'ALUAR',sector:'Infraestructura',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2023-10-12',fecha_inicio_int:'2024-04-12',venc:'2028-10-12',cupon:7,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2026-01-12',pct:8.33},{fecha:'2026-04-12',pct:8.33},{fecha:'2026-07-12',pct:8.33},{fecha:'2026-10-12',pct:8.33},{fecha:'2027-01-12',pct:8.33},{fecha:'2027-04-12',pct:8.33},{fecha:'2027-07-12',pct:8.33},{fecha:'2027-10-12',pct:8.33},{fecha:'2028-01-12',pct:8.33},{fecha:'2028-04-12',pct:8.33},{fecha:'2028-07-12',pct:8.33},{fecha:'2028-10-12',pct:8.37}]},
+'LMS8O':{emisor:'ALUAR',sector:'Infraestructura',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2024-03-21',fecha_inicio_int:'2024-09-21',venc:'2027-03-21',cupon:6.25,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2026-06-22',pct:25},{fecha:'2026-09-21',pct:25},{fecha:'2026-12-21',pct:25},{fecha:'2027-03-22',pct:25}]},
+'LMS9O':{emisor:'ALUAR',sector:'Infraestructura',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2024-06-13',fecha_inicio_int:'2024-12-13',venc:'2026-06-13',cupon:6,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'LOC5O':{emisor:'Loma Negra',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-07-24',fecha_inicio_int:'2026-01-24',venc:'2027-07-24',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MCC1O':{emisor:'PECOM',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-03-10',fecha_inicio_int:'2025-09-10',venc:'2029-03-10',cupon:7.9,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MCC2O':{emisor:'PECOM',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-06-02',fecha_inicio_int:'2025-12-02',venc:'2027-06-02',cupon:7.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MGCNO':{emisor:'Pampa',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-04',fecha_inicio_int:'2025-04-04',venc:'2028-10-04',cupon:5.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MGCQO':{emisor:'Pampa',sector:'Energía',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2025-08-06',fecha_inicio_int:'2026-02-06',venc:'2028-08-06',cupon:7.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MSSEO':{emisor:'MSU',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2023-07-17',fecha_inicio_int:'2024-07-17',venc:'2026-07-17',cupon:6.5,tipo_cupon:'fijo',periodicidad:12,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MSSFO':{emisor:'MSU',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-07-23',fecha_inicio_int:'2025-01-23',venc:'2027-07-23',cupon:7.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MSSGO':{emisor:'MSU',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-04-16',fecha_inicio_int:'2025-10-16',venc:'2029-04-16',cupon:8.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'NPCCO':{emisor:'CEPU',sector:'Energía (otros)',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2025-08-25',fecha_inicio_int:'2026-02-25',venc:'2029-08-25',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'OT41O':{emisor:'OTAMERICA EBYTEM',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-01-17',fecha_inicio_int:'2025-10-17',venc:'2028-01-17',cupon:7,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'OT42O':{emisor:'OTAMERICA EBYTEM',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-01-17',fecha_inicio_int:'2025-10-17',venc:'2030-01-17',cupon:8,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'OTS2O':{emisor:'OilTanking',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-04-24',fecha_inicio_int:'2025-01-24',venc:'2027-04-24',cupon:7,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'OTS3O':{emisor:'OilTanking',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-01',fecha_inicio_int:'2025-08-01',venc:'2028-11-01',cupon:7,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'OZC3O':{emisor:'Edemsa',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-29',fecha_inicio_int:'2025-05-29',venc:'2027-11-29',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'PLC1O':{emisor:'PLUSPETROL',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-01-27',fecha_inicio_int:'2025-10-27',venc:'2028-01-27',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PLC2O':{emisor:'PLUSPETROL',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-01-27',fecha_inicio_int:'2025-10-27',venc:'2030-01-27',cupon:7.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PLC3O':{emisor:'PLUSPETROL',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-04-30',fecha_inicio_int:'2026-01-30',venc:'2028-04-30',cupon:7.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PN34O':{emisor:'Pan American Energy',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-09-27',fecha_inicio_int:'2025-03-27',venc:'2027-09-27',cupon:4.97,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PN35O':{emisor:'Pan American Energy',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-09-27',fecha_inicio_int:'2025-03-27',venc:'2029-09-27',cupon:7,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PN36O':{emisor:'Pan American Energy',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-13',fecha_inicio_int:'2025-05-13',venc:'2031-11-13',cupon:7.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PN37O':{emisor:'Pan American Energy',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-13',fecha_inicio_int:'2025-05-13',venc:'2028-11-13',cupon:6.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PN38O':{emisor:'Pan American Energy',sector:'Energía',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2025-02-11',fecha_inicio_int:'2025-08-11',venc:'2027-08-11',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PN41O':{emisor:'Pan American Energy',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-08-27',fecha_inicio_int:'2026-02-27',venc:'2029-08-27',cupon:7.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PQCRO':{emisor:'PCR',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-22',fecha_inicio_int:'2025-04-22',venc:'2028-10-22',cupon:6.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'PQCSO':{emisor:'PCR',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-02-17',fecha_inicio_int:'2025-08-17',venc:'2031-02-17',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'PQCTO':{emisor:'PCR',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-07-21',fecha_inicio_int:'2026-01-21',venc:'2028-07-21',cupon:8.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PZCGO':{emisor:'Plaza Logistica',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-12-04',fecha_inicio_int:'2025-06-04',venc:'2028-06-04',cupon:7,tipo_cupon:'fijo',periodicidad:3,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'RC2CO':{emisor:'ARCOR',sector:'Consumo',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-10-06',fecha_inicio_int:'2026-04-06',venc:'2026-10-06',cupon:5.9,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'RCCRO':{emisor:'ARCOR',sector:'Consumo',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-05-09',fecha_inicio_int:'2025-11-09',venc:'2027-05-09',cupon:6.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'RZ9BO':{emisor:'RIZOBACTER',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-06-28',fecha_inicio_int:'2024-09-28',venc:'2026-06-28',cupon:7.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'RZABO':{emisor:'RIZOBACTER',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-28',fecha_inicio_int:'2025-02-28',venc:'2027-11-28',cupon:8,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'SNABO':{emisor:'San Miguel',sector:'Consumo',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-07-29',fecha_inicio_int:'2025-01-29',venc:'2026-07-29',cupon:9,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'SXC2O':{emisor:'Mercado Pago',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-10-06',fecha_inicio_int:'2026-06-01',venc:'2026-06-01',cupon:4.98,tipo_cupon:'fijo',periodicidad:7,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'T641O':{emisor:'Tarjeta Naranja',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-04-29',fecha_inicio_int:'2025-07-29',venc:'2027-04-30',cupon:7.9,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'T652O':{emisor:'Tarjeta Naranja',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-08-28',fecha_inicio_int:'2025-11-28',venc:'2026-05-28',cupon:7.4,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'TLCOO':{emisor:'TELECOM',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-28',fecha_inicio_int:'2025-05-28',venc:'2028-11-28',cupon:7,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'TLCQO':{emisor:'TELECOM',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-07-02',fecha_inicio_int:'2025-10-02',venc:'2027-07-02',cupon:7.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'TTC8O':{emisor:'Tecpetrol',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-24',fecha_inicio_int:'2025-04-24',venc:'2027-10-24',cupon:5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'TTC9O':{emisor:'Tecpetrol',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-24',fecha_inicio_int:'2025-04-24',venc:'2029-10-24',cupon:6.8,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'VSCNO':{emisor:'Vista',sector:'Energía',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2023-12-05',fecha_inicio_int:'2024-06-05',venc:'2026-06-05',cupon:5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'VSCOO':{emisor:'Vista',sector:'Energía',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2024-03-06',fecha_inicio_int:'2024-09-06',venc:'2027-03-06',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'VSCPO':{emisor:'Vista',sector:'Energía',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2024-05-03',fecha_inicio_int:'2024-11-03',venc:'2029-05-03',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2027-11-03',pct:25},{fecha:'2028-05-03',pct:25},{fecha:'2028-11-03',pct:25},{fecha:'2029-05-03',pct:25}]},
+'VSCRO':{emisor:'Vista',sector:'Energía',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2024-10-10',fecha_inicio_int:'2025-04-10',venc:'2031-10-10',cupon:7.65,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2029-10-10',pct:33},{fecha:'2030-10-10',pct:33},{fecha:'2031-10-10',pct:34}]},
+'VSCUO':{emisor:'Vista',sector:'Energía',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2025-03-07',fecha_inicio_int:'2025-09-07',venc:'2030-03-07',cupon:7.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'XMC1O':{emisor:'Minera EXAR',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-11',fecha_inicio_int:'2025-05-11',venc:'2027-11-11',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'cuotas',callable:'No',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2027-05-11',pct:50},{fecha:'2027-11-11',pct:50}]},
+'YFCGO':{emisor:'YPF Luz',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-02-27',fecha_inicio_int:'2024-11-27',venc:'2027-02-27',cupon:6,tipo_cupon:'fijo',periodicidad:3,base_dias:'180_360',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'YFCIO':{emisor:'YPF Luz',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-06-13',fecha_inicio_int:'2025-03-13',venc:'2027-06-13',cupon:5.9,tipo_cupon:'fijo',periodicidad:3,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2027-03-15',pct:50},{fecha:'2027-06-11',pct:50}]},
+'YFCKO':{emisor:'YPF Luz',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-22',fecha_inicio_int:'2025-08-22',venc:'2026-11-22',cupon:5.25,tipo_cupon:'fijo',periodicidad:3,base_dias:'180_360',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'YFCLO':{emisor:'YPF Luz',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-11-22',fecha_inicio_int:'2025-08-22',venc:'2028-11-22',cupon:6.75,tipo_cupon:'fijo',periodicidad:3,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YFCMO':{emisor:'YPF Luz',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-05-20',fecha_inicio_int:'2026-02-20',venc:'2027-05-20',cupon:6.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'180_360',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'YFCNO':{emisor:'YPF Luz',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-10-03',fecha_inicio_int:'2026-04-03',venc:'2026-10-03',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'YM35O':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-02-27',fecha_inicio_int:'2025-05-27',venc:'2027-02-27',cupon:6.25,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YM37O':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-05-07',fecha_inicio_int:'2025-08-07',venc:'2027-05-07',cupon:7,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YM38O':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-07-22',fecha_inicio_int:'2025-10-22',venc:'2027-07-22',cupon:7.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YM39O':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2025-07-22',fecha_inicio_int:'2026-01-22',venc:'2030-07-22',cupon:8.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YM40O':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-08-28',fecha_inicio_int:'2025-11-28',venc:'2028-08-28',cupon:7.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YM41O':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-10-08',fecha_inicio_int:'2026-01-08',venc:'2027-01-08',cupon:6,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YMCVO':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-05-28',fecha_inicio_int:'2024-11-28',venc:'2026-05-28',cupon:6,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YMCYO':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2024-10-10',fecha_inicio_int:'2025-04-10',venc:'2028-10-10',cupon:6.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YMCZO':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2024-10-10',fecha_inicio_int:'2025-04-10',venc:'2028-10-10',cupon:7,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'ZPC2O':{emisor:'PLAZA LOGISTICA',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-06-02',fecha_inicio_int:'2026-03-02',venc:'2027-06-02',cupon:7.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'ZPC3O':{emisor:'PLAZA LOGISTICA',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-09-03',fecha_inicio_int:'2026-06-03',venc:'2027-09-03',cupon:8.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'ZZC1O':{emisor:'CAMUZZI',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-02-21',fecha_inicio_int:'2025-08-21',venc:'2027-02-21',cupon:7.95,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'PLC6O':{emisor:'PLUSPETROL',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-02-27',fecha_inicio_int:'2026-11-27',venc:'2029-02-27',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'BF40O':{emisor:'BBVA',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-02-27',fecha_inicio_int:'2026-08-27',venc:'2027-08-27',cupon:5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'CICBO':{emisor:'CNH',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-02-09',fecha_inicio_int:'2026-08-09',venc:'2029-02-09',cupon:7.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'AFCJO':{emisor:'Comafi',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-02-06',fecha_inicio_int:'2026-08-06',venc:'2027-02-06',cupon:4.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'AFCLO':{emisor:'Comafi',sector:'Finanzas',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'2026-02-06',fecha_inicio_int:'2026-08-06',venc:'2027-08-06',cupon:5.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'AFCKO':{emisor:'Comafi',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-02-06',fecha_inicio_int:'2026-08-06',venc:'2029-02-06',cupon:7,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'OTS6O':{emisor:'OTAMERICA EBYTEM',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-01-29',fecha_inicio_int:'2026-10-29',venc:'2029-07-29',cupon:3,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'LOC6O':{emisor:'Loma Negra',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-01-23',fecha_inicio_int:'2026-07-23',venc:'2029-01-23',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CS51O':{emisor:'CRESUD',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-01-20',fecha_inicio_int:'2026-07-20',venc:'2027-01-20',cupon:5.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'HJCKO':{emisor:'John Deere',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-01-16',fecha_inicio_int:'2026-07-16',venc:'2029-01-16',cupon:7.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'BYCXO':{emisor:'Galicia',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-12-22',fecha_inicio_int:'2026-06-22',venc:'2026-12-30',cupon:5.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'YFCOO':{emisor:'YPF Luz',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-12-15',fecha_inicio_int:'2026-09-15',venc:'2028-12-15',cupon:6.75,tipo_cupon:'fijo',periodicidad:3,base_dias:'180_360',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'CS50O':{emisor:'CRESUD',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-12-10',fecha_inicio_int:'2029-03-10',venc:'2026-09-10',cupon:7.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'BF39O':{emisor:'BBVA',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-12-05',fecha_inicio_int:'2026-06-05',venc:'2026-12-05',cupon:5.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'CACDO':{emisor:'CAPEX',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-12-04',fecha_inicio_int:'2026-06-04',venc:'2029-06-04',cupon:8.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CICAO':{emisor:'CNH',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-12-03',fecha_inicio_int:'2026-06-03',venc:'2028-06-03',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YM42O':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-12-02',fecha_inicio_int:'2026-06-02',venc:'2029-03-02',cupon:7,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'T662O':{emisor:'Tarjeta Naranja',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-11-26',fecha_inicio_int:'2026-02-26',venc:'2026-08-31',cupon:6.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'BYWCO':{emisor:'Galicia',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-11-14',fecha_inicio_int:'2026-05-14',venc:'2026-11-30',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'AFCIO':{emisor:'Comafi',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-11-07',fecha_inicio_int:'2026-05-07',venc:'2026-11-07',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'OTS5O':{emisor:'OTAMERICA EBYTEM',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-10-23',fecha_inicio_int:'2026-04-23',venc:'2026-10-23',cupon:6.69,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'PN42O':{emisor:'Pan American Energy',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-10-17',fecha_inicio_int:'2026-04-17',venc:'2027-04-17',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'TTCBO':{emisor:'Tecpetrol',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-10-16',fecha_inicio_int:'2026-04-16',venc:'2027-10-16',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'VSCWO':{emisor:'Vista',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2025-10-15',fecha_inicio_int:'2026-01-15',venc:'2027-04-15',cupon:6,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YMC1O':{emisor:'YPF',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2019-06-27',fecha_inicio_int:'2019-06-27',venc:'2029-06-27',cupon:8.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'TLCPO':{emisor:'Telecom Argentina S.A.',sector:'Infraestructura',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2025-05-28',fecha_inicio_int:'2025-11-28',venc:'2033-05-28',cupon:9.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2032-05-28',pct:50},{fecha:'2033-05-28',pct:50}]},
+'PNDCO':{emisor:'Pan American Energy',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2021-04-30',fecha_inicio_int:'2021-10-30',venc:'2027-04-30',cupon:9.125,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2025-04-30',pct:20},{fecha:'2025-10-30',pct:20},{fecha:'2026-04-30',pct:20},{fecha:'2026-10-30',pct:20}]},
+'YCAMO':{emisor:'YPF',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2017-07-21',fecha_inicio_int:'2018-01-21',venc:'2027-07-21',cupon:6.95,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'AEC2O':{emisor:'AES',sector:'Energía (otros)',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2023-08-30',fecha_inicio_int:'2024-02-28',venc:'2027-08-30',cupon:9.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2026-02-28',pct:25},{fecha:'2026-08-30',pct:25},{fecha:'2027-02-28',pct:25},{fecha:'2027-08-30',pct:25}]},
+'IRCFO':{emisor:'IRSA',sector:'Infraestructura',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2022-07-08',fecha_inicio_int:'2022-12-22',venc:'2028-06-22',cupon:8.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2024-06-22',pct:17.5},{fecha:'2025-06-22',pct:17.5},{fecha:'2026-06-22',pct:17.5},{fecha:'2027-06-22',pct:17.5}]},
+'CAC5O':{emisor:'CAPEX',sector:'Infraestructura',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2023-08-25',fecha_inicio_int:'2024-02-25',venc:'2028-08-25',cupon:9.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2025-02-25',pct:12.5},{fecha:'2025-08-25',pct:12.5},{fecha:'2026-02-25',pct:12.5},{fecha:'2026-08-25',pct:12.5}]},
+'BYCHO':{emisor:'Galicia',sector:'Finanzas',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2024-10-10',fecha_inicio_int:'2025-04-10',venc:'2028-10-10',cupon:7.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'AER4O':{emisor:'AA 200',sector:'Infraestructura',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2021-11-04',fecha_inicio_int:'2022-02-01',venc:'2028-11-01',cupon:9.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'BACGO':{emisor:'Macro',sector:'Finanzas',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2025-06-23',fecha_inicio_int:'2025-12-23',venc:'2029-06-23',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'DNC7O':{emisor:'EDENOR',sector:'Energía (otros)',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2025-11-19',fecha_inicio_int:'2026-05-24',venc:'2030-10-24',cupon:9.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2028-10-24',pct:33.33},{fecha:'2029-10-24',pct:33.33},{fecha:'2030-10-24',pct:33.34}]},
+'TTCDO':{emisor:'Tecpetrol',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2025-11-03',fecha_inicio_int:'2026-05-04',venc:'2030-11-03',cupon:7.625,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YMCUO':{emisor:'YPF',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2024-01-17',fecha_inicio_int:'2024-07-17',venc:'2031-01-17',cupon:9.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2026-07-17',pct:10},{fecha:'2027-01-17',pct:10},{fecha:'2027-07-17',pct:10},{fecha:'2028-01-17',pct:10}]},
+'BACHO':{emisor:'Macro',sector:'Finanzas',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2026-01-28',fecha_inicio_int:'2026-07-28',venc:'2031-01-28',cupon:8,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'PLC5O':{emisor:'PLUSPETROL',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2025-11-18',fecha_inicio_int:'2026-05-18',venc:'2031-05-18',cupon:8.125,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'TLCMO':{emisor:'Telecom',sector:'Infraestructura',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2024-07-18',fecha_inicio_int:'2025-01-20',venc:'2031-07-18',cupon:9.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2029-07-18',pct:33},{fecha:'2030-07-18',pct:33},{fecha:'2031-07-18',pct:34}]},
+'TSC3O':{emisor:'TGS',sector:'Infraestructura',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2024-07-24',fecha_inicio_int:'2025-01-24',venc:'2031-07-24',cupon:8.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MGCMO':{emisor:'Pampa',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2024-09-10',fecha_inicio_int:'2025-03-10',venc:'2031-09-10',cupon:7.95,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YMCXO':{emisor:'YPF',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2024-09-11',fecha_inicio_int:'2025-03-11',venc:'2031-09-11',cupon:8.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2029-09-11',pct:20},{fecha:'2030-09-11',pct:20},{fecha:'2031-09-11',pct:60}]},
+'PNXCO':{emisor:'Pan American Energy',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2024-04-30',fecha_inicio_int:'2024-10-30',venc:'2032-04-30',cupon:8.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2030-04-30',pct:33.33},{fecha:'2031-04-30',pct:33.33},{fecha:'2032-04-30',pct:33.34}]},
+'PLC4O':{emisor:'PLUSPETROL',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2025-05-30',fecha_inicio_int:'2025-12-01',venc:'2032-05-30',cupon:8.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'YFCJO':{emisor:'YPF Luz',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2024-10-16',fecha_inicio_int:'2025-04-16',venc:'2032-10-16',cupon:7.875,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2030-10-16',pct:33},{fecha:'2031-10-16',pct:33},{fecha:'2032-10-16',pct:34}]},
+'TLCUO':{emisor:'Telecom',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-03-05',fecha_inicio_int:'2026-09-05',venc:'2029-03-05',cupon:6.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'CP40O':{emisor:'CGC',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-03-09',fecha_inicio_int:'2026-06-09',venc:'2028-03-09',cupon:9.5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MGCTO':{emisor:'Pampa',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'',fecha_inicio_int:'',venc:'2029-04-01',cupon:5.49,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'VSCXO':{emisor:'Vista',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'2026-04-08',fecha_inicio_int:'2026-10-08',venc:'2038-04-08',cupon:7.875,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'cuotas',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[{fecha:'2036-04-08',pct:33},{fecha:'2037-04-08',pct:33},{fecha:'2038-04-08',pct:34}]},
+'YM43O':{emisor:'YPF',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-04-14',fecha_inicio_int:'2027-01-14',venc:'2030-04-12',cupon:5.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'AFCMO':{emisor:'Comafi',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-04-17',fecha_inicio_int:'2026-10-17',venc:'2027-04-17',cupon:3.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'AFCOO':{emisor:'Comafi',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-04-24',fecha_inicio_int:'2026-10-24',venc:'2027-10-24',cupon:3.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'CS53O':{emisor:'CRESUD',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-04-30',fecha_inicio_int:'2027-01-30',venc:'2030-04-30',cupon:6.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'NPCDO':{emisor:'CEPU',sector:'Energía (otros)',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-04-30',fecha_inicio_int:'2026-10-30',venc:'2030-04-30',cupon:6,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'CS52O':{emisor:'CRESUD',sector:'Infraestructura',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-04-30',fecha_inicio_int:'2027-01-30',venc:'2028-04-30',cupon:4.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'BPCVO':{emisor:'Supervielle',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-05-05',fecha_inicio_int:'2026-11-05',venc:'2027-05-05',cupon:3.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'BF44O':{emisor:'BBVA',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-05-08',fecha_inicio_int:'2026-11-08',venc:'2028-05-08',cupon:5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'BF45O':{emisor:'BBVA',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-05-08',fecha_inicio_int:'2026-11-08',venc:'2027-05-08',cupon:3.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'SXC4O':{emisor:'Mercado Pago',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'2026-05-18',fecha_inicio_int:'2026-05-18',venc:'2026-09-01',cupon:0,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
+'RC5CO':{emisor:'ARCOR',sector:'Consumo',leg:'Argentina',jur:'Argentina',fecha_emision:'',fecha_inicio_int:'',venc:'2029-05-21',cupon:5.25,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'MG1RO':{emisor:'Pampa',sector:'Energía',leg:'Nueva York',jur:'Estados Unidos',fecha_emision:'',fecha_inicio_int:'',venc:'2037-11-14',cupon:7.75,tipo_cupon:'fijo',periodicidad:6,base_dias:'180_360',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'TTCEO':{emisor:'Tecpetrol',sector:'Energía',leg:'Argentina',jur:'Argentina',fecha_emision:'',fecha_inicio_int:'',venc:'2029-05-21',cupon:5.5,tipo_cupon:'fijo',periodicidad:6,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'T672O':{emisor:'Tarjeta Naranja',sector:'Finanzas',leg:'Argentina',jur:'Argentina',fecha_emision:'',fecha_inicio_int:'',venc:'2027-02-22',cupon:5,tipo_cupon:'fijo',periodicidad:3,base_dias:'act365',amort:'bullet',callable:'Si',moneda:'USD',valor_residual:1,amortSched:[]},
+'T673O':{emisor:'Tarjeta Naranja',sector:'Finanzas',leg:'Argentina',jur:'Estados Unidos',fecha_emision:'',fecha_inicio_int:'',venc:'2027-11-22',cupon:4,tipo_cupon:'fijo',periodicidad:12,base_dias:'act365',amort:'bullet',callable:'No',moneda:'USD',valor_residual:1,amortSched:[]},
 };
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -1151,7 +1360,9 @@ async function reloadCatalog(opts){
   return bonds;
 }
 
-let F={sector:new Set(['all']),anio:new Set(['all']),call:new Set(['all']),emisor:new Set()};
+let F={sector:new Set(['all']),anio:new Set(['all']),call:new Set(['all']),emisor:new Set(),leg:new Set(['all']),jur:new Set(['all'])};
+let activeType='DL';
+let hdCurrencyView='mep'; // 'mep' | 'ars' | 'cable'
 let SK='ticker',SD=1,ACTIVE_TK=null,manualPrecio=false,manualTIR=false,pendingImport=[];
 const PROXY='http://localhost:3000';
 const DATA912='https://data912.com/live';
@@ -1194,75 +1405,65 @@ async function fetchAll(){
 
     let hits=0;
     bonds.forEach(b=>{
-      // ── DOLLAR LINKED ─────────────────────────────────────────────────────
-      // Los DL cotizan en ARS por cada $100.000 VN ajustados por A3500.
-      // El usuario ve y edita PRECIO EN ARS. Internamente, para calcular TIR,
-      // lo convertimos a USD-equivalente:
-      //   precio_USD_eq = (precio_ARS / 1000) / A3500_spot
       const base = b.ticker.slice(0,-1);
-      const itO  = map[base+'O'];  // ticker DL principal (cotiza en ARS)
-      const it   = itO;
-      if(!it) return;
-      if(b.manualOverride){ hits++; return; }
-      hits++;
-      b.prevPrecio=b.precio;
-      b.loaded=true;
+      const itO  = map[base+'O'];
 
-      // ── Precios ARS (raw)
-      b.bid_ars   = normPrice(itO.px_bid);
-      b.ask_ars   = normPrice(itO.px_ask);
-      // Bid/Ask: los exponemos también como b.bid/b.ask (en ARS) por compatibilidad
-      b.bid = b.bid_ars;
-      b.ask = b.ask_ars;
+      if(b.manualOverride){ if(itO||map[base+'D']) hits++; return; }
 
-      // ── Precio raw ARS: mid(bid,ask) como principal, fallback a close
-      const bidN = normPrice(it.px_bid);
-      const askN = normPrice(it.px_ask);
-      const cN   = normPrice(it.c);
+      if(b.moneda==='DL'){
+        // ── DOLLAR LINKED: cotiza en ARS, se convierte a USD-eq con A3500 ──────
+        const it = itO;
+        if(!it) return;
+        hits++;
+        b.prevPrecio=b.precio; b.loaded=true;
+        b.bid_ars = normPrice(itO.px_bid);
+        b.ask_ars = normPrice(itO.px_ask);
+        b.bid = b.bid_ars; b.ask = b.ask_ars;
+        const bidN=normPrice(it.px_bid), askN=normPrice(it.px_ask), cN=normPrice(it.c);
+        let lastTrade=null;
+        if(bidN&&bidN>0&&askN&&askN>0) lastTrade=parseFloat(((bidN+askN)/2).toFixed(4));
+        else if(bidN&&bidN>0) lastTrade=bidN;
+        else if(askN&&askN>0) lastTrade=askN;
+        else if(cN&&cN>0) lastTrade=cN;
+        const vp=pn(it.pct_change);
+        if(lastTrade!=null&&lastTrade>0){ b.precio=lastTrade; b.priceSrc=pn(it.q_op)>0?'trade':'close'; }
+        else { b.precio=null; b.priceSrc='noOp'; }
+        b.vp=vp; b.marketVp=vp; b.marketPrecio=b.precio; b.precio_ars=b.precio;
+        const a3500Mid=(FX.a3500Bid&&FX.a3500Ask)?(FX.a3500Bid+FX.a3500Ask)/2:(FX.a3500Bid||FX.a3500Ask||null);
+        b.precio_usd_eq = (b.precio!=null&&a3500Mid) ? parseFloat((b.precio/a3500Mid).toFixed(4)) : null;
+        const rv=pn(it.v); b.vol=(rv!=null&&rv>0)?parseFloat((rv/1e6).toFixed(2)):null;
+        b.open=null; b.precio_cable=null;
+        if(b.precio_usd_eq!=null&&b.precio_usd_eq>0) recalcTIR(b);
 
-      let lastTrade = null;
-      if(bidN && bidN>0 && askN && askN>0){
-        lastTrade = parseFloat(((bidN + askN) / 2).toFixed(4));
-      } else if(bidN && bidN>0){
-        lastTrade = bidN;
-      } else if(askN && askN>0){
-        lastTrade = askN;
-      } else if(cN && cN>0){
-        lastTrade = cN;
-      }
-
-      // ── Variación %
-      const vp = pn(it.pct_change);
-
-      if(lastTrade!=null && lastTrade>0){
-        b.precio = lastTrade;          // PRECIO PRINCIPAL: en ARS por VN ajustado
-        b.priceSrc = pn(it.q_op)>0 ? 'trade' : 'close';
       } else {
-        b.precio = null; b.priceSrc='noOp';
-      }
-      b.vp = vp;
-      b.marketVp = vp;
-      b.marketPrecio = b.precio;
-      // legacy: precio_ars apunta a lo mismo que precio
-      b.precio_ars = b.precio;
-
-      // ── Convertir precio ARS → USD-eq para correr recalcTIR
-      const a3500Mid = (FX.a3500Bid && FX.a3500Ask) ? (FX.a3500Bid + FX.a3500Ask)/2
-                       : (FX.a3500Bid || FX.a3500Ask || null);
-      if(b.precio!=null && a3500Mid){
-        b.precio_usd_eq = parseFloat((b.precio / a3500Mid).toFixed(4));
-      } else {
-        b.precio_usd_eq = null;
-      }
-
-      // ── Volumen
-      const rv = pn(it.v);
-      b.vol = (rv!=null&&rv>0) ? parseFloat((rv/1e6).toFixed(2)) : null;
-      b.open = null;
-      b.precio_cable = null;
-
-      if(b.precio_usd_eq!=null && b.precio_usd_eq>0){
-        recalcTIR(b);  // recalcTIR usa b.precio_usd_eq vía un wrapper
+        // ── HARD DOLLAR: cotiza en USD, usa sufijos D (MEP), O (ARS), C (Cable) ─
+        const itD = map[base+'D'];
+        const itC = map[base+'C'];
+        if(!itD && !itO) return;
+        hits++;
+        b.prevPrecio=b.precio; b.loaded=true;
+        const pv=v=>{const n=parseFloat(v);return isNaN(n)||n<=0?null:n;};
+        b.bid_usd  = itD ? pv(itD.px_bid)  : null;
+        b.ask_usd  = itD ? pv(itD.px_ask)  : null;
+        b.bid_cable= itC ? pv(itC.px_bid)  : null;
+        b.ask_cable= itC ? pv(itC.px_ask)  : null;
+        b.bid_ars  = itO ? normPrice(itO.px_bid) : null;
+        b.ask_ars  = itO ? normPrice(itO.px_ask) : null;
+        // Precio principal = MEP USD mid
+        const bdU=b.bid_usd, baU=b.ask_usd;
+        let pMEP=null;
+        if(bdU&&baU) pMEP=parseFloat(((bdU+baU)/2).toFixed(4));
+        else if(bdU) pMEP=bdU; else if(baU) pMEP=baU;
+        else if(itD) { const cN=pv(itD.c); if(cN) pMEP=cN; }
+        b.bid = bdU; b.ask = baU;
+        b.precio = pMEP;
+        b.precio_usd_eq = pMEP; // ya en USD, sin conversión
+        b.priceSrc = pMEP ? 'trade' : 'noOp';
+        b.vp = itD ? pn(itD.pct_change) : null;
+        b.marketVp=b.vp; b.marketPrecio=b.precio;
+        const rv=itD?pn(itD.v):null; b.vol=(rv!=null&&rv>0)?parseFloat((rv/1e6).toFixed(2)):null;
+        b.open=null;
+        if(b.precio_usd_eq!=null&&b.precio_usd_eq>0) recalcTIR(b);
       }
     });
 
@@ -1311,14 +1512,16 @@ async function fetchFX(){
       a3500Ask = FX_MANUAL_A3500.ask;
     }
 
-    // ── 2) MEP comparativo desde AL30/AL30D (data912)
+    // ── 2) MEP y Cable desde AL30/AL30D/AL30C (data912)
     const raw = await fetch(`${DATA912}/arg_bonds`).then(r=>r.json()).catch(()=>null);
-    let mepBid=null, mepAsk=null;
+    let mepBid=null, mepAsk=null, cableBid=null, cableAsk=null;
+    let canjeBid=0, canjeAsk=0;
     if(Array.isArray(raw)){
       const map={};
       raw.forEach(it=>{ if(it.symbol) map[it.symbol.trim().toUpperCase()]=it; });
       const al30  = map['AL30'];
       const al30d = map['AL30D'];
+      const al30c = map['AL30C'];
       const pv = v => { const n=parseFloat(v); return isNaN(n)||n<=0?null:n; };
       if(al30 && al30d){
         const al30Bid = pv(al30.px_bid),  al30Ask = pv(al30.px_ask);
@@ -1327,8 +1530,21 @@ async function fetchFX(){
           mepBid = al30Bid / al30dAsk;
           mepAsk = al30Ask / al30dBid;
         }
+        if(al30c){
+          const al30cBid = pv(al30c.px_bid), al30cAsk = pv(al30c.px_ask);
+          if(al30Bid && al30Ask && al30cBid && al30cAsk){
+            cableBid = al30Bid / al30cAsk;
+            cableAsk = al30Ask / al30cBid;
+          }
+          if(al30dBid && al30dAsk && al30cBid && al30cAsk){
+            canjeBid = al30dBid / al30cAsk - 1;
+            canjeAsk = al30dAsk / al30cBid - 1;
+          }
+        }
       }
     }
+    if(cableBid==null) cableBid=mepBid;
+    if(cableAsk==null) cableAsk=mepAsk;
 
     // ── 3) Brecha MEP/A3500
     const brechaBid = (mepBid&&a3500Ask) ? (mepBid/a3500Ask - 1) : null;
@@ -1340,20 +1556,23 @@ async function fetchFX(){
     // Store globally for use in price calculations
     FX.a3500Bid = a3500Bid; FX.a3500Ask = a3500Ask;
     FX.mepBid   = mepBid;   FX.mepAsk   = mepAsk;
+    FX.cableBid = cableBid; FX.cableAsk = cableAsk;
+    FX.canjeBid = canjeBid; FX.canjeAsk = canjeAsk;
     FX.brechaBid= brechaBid;FX.brechaAsk= brechaAsk;
-    // Compatibilidad legacy (algunas funciones aún las leen)
-    FX.cableBid = mepBid;   FX.cableAsk = mepAsk;
-    FX.canjeBid = 0;        FX.canjeAsk = 0;
 
     const $ = id => document.getElementById(id);
     if($('fx-a3500-bid')) $('fx-a3500-bid').textContent = fmt(a3500Bid);
     if($('fx-a3500-ask')) $('fx-a3500-ask').textContent = fmt(a3500Ask);
     if($('fx-a3500-badge')) $('fx-a3500-badge').style.display = FX_MANUAL_A3500.active ? 'inline-block' : 'none';
     if($('fx-a3500-reset')) $('fx-a3500-reset').style.display = FX_MANUAL_A3500.active ? 'inline-block' : 'none';
-    if($('fx-mep-bid'))   $('fx-mep-bid').textContent   = fmt(mepBid);
-    if($('fx-mep-ask'))   $('fx-mep-ask').textContent   = fmt(mepAsk);
-    if($('fx-brecha-bid'))$('fx-brecha-bid').textContent= fmtp(brechaBid);
-    if($('fx-brecha-ask'))$('fx-brecha-ask').textContent= fmtp(brechaAsk);
+    if($('fx-mep-bid'))    $('fx-mep-bid').textContent    = fmt(mepBid);
+    if($('fx-mep-ask'))    $('fx-mep-ask').textContent    = fmt(mepAsk);
+    if($('fx-cable-bid'))  $('fx-cable-bid').textContent  = fmt(cableBid);
+    if($('fx-cable-ask'))  $('fx-cable-ask').textContent  = fmt(cableAsk);
+    if($('fx-canje-bid'))  $('fx-canje-bid').textContent  = fmtp(canjeBid);
+    if($('fx-canje-ask'))  $('fx-canje-ask').textContent  = fmtp(canjeAsk);
+    if($('fx-brecha-bid')) $('fx-brecha-bid').textContent = fmtp(brechaBid);
+    if($('fx-brecha-ask')) $('fx-brecha-ask').textContent = fmtp(brechaAsk);
     if($('fx-ts'))        $('fx-ts').textContent =
       new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Buenos_Aires'});
     if(typeof updateDLEquiv==='function') updateDLEquiv();
@@ -1429,13 +1648,16 @@ function seedDemo(){const rng=(a,b,d=2)=>parseFloat((Math.random()*(b-a)+a).toFi
 // Devuelve {tir, tna} o null si no se puede calcular
 // Calcula TIR y TNA para un precio ARS dado.
 // Internamente convierte ARS → USD-eq usando A3500 spot.
-function calcTIRForPrice(b, precioARS){
-  if(!precioARS||precioARS<=0||!b.venc) return null;
-  // ARS → USD-eq
-  const a3500Mid = (FX.a3500Bid && FX.a3500Ask) ? (FX.a3500Bid + FX.a3500Ask)/2
-                   : (FX.a3500Bid || FX.a3500Ask || null);
-  if(!a3500Mid) return null;
-  const precio = precioARS / a3500Mid;
+function calcTIRForPrice(b, precioInput){
+  if(!precioInput||precioInput<=0||!b.venc) return null;
+  let precio;
+  if(b.moneda==='DL'){
+    const a3500Mid=(FX.a3500Bid&&FX.a3500Ask)?(FX.a3500Bid+FX.a3500Ask)/2:(FX.a3500Bid||FX.a3500Ask||null);
+    if(!a3500Mid) return null;
+    precio=precioInput/a3500Mid;
+  } else {
+    precio=precioInput; // HD: ya en USD
+  }
   if(precio<=0) return null;
 
   const today=new Date();today.setHours(0,0,0,0);
@@ -1576,6 +1798,12 @@ function fMatch(set, val){
 function visible(){
   const q=document.getElementById('srch').value.toLowerCase();
   return bonds.filter(b=>{
+    if(activeType==='DL' && b.moneda!=='DL') return false;
+    if(activeType==='HD' && b.moneda==='DL') return false;
+    if(activeType==='HD'){
+      if(!fMatch(F.leg, b.leg)) return false;
+      if(!fMatch(F.jur, b.jur)) return false;
+    }
     if(!fMatch(F.sector, b.sector)) return false;
     if(!fMatch(F.call, b.callable)) return false;
     if(!F.anio.has('all')){
@@ -1606,6 +1834,51 @@ function setMainView(view){
   document.getElementById('mvtab-tabla').style.cssText += isTabla  ? activeStyle : inactiveStyle;
   document.getElementById('mvtab-pagos').style.cssText += !isTabla ? activeStyle : inactiveStyle;
   if(!isTabla) renderCalendario();
+}
+
+function setTypeTab(type){
+  activeType=type;
+  // Reset all filters
+  ['sector','anio','call','leg','jur'].forEach(k=>{F[k].clear();F[k].add('all');});
+  F.emisor.clear();
+  document.querySelectorAll('.fb').forEach(b=>{
+    b.classList.toggle('on', b.dataset.v==='all');
+  });
+  document.getElementById('srch').value='';
+  // Show/hide HD-specific filter rows
+  const isHD=type==='HD';
+  document.getElementById('filter-row-leg').style.display=isHD?'':'none';
+  document.getElementById('filter-row-jur').style.display=isHD?'':'none';
+  // Style type tab buttons
+  document.querySelectorAll('.typetab').forEach(b=>{
+    const active=b.id==='typetab-'+type.toLowerCase();
+    b.style.borderColor=active?'var(--teal)':'var(--border)';
+    b.style.background=active?'rgba(45,212,191,.12)':'transparent';
+    b.style.color=active?'var(--teal)':'var(--muted2)';
+  });
+  // Update emisor dropdown
+  updateEmisorLabel();
+  buildEmisorOpts('');
+  // Show/hide HD currency selector
+  const hdCurr=document.getElementById('hd-currency-tabs');
+  if(hdCurr) hdCurr.style.display=isHD?'flex':'none';
+  // Close panel and re-render
+  try{ closePanel(); }catch(_){}
+  render();
+}
+
+function setHdCurrencyView(view){
+  hdCurrencyView=view;
+  const views=['mep','ars','cable'];
+  views.forEach(v=>{
+    const btn=document.getElementById('hdtab-'+v);
+    if(!btn) return;
+    const active=v===view;
+    btn.style.borderColor=active?'var(--teal)':'var(--border)';
+    btn.style.background=active?'rgba(45,212,191,.1)':'transparent';
+    btn.style.color=active?'var(--teal)':'var(--muted2)';
+  });
+  render();
 }
 
 function setMonedaTab(tab){
@@ -1644,8 +1917,9 @@ function render(){
   document.getElementById('s3').textContent=wp.length?'$ '+(wp.reduce((s,b)=>s+Number(b.precio),0)/wp.length).toLocaleString('es-AR',{maximumFractionDigits:0}):'—';
   document.getElementById('s4').textContent=wv.length?wv.reduce((s,b)=>s+Number(b.vol),0).toFixed(0):'—';
   document.getElementById('s6').textContent=data.filter(b=>b.callable==='Si').length;
-  document.getElementById('bond-count').textContent=bonds.length;
-  document.getElementById('total-count').textContent=bonds.length;
+  const typeBondsCount=activeType==='DL'?bonds.filter(b=>b.moneda==='DL').length:bonds.filter(b=>b.moneda!=='DL').length;
+  document.getElementById('bond-count').textContent=typeBondsCount;
+  document.getElementById('total-count').textContent=typeBondsCount;
   const mx=Math.max(...data.map(b=>b.tir||0),1);
   const tbody=document.getElementById('tbody');tbody.innerHTML='';
   data.forEach(b=>{
@@ -1656,13 +1930,18 @@ function render(){
     const tr=document.createElement('tr');
     if(ACTIVE_TK===b.ticker) tr.classList.add('active-row');
 
-    // ── DL: Bid/Ask siempre en ARS, TIR calculada con USD-eq internamente ────
-    const tabBid = b.bid;  // ARS
-    const tabAsk = b.ask;  // ARS
-    const showBid = b.bid;
-    const showAsk = b.ask;
+    // ── Bid/Ask según tipo de bono y vista de moneda ───────────────────────────
+    const isHDBond = (b.moneda !== 'DL');
+    let tabBid, tabAsk, showBid, showAsk;
+    if(!isHDBond){
+      tabBid=b.bid; tabAsk=b.ask; showBid=b.bid; showAsk=b.ask;
+    } else {
+      tabBid=b.bid_usd; tabAsk=b.ask_usd;
+      if(hdCurrencyView==='ars'){ showBid=b.bid_ars; showAsk=b.ask_ars; }
+      else if(hdCurrencyView==='cable'){ showBid=b.bid_cable; showAsk=b.ask_cable; }
+      else { showBid=b.bid_usd; showAsk=b.ask_usd; }
+    }
 
-    // ── Bid TIR / Ask TIR — convertimos ARS a USD-eq dentro de calcTIRForPrice ─
     const bidCalc = (tabBid&&tabBid>0) ? calcTIRForPrice(b, tabBid)  : null;
     const askCalc = (tabAsk&&tabAsk>0) ? calcTIRForPrice(b, tabAsk)  : null;
     b.bidTna = bidCalc ? bidCalc.tna : null;
@@ -1671,7 +1950,9 @@ function render(){
     // ── Cell builders ─────────────────────────────────────────────────────────
     function bidAskCell(p, calc, colorVar){
       if(!p||p<=0) return `<span style="color:var(--muted2)">—</span>`;
-      // ARS: precio grande sin decimales con miles
+      if(isHDBond && hdCurrencyView!=='ars'){
+        return `<span style="font-weight:500;font-size:.7rem;color:${colorVar}">$${p.toFixed(2)}</span>`;
+      }
       return `<span style="font-weight:500;font-size:.7rem;color:${colorVar}">$${p.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>`;
     }
     function tnaOnlyCell(calc, colorVar){
@@ -2304,7 +2585,8 @@ function restoreState(tk, bond) {
     // Primera vez que se abre este bono: valores por defecto desde metadata
     manualPrecio = false; manualTIR = false;
     const pel = document.getElementById('inp-precio');
-    if (bond.precio) { pel.value = bond.precio.toFixed(0); pel.classList.remove('manual-override'); }
+    const isHDB = bond.moneda !== 'DL';
+    if (bond.precio) { pel.value = isHDB ? bond.precio.toFixed(2) : bond.precio.toFixed(0); pel.classList.remove('manual-override'); }
     else pel.value = '';
     const tirEl = document.getElementById('inp-tir');
     tirEl.value = ''; tirEl.classList.remove('tir-override');
@@ -2416,6 +2698,18 @@ function openPanel(bond) {
   panelDirty = false;
   document.getElementById('cp-title').textContent = bond.emisor;
   document.getElementById('cp-sub').textContent   = bond.ticker + ' · ' + bond.sector + ' · ' + bond.moneda;
+  // Adaptar label e input de precio según tipo de bono
+  const isHDBond = bond.moneda !== 'DL';
+  const lbP = document.querySelector('label[for="inp-precio"],label:has(#inp-precio)');
+  const inpP = document.getElementById('inp-precio');
+  if(inpP){
+    inpP.step = isHDBond ? '0.01' : '100';
+    inpP.placeholder = isHDBond ? 'ej: 98.50' : 'ej: 138500';
+  }
+  const lbEl = document.querySelector('label.form-label');
+  // Update label text via badge container
+  const pLabel = document.getElementById('price-label-text');
+  if(pLabel) pLabel.textContent = isHDBond ? 'Precio USD (% VN)' : 'Precio ARS (por VN 100k)';
   // Mostrar botón guardar (oculto hasta que haya cambios)
   const btnSave=document.getElementById('btn-save-bond');
   if(btnSave){btnSave.classList.remove('dirty');btnSave.style.display='none';}
@@ -2464,7 +2758,7 @@ function resetPrecio(){
     }
   }
   const el=document.getElementById('inp-precio');
-  if(b&&b.precio) el.value=b.precio.toFixed(0);
+  if(b&&b.precio) el.value=b.moneda!=='DL'?b.precio.toFixed(2):b.precio.toFixed(0);
   el.classList.remove('manual-override');
   document.getElementById('badge-price').style.display='none';
   document.getElementById('btn-reset-precio').classList.remove('visible');
@@ -2478,13 +2772,15 @@ function resetTNA(){manualTIR=false;const e=document.getElementById('inp-tna');e
 function updateDLEquiv(){
   const wrap = document.getElementById('dl-equiv');
   if(!wrap) return;
+  // Solo mostrar para bonos DL
+  const activeB = ACTIVE_TK ? bonds.find(b=>b.ticker===ACTIVE_TK) : null;
+  if(activeB && activeB.moneda !== 'DL'){ wrap.style.display='none'; return; }
   const a3500Mid = (FX.a3500Bid && FX.a3500Ask) ? (FX.a3500Bid + FX.a3500Ask)/2
                    : (FX.a3500Bid || FX.a3500Ask || null);
   const pARS = parseFloat(document.getElementById('inp-precio').value);
   if(!a3500Mid || isNaN(pARS) || pARS<=0){
     wrap.style.display='none'; return;
   }
-  // ARS → USD-eq: ars/a3500 = "% sobre 100 VN"
   const pUSD = pARS / a3500Mid;
   document.getElementById('dl-eq-usd').textContent = pUSD.toFixed(2)+' %';
   document.getElementById('dl-eq-a3500').textContent = '$ '+a3500Mid.toFixed(2);
@@ -2518,16 +2814,17 @@ document.getElementById('inp-precio').addEventListener('input',function(){
     if(!isNaN(v)&&v>0){
       if(b){
         b.precio = v;
-        b.precio_ars = v;
-        const a3500Mid = (FX.a3500Bid && FX.a3500Ask) ? (FX.a3500Bid + FX.a3500Ask)/2
-                         : (FX.a3500Bid || FX.a3500Ask || null);
-        if(a3500Mid){
-          b.precio_usd_eq = v / a3500Mid;
+        if(b.moneda==='DL'){
+          b.precio_ars = v;
+          const a3500Mid=(FX.a3500Bid&&FX.a3500Ask)?(FX.a3500Bid+FX.a3500Ask)/2:(FX.a3500Bid||FX.a3500Ask||null);
+          if(a3500Mid){ b.precio_usd_eq=v/a3500Mid; recalcTIR(b); }
+        } else {
+          b.precio_usd_eq = v; // HD: ya en USD
           recalcTIR(b);
         }
       }
       const tblInp=document.getElementById('pinp-'+ACTIVE_TK);
-      if(tblInp) tblInp.value=v.toFixed(0);
+      if(tblInp) tblInp.value=v.toFixed(b&&b.moneda!=='DL'?2:0);
     }
     saveState(ACTIVE_TK);
   }
@@ -2702,19 +2999,20 @@ function calcFromPanel(){
     ? Math.round((cfRaw[cfRaw.length-1].fecha-cfRaw[cfRaw.length-2].fecha)/(24*3600*1000))
     : Math.round(per/12*365);
 
-  // ── DL: el usuario ingresa precio en ARS. Internamente trabajamos con USD-eq.
-  // Necesitamos A3500 spot para hacer la conversión.
-  const a3500Mid = (FX.a3500Bid && FX.a3500Ask) ? (FX.a3500Bid + FX.a3500Ask)/2
-                   : (FX.a3500Bid || FX.a3500Ask || null);
-  if(!a3500Mid){
-    alert('Falta el tipo de cambio A3500. Esperá a que cargue el panel FX o recargá la página.');
-    return;
+  // Determinar tipo de bono (DL o HD)
+  const activeBond = ACTIVE_TK ? bonds.find(b=>b.ticker===ACTIVE_TK) : null;
+  const isHD = activeBond ? activeBond.moneda !== 'DL' : false;
+
+  let a3500Mid = null, arsToUsd, usdToArs;
+  if(isHD){
+    arsToUsd = v => v;   // HD: precio ya en USD
+    usdToArs = v => v;
+  } else {
+    a3500Mid = (FX.a3500Bid && FX.a3500Ask) ? (FX.a3500Bid + FX.a3500Ask)/2 : (FX.a3500Bid || FX.a3500Ask || null);
+    if(!a3500Mid){ alert('Falta el tipo de cambio A3500. Esperá a que cargue el panel FX.'); return; }
+    arsToUsd = ars => ars / a3500Mid;
+    usdToArs = usd => usd * a3500Mid;
   }
-  // Conversiones bidireccionales:
-  //   ARS → USD-eq (% VN): ars/a3500     (ej: 154480/1380 ≈ 111.94)
-  //   USD-eq → ARS:        usd*a3500
-  const arsToUsd = (ars) => ars / a3500Mid;
-  const usdToArs = (usd) => usd * a3500Mid;
 
   let precioARS, precioUSD, tir;
   const tnaInpVal=parseFloat(document.getElementById('inp-tna').value);
@@ -2722,9 +3020,8 @@ function calcFromPanel(){
   const tnaIsManual=manualTIR && !isNaN(tnaInpVal) && document.getElementById('inp-tna').value!=='';
 
   if(!manualTIR){
-    // Input es precio (ARS) → calcular TIR
     precioARS=parseFloat(document.getElementById('inp-precio').value);
-    if(isNaN(precioARS)||precioARS<=0){alert('Ingresá un precio válido en ARS.');return;}
+    if(isNaN(precioARS)||precioARS<=0){alert('Ingresá un precio válido.');return;}
     precioUSD = arsToUsd(precioARS);
     tir=calcTIR(cf,precioUSD);
     if(tir===null){alert('No convergió el cálculo. Revisá los datos.');return;}
@@ -2735,20 +3032,23 @@ function calcFromPanel(){
     if(isNaN(tir)||tir===null){alert('TNA inválida.');return;}
     precioUSD=parseFloat(calcPrecioFromTIR(cf,tir).toFixed(4));
     precioARS=usdToArs(precioUSD);
-    const pe=document.getElementById('inp-precio');pe.value=precioARS.toFixed(0);pe.classList.remove('manual-override');document.getElementById('badge-price').style.display='none';
+    const pe=document.getElementById('inp-precio');
+    pe.value=isHD?precioARS.toFixed(2):precioARS.toFixed(0);
+    pe.classList.remove('manual-override');document.getElementById('badge-price').style.display='none';
     const te=document.getElementById('inp-tir');te.value=tir.toFixed(4);te.classList.remove('tir-override');document.getElementById('badge-tir').style.display='none';
   } else {
     if(isNaN(tirInpVal)){alert('Ingresá una TIR válida.');return;}
     tir=tirInpVal;
     precioUSD=parseFloat(calcPrecioFromTIR(cf,tir).toFixed(4));
     precioARS=usdToArs(precioUSD);
-    const pe=document.getElementById('inp-precio');pe.value=precioARS.toFixed(0);pe.classList.remove('manual-override');document.getElementById('badge-price').style.display='none';
+    const pe=document.getElementById('inp-precio');
+    pe.value=isHD?precioARS.toFixed(2):precioARS.toFixed(0);
+    pe.classList.remove('manual-override');document.getElementById('badge-price').style.display='none';
   }
-  // A partir de acá todos los cálculos usan precioUSD (% sobre 100 VN) — consistente con los flujos
   const met=calcMetrics(cf,precioUSD,tir,per);
   const tna=tirToTNA(tir,per,diasProxPeriodo);
   const cc=calcCC(cfRaw,cupon,per);
-  const plUSD=parseFloat((precioUSD-cc).toFixed(4)); // precio limpio en %VN
+  const plUSD=parseFloat((precioUSD-cc).toFixed(4));
   const lbl={6:'semestral',3:'trimestral',1:'mensual',12:'anual'};
   if(!tnaIsManual){
     const tnaEl=document.getElementById('inp-tna');
@@ -2757,13 +3057,18 @@ function calcFromPanel(){
     document.getElementById('badge-tna').style.display='none';
     document.getElementById('btn-reset-tna').classList.remove('visible');
   }
-  // Resultados — TIR/TNA en USD-eq, precios mostrados como %VN (sin decimales para ARS)
-  document.getElementById('res-tir').textContent=tir.toFixed(2)+'%';document.getElementById('res-tir-sub').textContent='USD-eq · T+1';
-  document.getElementById('res-tna').textContent=tna.toFixed(2)+'%';document.getElementById('res-tna-sub').textContent='nominal USD-eq 180/360';
-  // Precio limpio y sucio en ARS
-  const plARS=usdToArs(plUSD);
-  document.getElementById('res-pl').textContent='$ '+plARS.toLocaleString('es-AR',{maximumFractionDigits:0});
-  document.getElementById('res-ps').textContent='$ '+precioARS.toLocaleString('es-AR',{maximumFractionDigits:0});
+  const tirLbl = isHD ? 'USD · T+1' : 'USD-eq · T+1';
+  const tnaLbl = isHD ? 'nominal USD 180/360' : 'nominal USD-eq 180/360';
+  document.getElementById('res-tir').textContent=tir.toFixed(2)+'%';document.getElementById('res-tir-sub').textContent=tirLbl;
+  document.getElementById('res-tna').textContent=tna.toFixed(2)+'%';document.getElementById('res-tna-sub').textContent=tnaLbl;
+  if(isHD){
+    document.getElementById('res-pl').textContent=plUSD.toFixed(2)+'%';
+    document.getElementById('res-ps').textContent=precioUSD.toFixed(2)+'%';
+  } else {
+    const plARS=usdToArs(plUSD);
+    document.getElementById('res-pl').textContent='$ '+plARS.toLocaleString('es-AR',{maximumFractionDigits:0});
+    document.getElementById('res-ps').textContent='$ '+precioARS.toLocaleString('es-AR',{maximumFractionDigits:0});
+  }
   document.getElementById('res-cc').textContent=cc.toFixed(4)+'%';document.getElementById('res-cc-sub').textContent='% VN devengado hoy';
   document.getElementById('res-dm').textContent=met.durMod.toFixed(2)+' a.';document.getElementById('res-dm-sub').textContent='Macaulay: '+met.durMac.toFixed(2)+' a.';
   document.getElementById('res-cvx').textContent=met.convex.toFixed(2);
@@ -3278,8 +3583,9 @@ function isExpired(b){
 function buildEmisorOpts(filter=''){
   const container=document.getElementById('emisor-opts');
   if(!container)return;
-  // Get sorted unique emisors from all bonds
-  const all=[...new Set(bonds.map(b=>b.emisor).filter(Boolean))].sort();
+  // Get sorted unique emisors from bonds of current tab
+  const typeBonds = activeType==='DL' ? bonds.filter(b=>b.moneda==='DL') : bonds.filter(b=>b.moneda!=='DL');
+  const all=[...new Set(typeBonds.map(b=>b.emisor).filter(Boolean))].sort();
   const q=filter.toLowerCase();
   const filtered=q?all.filter(e=>e.toLowerCase().includes(q)):all;
   container.innerHTML='';
