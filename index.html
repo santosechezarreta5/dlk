@@ -385,14 +385,16 @@ window.SUPABASE_CONFIG = {
     <span style="color:#fbbf24;font-size:.6rem;font-weight:700;letter-spacing:.08em;">EN ALERTA AHORA</span>
     <span id="lap-count" style="background:#fbbf24;color:#07090f;font-size:.55rem;font-weight:700;padding:1px 6px;border-radius:10px;"></span>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 48px 52px 70px 44px;border-bottom:1px solid #0f1623;">
+  <div style="display:grid;grid-template-columns:1fr 36px 42px 52px 60px 55px 44px;border-bottom:1px solid #0f1623;">
     <div style="padding:4px 12px;font-size:.55rem;color:#475569;font-weight:600;">TICKER</div>
-    <div style="padding:4px 8px;font-size:.55rem;color:#475569;font-weight:600;">MON</div>
-    <div style="padding:4px 8px;font-size:.55rem;color:#475569;font-weight:600;">LADO</div>
-    <div style="padding:4px 8px;font-size:.55rem;color:#475569;font-weight:600;">PRECIO</div>
-    <div style="padding:4px 8px;font-size:.55rem;color:#475569;font-weight:600;">HORA</div>
+    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">TIPO</div>
+    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">MON</div>
+    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">LADO</div>
+    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">PRECIO</div>
+    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">TNA %</div>
+    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">HORA</div>
   </div>
-  <div id="lap-rows" style="display:grid;grid-template-columns:1fr 48px 52px 70px 44px;max-height:320px;overflow-y:auto;"></div>
+  <div id="lap-rows" style="display:grid;grid-template-columns:1fr 36px 42px 52px 60px 55px 44px;max-height:320px;overflow-y:auto;"></div>
 </div>
 <main id="main-content">
   <div class="hero">
@@ -4442,9 +4444,11 @@ function evaluateAlerts(){
           const ctx  = ctxs.find(x=>x.moneda===moneda)||{};
           liveTicker[key_ticker]={
             ticker:   b.ticker,
+            tipoBono: b.moneda==='DL' ? 'DL' : 'HD',
             side,
             precio:   side==='bid' ? ctx.bid : ctx.ask,
             tna:      side==='bid' ? ctx.bidTna : ctx.askTna,
+            tir:      b.tir,
             moneda,
             condName: cond.name,
             time:     now,
@@ -4465,13 +4469,21 @@ function evaluateAlerts(){
 
 // ── Notificación ──────────────────────────────────────────────────────────────
 function aFire(c, hits, key, side, moneda){
-  const tickers=hits.slice(0,6).map(b=>b.ticker).join(', ')+(hits.length>6?` +${hits.length-6}`:'');
   const monedaLabel = moneda ? ` [${moneda}]` : '';
   const title=`🔔 ${c.name}${monedaLabel}`;
-  const body=`${hits.length} bono${hits.length>1?'s':''}: ${tickers}`;
+  const tickerLines = hits.slice(0,5).map(b=>{
+    const tipo = b.moneda==='DL' ? 'DL' : 'HD';
+    const tasa = b.tna!=null ? `TNA ${b.tna.toFixed(2)}%` : (b.tir!=null ? `TIR ${b.tir.toFixed(2)}%` : '');
+    return `${b.ticker} · ${tipo}${tasa ? ' · '+tasa : ''}`;
+  });
+  if(hits.length>5) tickerLines.push(`+${hits.length-5} más`);
+  const body=tickerLines.join('<br>');
+  // Para Notification API (texto plano)
+  const bodyPlain=tickerLines.join(' | ');
   const time=new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Argentina/Buenos_Aires'});
 
   // Guardar en historial del día
+  const tickers=hits.map(b=>b.ticker).join(', ');
   _hist.entries.unshift({key, condName:c.name, tickers, time, count:hits.length});
   saveHistory(_hist);
 
@@ -4479,7 +4491,7 @@ function aFire(c, hits, key, side, moneda){
 
   if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
     const n=new Notification(title,{
-      body,
+      body:bodyPlain,
       tag: String(c.id)+'|'+moneda,
       icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🔔</text></svg>',
       requireInteraction: false,
@@ -4518,10 +4530,14 @@ function updateLiveTickerPanel(liveTicker){
     var st='padding:5px 12px;border-bottom:1px solid #0c1420;font-size:.65rem;';
     function mk(h){var el=document.createElement('div');el.style.cssText=st;el.innerHTML=h;return el;}
     const mc={'USD-eq':'#60a5fa','MEP':'#60a5fa','ARS':'#fbbf24','CABLE':'#a78bfa'}[d.moneda]||'#64748b';
+    const tc=d.tipoBono==='DL'?'#2dd4bf':'#a78bfa';
+    const tnaStr=d.tna!=null?parseFloat(d.tna).toFixed(2)+'%':'—';
     rows_el.appendChild(mk('<span style="font-family:IBM Plex Mono,monospace;font-weight:600;color:#e2e8f0;" title="'+d.condName+'">'+d.ticker+'</span>'));
-    rows_el.appendChild(mk('<span style="color:'+mc+';font-weight:600;font-size:.58rem;">'+( d.moneda||'USD-eq')+'</span>'));
+    rows_el.appendChild(mk('<span style="color:'+tc+';font-weight:700;font-size:.58rem;">'+(d.tipoBono||'—')+'</span>'));
+    rows_el.appendChild(mk('<span style="color:'+mc+';font-weight:600;font-size:.58rem;">'+(d.moneda||'USD-eq')+'</span>'));
     rows_el.appendChild(mk('<span style="color:'+sc+';font-weight:600;">'+sl+'</span>'));
     rows_el.appendChild(mk('<span style="color:#2dd4bf;font-weight:500;">'+px+'</span>'));
+    rows_el.appendChild(mk('<span style="color:#fbbf24;font-weight:500;font-size:.6rem;">'+tnaStr+'</span>'));
     rows_el.appendChild(mk('<span style="color:#64748b;font-size:.6rem;">'+d.time+'</span>'));
   });
 }
