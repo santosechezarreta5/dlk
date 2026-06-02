@@ -1979,6 +1979,8 @@ function render(){
       dur:      `<span style="color:var(--text2)">${b.dur!=null?b.dur.toFixed(1)+'a':'—'}</span>`,
       venc:     `<span style="color:var(--text2);font-size:.62rem">${vf}</span>`,
       callable: `<span class="call-badge ${b.callable==='Si'?'call-yes':'call-no'}">${b.callable==='Si'?'✓ Sí':'— No'}</span>`,
+      leg:      `<span style="color:var(--text2);font-size:.6rem">${b.leg||'—'}</span>`,
+      jur:      `<span style="color:var(--text2);font-size:.6rem">${b.jur||'—'}</span>`,
     };
 
     COL_DEFS.forEach(col=>{
@@ -2009,6 +2011,8 @@ const COL_DEFS = [
   {id:'dur',      label:'Duration',     sort:'dur',      width:80,  visible:true},
   {id:'venc',     label:'Vencimiento',  sort:'venc',     width:95,  visible:true},
   {id:'callable', label:'Callable',     sort:'callable', width:75,  visible:true},
+  {id:'leg',      label:'Legislación',  sort:'leg',      width:100, visible:false},
+  {id:'jur',      label:'Jurisdicción', sort:'jur',      width:100, visible:false},
 ];
 
 // Persistir configuración de columnas
@@ -4020,6 +4024,9 @@ const AFIELDS=[
   {v:'ticker',   l:'Ticker'},
   {v:'emisor',   l:'Emisor'},
   {v:'sector',   l:'Sector'},
+  {v:'moneda',   l:'Tipo bono (DL/HD)'},
+  {v:'leg',      l:'Legislación'},
+  {v:'jur',      l:'Jurisdicción'},
   {v:'callable', l:'Callable'},
   {v:'venc_year',l:'Año Vcto.'},
   {v:'bid',      l:'Bid precio'},
@@ -4273,7 +4280,7 @@ function buildCondUI(){
 }
 
 // Campos que usan desplegable con opciones derivadas de bonds
-const ADROPDOWN = new Set(['ticker','emisor','sector','leg','jur','callable']);
+const ADROPDOWN = new Set(['ticker','emisor','sector','moneda','leg','jur','callable']);
 
 // Obtener opciones únicas ordenadas para un campo
 function aFieldOpts(field){
