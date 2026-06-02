@@ -1339,16 +1339,7 @@ async function reloadCatalog(opts){
       };
     });
   }
-  const catalogRaw = await Catalog.loadAll();
-  // Mergear con BASE_META: los bonos de Supabase tienen prioridad,
-  // pero cualquier bono en BASE_META que no esté en Supabase (ej: bonos HD)
-  // siempre se incluye.
-  const catalogMap = {};
-  catalogRaw.forEach(b => catalogMap[b.ticker] = b);
-  Object.entries(BASE_META).forEach(([tk, m]) => {
-    if(!catalogMap[tk]) catalogRaw.push({ticker:tk, ...m});
-  });
-  const catalog = catalogRaw;
+  const catalog = await Catalog.loadAll();
   const today = new Date(); today.setHours(0,0,0,0);
   bonds = catalog
     .map(m => ({
@@ -3180,8 +3171,13 @@ function renderHolidays(){
 function addHoliday(){const v=document.getElementById('inp-holiday').value;if(!v)return;const dt=new Date(v+'T12:00:00');if(!HOLIDAYS.some(h=>h.toISOString().substring(0,10)===v)){HOLIDAYS.push(dt);HOLIDAYS.sort((a,b)=>a-b);renderHolidays();document.getElementById('inp-holiday').value='';}}
 function removeHoliday(i){HOLIDAYS.splice(i,1);renderHolidays();}
 
-// FIX #3: agregar bono nuevo
+// Agregar bono nuevo — requiere admin login cuando Supabase está configurado
 function openAddModal(){
+  if(Catalog.isRemote && !Catalog.isLoggedIn()){
+    showWarn('Iniciá sesión como admin (🔒) para agregar bonos al catálogo.');
+    setTimeout(onAdminClick, 300);
+    return;
+  }
   document.getElementById('modal-bond-title').textContent='Agregar nuevo bono';
   ['mb-ticker','mb-cupon'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('mb-venc').value='';
