@@ -401,11 +401,6 @@ window.SUPABASE_CONFIG = {
     <div class="h-title">BONOS CORPORATIVOS AR</div>
     <div class="h-sub">// data912.com + dolarapi.com · <span id="bond-count">64</span> instrumentos · Auto-refresh 30s · Click para calculadora</div>
   </div>
-  <div class="stats">
-    <div class="stat"><div class="sl">Mostrando</div><div class="sv c-blue" id="s0">—</div><div class="ss">instrumentos</div></div>
-    <div class="stat"><div class="sl">Con precio</div><div class="sv c-sky" id="s1">—</div><div class="ss">datos mercado</div></div>
-    <div class="stat"><div class="sl">Actualización</div><div class="sv c-sky" style="font-size:.95rem" id="s5">—</div><div class="ss">hora Bs. As.</div></div>
-  </div>
   <div class="alert warn" id="warn-bar"></div>
   <div class="alert err" id="err-bar"></div>
   <div class="alert suc" id="suc-bar"></div>
@@ -468,7 +463,20 @@ window.SUPABASE_CONFIG = {
         <span class="fx-ask fx-canje" id="fx-canje-ask">—</span>
       </div>
     </div>
-    <div class="fx-label fx-loading" id="fx-ts" style="margin-left:auto"></div>
+    <!-- Indicadores integrados -->
+    <div class="fx-group fx-ind" style="margin-left:auto">
+      <div class="fx-name">Mostrando</div>
+      <div class="fx-val"><span id="s0" style="color:var(--blue-l)">—</span></div>
+    </div>
+    <div class="fx-group fx-ind">
+      <div class="fx-name">Con precio</div>
+      <div class="fx-val"><span id="s1" style="color:var(--sky)">—</span></div>
+    </div>
+    <div class="fx-group fx-ind" style="border-right:none">
+      <div class="fx-name">Actualización</div>
+      <div class="fx-val" style="font-size:.7rem"><span id="s5" style="color:var(--sky)">—</span></div>
+    </div>
+    <div class="fx-label fx-loading" id="fx-ts"></div>
   </div>
   <div class="chart-panel">
     <div class="cp-head">
