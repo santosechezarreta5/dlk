@@ -1943,6 +1943,7 @@ function render(){
     const bc={USD:'b-usd',ARS:'b-ars',CER:'b-cer'}[b.moneda]||'b-usd',sc=SCLS[b.sector]||'s-i';
     const bw=b.tir?Math.round(b.tir/mx*100):0,tc=b.tir>12?'c-red':b.tir>9?'c-amber':'c-teal',tc2=b.tir>12?'#f87171':b.tir>9?'#fbbf24':'#2dd4bf';
     const vf=b.venc?b.venc.split('-').reverse().join('/'):'—';
+    const ef=b.fecha_emision?b.fecha_emision.split('-').reverse().join('/'):'—';
     const tnaDisp=b.tna!=null?b.tna:(b.tir!=null&&b.periodicidad?tirToTNA(b.tir,b.periodicidad):null);
     const tr=document.createElement('tr');
     if(ACTIVE_TK===b.ticker) tr.classList.add('active-row');
@@ -1993,6 +1994,7 @@ function render(){
       tir:      tirCell,
       tna:      `<span class="tna-val" id="tna-${b.ticker}">${tnaDisp!=null?tnaDisp.toFixed(2)+'%':'—'}</span>`,
       dur:      `<span style="color:var(--text2)">${b.dur!=null?b.dur.toFixed(1)+'a':'—'}</span>`,
+      emision:  `<span style="color:var(--text2);font-size:.62rem">${ef}</span>`,
       venc:     `<span style="color:var(--text2);font-size:.62rem">${vf}</span>`,
       callable: `<span class="call-badge ${b.callable==='Si'?'call-yes':'call-no'}">${b.callable==='Si'?'✓ Sí':'— No'}</span>`,
       leg:      `<span style="color:var(--text2);font-size:.6rem">${b.leg||'—'}</span>`,
@@ -2025,6 +2027,7 @@ const COL_DEFS = [
   {id:'tir',      label:'TIR %',        sort:'tir',      width:100, visible:false},
   {id:'tna',      label:'TNA %',        sort:'tna',      width:80,  visible:false},
   {id:'dur',      label:'Duration',     sort:'dur',      width:80,  visible:true},
+  {id:'emision',  label:'Emisión',      sort:'fecha_emision', width:95, visible:false},
   {id:'venc',     label:'Vencimiento',  sort:'venc',     width:95,  visible:true},
   {id:'callable', label:'Callable',     sort:'callable', width:75,  visible:true},
   {id:'leg',      label:'Legislación',  sort:'leg',      width:100, visible:false},
