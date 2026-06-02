@@ -706,6 +706,7 @@ window.SUPABASE_CONFIG = {
             <select class="form-select panel-readonly" id="fi-periodicidad" disabled>
               <option value="6">Semestral (6m)</option><option value="3">Trimestral (3m)</option>
               <option value="1">Mensual (1m)</option><option value="12">Anual (12m)</option>
+              <option value="0">Al vencimiento (interés al final)</option>
             </select></div>
           <div class="form-group"><label class="form-label">Base de días</label>
             <select class="form-select panel-readonly" id="fi-base-dias" disabled>
@@ -839,7 +840,7 @@ window.SUPABASE_CONFIG = {
         <div class="form-group"><label class="form-label">Tipo cupón</label>
           <select class="form-select" id="mb-tipo-cupon"><option value="fijo">Fijo</option><option value="badlar">BADLAR+</option><option value="cer">CER+</option><option value="otro">Otro</option></select></div>
         <div class="form-group"><label class="form-label">Periodicidad (meses)</label>
-          <select class="form-select" id="mb-periodicidad"><option value="6">6 – Semestral</option><option value="3">3 – Trimestral</option><option value="1">1 – Mensual</option><option value="12">12 – Anual</option></select></div>
+          <select class="form-select" id="mb-periodicidad"><option value="6">6 – Semestral</option><option value="3">3 – Trimestral</option><option value="1">1 – Mensual</option><option value="12">12 – Anual</option><option value="0">Al vencimiento (interés al final)</option></select></div>
         <div class="form-group"><label class="form-label">Base de días</label>
           <select class="form-select" id="mb-base-dias"><option value="act365">ACT/365</option><option value="act360">ACT/360</option><option value="30_360">30/360</option><option value="180_360">180/360</option></select></div>
         <div class="form-group"><label class="form-label">Amortización</label>
@@ -1193,7 +1194,7 @@ const Catalog = (() => {
       venc: r.venc,
       cupon: parseFloat(r.cupon)||0,
       tipo_cupon: r.tipo_cupon || 'fijo',
-      periodicidad: r.periodicidad || 6,
+      periodicidad: r.periodicidad ?? 6,
       base_dias: r.base_dias || 'act365',
       amort: r.amort || 'bullet',
       callable: r.callable || 'No',
@@ -1217,7 +1218,7 @@ const Catalog = (() => {
       venc: b.venc,
       cupon: numOrNull(b.cupon) || 0,
       tipo_cupon: b.tipo_cupon || 'fijo',
-      periodicidad: b.periodicidad || 6,
+      periodicidad: b.periodicidad ?? 6,
       base_dias: b.base_dias || 'act365',
       amort: b.amort || 'bullet',
       callable: b.callable || 'No',
@@ -1604,12 +1605,13 @@ function recalcTIR(b){
   const sett=nextBusinessDay(today); // T+1
   const vd=new Date(b.venc+'T12:00:00');
   if(vd<sett) return; // bono ya vencido
-  const per=b.periodicidad||6;
+  const per=b.periodicidad??6;
   const yrs=Math.max(0.01,(vd-sett)/(365*24*3600*1000));
 
-  if(b.cupon>0 && b.fecha_inicio_int){
+  if(b.cupon>0 && (b.fecha_inicio_int || per===0)){
     const emD=b.fecha_emision?new Date(b.fecha_emision+'T12:00:00'):new Date(today);
-    const iiD=new Date(b.fecha_inicio_int+'T12:00:00');
+    // per=0 (al vencimiento): si no hay inicio_int, usar el vencimiento como único cupón
+    const iiD=b.fecha_inicio_int?new Date(b.fecha_inicio_int+'T12:00:00'):new Date(vd);
     let amortSched;
     if(b.amort==='cuotas'&&Array.isArray(b.amortSched)&&b.amortSched.length){
       amortSched=b.amortSched.map(a=>({fecha:new Date(a.fecha+'T12:00:00'),pct:a.pct}));
@@ -1679,12 +1681,13 @@ function calcTIRForPrice(b, precioInput){
   const sett=nextBusinessDay(today);
   const vd=new Date(b.venc+'T12:00:00');
   if(vd<sett) return null;
-  const per=b.periodicidad||6;
+  const per=b.periodicidad??6;
   const yrs=Math.max(0.01,(vd-sett)/(365*24*3600*1000));
 
-  if(b.cupon>0 && b.fecha_inicio_int){
+  if(b.cupon>0 && (b.fecha_inicio_int || per===0)){
     const emD=b.fecha_emision?new Date(b.fecha_emision+'T12:00:00'):new Date(today);
-    const iiD=new Date(b.fecha_inicio_int+'T12:00:00');
+    // per=0 (al vencimiento): si no hay inicio_int, usar el vencimiento como único cupón
+    const iiD=b.fecha_inicio_int?new Date(b.fecha_inicio_int+'T12:00:00'):new Date(vd);
     let amortSched;
     if(b.amort==='cuotas'&&Array.isArray(b.amortSched)&&b.amortSched.length){
       amortSched=b.amortSched.map(a=>({fecha:new Date(a.fecha+'T12:00:00'),pct:a.pct}));
@@ -2321,16 +2324,19 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched){
   if(!emDate||isNaN(emDate)) emDate = new Date(iiDate);
 
   // 1) Fechas de cupón teóricas (raw) — desde inicio_int hasta vencimiento, paso = per meses
+  // per===0 → "al vencimiento": un único cupón al final (todo el interés se paga al vencimiento)
   const couponDatesRaw=[];
-  let d=new Date(iiDate);
-  let safety=0;
-  while(d<=vcDate && safety<240){
-    couponDatesRaw.push(new Date(d));
-    d=new Date(d);
-    d.setMonth(d.getMonth()+per);
-    safety++;
+  if(per>0){
+    let d=new Date(iiDate);
+    let safety=0;
+    while(d<=vcDate && safety<240){
+      couponDatesRaw.push(new Date(d));
+      d=new Date(d);
+      d.setMonth(d.getMonth()+per);
+      safety++;
+    }
   }
-  // Asegurar que la última fecha sea exactamente vcDate
+  // Asegurar que la última fecha sea exactamente vcDate (y para per=0 es el único cupón)
   const last=couponDatesRaw[couponDatesRaw.length-1];
   if(!last || last.getTime()!==vcDate.getTime()) couponDatesRaw.push(new Date(vcDate));
 
@@ -2507,6 +2513,8 @@ function calcMetrics(cf,precio,tir,per){const r=tir/100,n=12/per;let sM=0,sC=0;c
 // diasPeriodo = longitud real del período cupón (días entre dos fechas de pago consecutivas)
 function tirToTNA(tir, per, diasPeriodo){
   const r = tir / 100;
+  // per===0 (al vencimiento): convención semestral 180/360 (evita 12/0)
+  if(per===0) return parseFloat((2 * (Math.pow(1 + r, 0.5) - 1) * 100).toFixed(4));
   const dp = (diasPeriodo != null) ? diasPeriodo : Math.round(per / 12 * 365);
   if(dp >= 180){
     return parseFloat((2 * (Math.pow(1 + r, 0.5) - 1) * 100).toFixed(4));
@@ -2518,6 +2526,7 @@ function tirToTNA(tir, per, diasPeriodo){
 // Inversa: TNA → TIR (para calcular precio desde TNA ingresada)
 function tnaToTIR(tna, per, diasPeriodo){
   // tna en decimal (ej: 0.065 para 6.5%)
+  if(per===0) return (Math.pow(1 + tna / 2, 2) - 1) * 100; // al vencimiento → semestral
   const dp = (diasPeriodo != null) ? diasPeriodo : Math.round(per / 12 * 365);
   if(dp >= 180){
     // TNA/2 = tasa semestral → TIR = (1 + TNA/2)^2 - 1
@@ -3003,6 +3012,9 @@ function calcFromPanel(){
   let iiD;
   if(iiS){
     iiD=new Date(iiS+'T12:00:00');
+  } else if(per===0){
+    // al vencimiento: un único cupón al final, no hay fechas intermedias
+    iiD=new Date(vcD);
   } else {
     iiD=new Date(vcD);
     while(iiD>emD){ const prev=new Date(iiD); prev.setMonth(prev.getMonth()-per); if(prev<=emD) break; iiD=prev; }
@@ -3065,9 +3077,18 @@ function calcFromPanel(){
   }
   const met=calcMetrics(cf,precioUSD,tir,per);
   const tna=tirToTNA(tir,per,diasProxPeriodo);
-  const cc=calcCC(cfRaw,cupon,per);
+  let cc;
+  if(per===0){
+    // al vencimiento: interés devengado = porción del interés total ya transcurrida (emisión→settlement)
+    const coup=cfRaw[cfRaw.length-1];
+    const totalSpan=vcD-emD;
+    const elapsed=Math.max(0,sett-emD);
+    cc=(coup&&totalSpan>0)?parseFloat((coup.interes*Math.min(1,elapsed/totalSpan)).toFixed(4)):0;
+  } else {
+    cc=calcCC(cfRaw,cupon,per);
+  }
   const plUSD=parseFloat((precioUSD-cc).toFixed(4));
-  const lbl={6:'semestral',3:'trimestral',1:'mensual',12:'anual'};
+  const lbl={6:'semestral',3:'trimestral',1:'mensual',12:'anual',0:'al vencimiento'};
   if(!tnaIsManual){
     const tnaEl=document.getElementById('inp-tna');
     tnaEl.value=tna.toFixed(4);
@@ -3335,7 +3356,7 @@ async function saveBond(){
     callable:document.getElementById('mb-callable').value,
     cupon:parseFloat(document.getElementById('mb-cupon').value)||0,
     tipo_cupon:'fijo',
-    periodicidad:parseInt(document.getElementById('mb-periodicidad').value)||6,
+    periodicidad:(()=>{const p=parseInt(document.getElementById('mb-periodicidad').value);return isNaN(p)?6:p;})(),
     base_dias:document.getElementById('mb-base-dias').value,
     amort:amortTipo,
     amortSched:[],
@@ -3496,7 +3517,7 @@ function parseFile(file){
             return v;
           })(),
           tipo_cupon:(get('tipo_cupon')||'fijo').toString().trim()||'fijo',
-          periodicidad:parseInt(get('periodicidad_meses'))||6,
+          periodicidad:(()=>{const p=parseInt(get('periodicidad_meses'));return isNaN(p)?6:p;})(),
           base_dias:(get('base_dias')||'act365').toString().trim()||'act365',
           amort:(get('amortizacion')||'bullet').toString().trim()||'bullet',
           _amortSched:amortSched,
@@ -3752,7 +3773,7 @@ async function saveBondChanges(){
   b.callable      = document.getElementById('fi-callable').value;
   b.tipo_cupon    = document.getElementById('fi-tipo-cupon').value;
   b.cupon         = parseFloat(document.getElementById('fi-cupon').value)||b.cupon;
-  b.periodicidad  = parseInt(document.getElementById('fi-periodicidad').value)||b.periodicidad;
+  b.periodicidad  = (()=>{const p=parseInt(document.getElementById('fi-periodicidad').value);return isNaN(p)?b.periodicidad:p;})();
   b.base_dias     = document.getElementById('fi-base-dias').value;
   b.amort         = document.getElementById('fi-amort-tipo').value;
   // Guardar cronograma de cuotas desde el DOM (excluyendo filas auto)
@@ -4646,7 +4667,7 @@ function getAllFlows(){
     if(isNaN(iiD)||isNaN(vcD)) return;
 
     const cf = generateCashflows(emD, iiD, vcD,
-      b.cupon||0, b.periodicidad||6, b.base_dias||'act365',
+      b.cupon||0, b.periodicidad??6, b.base_dias||'act365',
       (b.amortSched||[]).map(a=>({
         fecha: new Date((typeof a.fecha==='string'?a.fecha.substring(0,10):a.fecha)+'T12:00:00'),
         pct: a.pct
