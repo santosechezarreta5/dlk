@@ -320,7 +320,9 @@ th .resize-handle:hover,th .resize-handle.dragging{background:var(--blue);opacit
 /* Por default visible. Si el body NO tiene clase 'remote-only', sigue visible (modo local). */
 /* Si el body tiene 'remote-only' y NO 'admin-mode', se oculta el botón Editar. */
 body.remote-only:not(.admin-mode) .btn-edit-bond,
-body.remote-only:not(.admin-mode) .btn-del-bond {
+body.remote-only:not(.admin-mode) .btn-del-bond,
+body.remote-only:not(.admin-mode) #holiday-add-row,
+body.remote-only:not(.admin-mode) .hday-del {
   display: none !important;
 }
 .btn-cancel-edit{font-family:'IBM Plex Mono',monospace;font-size:.58rem;padding:3px 9px;border:1px solid rgba(248,113,113,.3);background:none;color:var(--red);border-radius:5px;cursor:pointer;}
@@ -829,7 +831,7 @@ window.SUPABASE_CONFIG = {
       <div class="calc-section">
         <div class="cst">Feriados Nacionales Argentina · 2025–2027</div>
         <p style="font-size:.6rem;color:var(--muted2);margin-bottom:10px;line-height:1.7">Lista global compartida por todos los bonos. Los pagos en feriado o fin de semana se desplazan al siguiente día hábil.</p>
-        <div style="display:flex;gap:6px;margin-bottom:10px">
+        <div id="holiday-add-row" style="display:flex;gap:6px;margin-bottom:10px">
           <input class="form-input" id="inp-holiday" type="date" style="flex:1">
           <button class="btn-sm add" onclick="addHoliday()">+ Agregar</button>
         </div>
@@ -1348,9 +1350,34 @@ const Catalog = (() => {
     return { ok:true };
   }
 
+  // ── Feriados (tabla feriados) ──
+  async function loadFeriados(){
+    if(!isRemote || !client) return [];
+    try {
+      const { data, error } = await client.from('feriados').select('fecha').order('fecha');
+      if(error){ console.warn('[Catalog] loadFeriados error:', error?.message); return []; }
+      return (data||[]).map(r => String(r.fecha).substring(0,10));
+    } catch(e){ console.warn('[Catalog] loadFeriados ex:', e?.message); return []; }
+  }
+  async function addFeriadoRemote(fecha){
+    if(!isRemote || !client) return { ok:false, error:'Sin Supabase configurado' };
+    if(!session) return { ok:false, error:'No estás logueado como admin' };
+    const { error } = await client.from('feriados').upsert({ fecha });
+    if(error){ console.error('[Catalog] addFeriado error:', error); return {ok:false, error:error.message}; }
+    return { ok:true };
+  }
+  async function deleteFeriadoRemote(fecha){
+    if(!isRemote || !client) return { ok:false, error:'Sin Supabase configurado' };
+    if(!session) return { ok:false, error:'No estás logueado como admin' };
+    const { error } = await client.from('feriados').delete().eq('fecha', fecha);
+    if(error){ console.error('[Catalog] deleteFeriado error:', error); return {ok:false, error:error.message}; }
+    return { ok:true };
+  }
+
   return {
     isRemote, init, loadAll, upsert, remove,
     loadRatings, upsertRating,
+    loadFeriados, addFeriadoRemote, deleteFeriadoRemote,
     login, logout, isLoggedIn, currentEmail,
     onAuthChange, onCatalogChange
   };
@@ -1384,6 +1411,19 @@ async function loadRatingsIntoMemory(){
     RATINGS = map;
     applyRatings();
   } catch(e){ console.warn('[ratings] load error', e?.message); }
+}
+
+// Carga la tabla feriados de Supabase a memoria (reemplaza el seed si hay datos)
+async function loadFeriadosIntoMemory(){
+  try {
+    const fechas = await Catalog.loadFeriados();
+    if(fechas && fechas.length){
+      HOLIDAYS = fechas.map(f => new Date(f+'T12:00:00')).sort((a,b)=>a-b);
+      console.log('[feriados] cargados desde Supabase:', HOLIDAYS.length);
+    } else {
+      console.log('[feriados] tabla vacía o sin Supabase — usando seed embebido');
+    }
+  } catch(e){ console.warn('[feriados] load error', e?.message); }
 }
 
 const MON_OV={}; // moneda ya embebida en BASE_META — se mantiene por compatibilidad
@@ -1461,7 +1501,9 @@ function pn(v){ if(v==null)return null; const n=parseFloat(v); return isNaN(n)?n
 // Precios D en data912: directamente en % del VN (ej: 105.8). Sin conversión.
 function normPrice(px){ const p=parseFloat(px); return isNaN(p)||p<=0?null:p; }
 
-// FIX #1: feriados globales — fuente argentina.gob.ar 2025 + 2026 + inamovibles 2027
+// Feriados globales. SEED/fallback embebido — la fuente de verdad es la tabla
+// `feriados` de Supabase (loadFeriadosIntoMemory la sobreescribe al iniciar).
+// Si no hay Supabase o la tabla está vacía, se usa este seed (argentina.gob.ar).
 let HOLIDAYS=['2025-01-01','2025-03-03','2025-03-04','2025-03-24','2025-04-02','2025-04-18','2025-05-01','2025-05-25','2025-06-16','2025-06-20','2025-07-09','2025-08-18','2025-10-12','2025-11-21','2025-12-08','2025-12-25','2026-01-01','2026-02-16','2026-02-17','2026-03-23','2026-03-24','2026-04-02','2026-04-03','2026-05-01','2026-05-25','2026-06-15','2026-06-20','2026-07-09','2026-07-10','2026-08-17','2026-10-12','2026-11-23','2026-12-07','2026-12-08','2026-12-25','2027-01-01','2027-03-24','2027-04-02','2027-05-01','2027-05-25','2027-06-20','2027-07-09','2027-08-16','2027-10-11','2027-11-22','2027-12-08','2027-12-25'].map(d=>new Date(d+'T12:00:00'));
 
 function isHoliday(dt){if(!dt||isNaN(dt))return false;const s=dt.toISOString().substring(0,10);return HOLIDAYS.some(h=>h.toISOString().substring(0,10)===s);}
@@ -3349,8 +3391,32 @@ function renderHolidays(){
     </div>`;
   }).join('');
 }
-function addHoliday(){const v=document.getElementById('inp-holiday').value;if(!v)return;const dt=new Date(v+'T12:00:00');if(!HOLIDAYS.some(h=>h.toISOString().substring(0,10)===v)){HOLIDAYS.push(dt);HOLIDAYS.sort((a,b)=>a-b);renderHolidays();document.getElementById('inp-holiday').value='';}}
-function removeHoliday(i){HOLIDAYS.splice(i,1);renderHolidays();}
+async function addHoliday(){
+  const v=document.getElementById('inp-holiday').value;
+  if(!v)return;
+  if(HOLIDAYS.some(h=>h.toISOString().substring(0,10)===v)){ document.getElementById('inp-holiday').value=''; return; }
+  if(Catalog.isRemote){
+    if(!Catalog.isLoggedIn()){ alert('Iniciá sesión como admin para editar feriados.'); return; }
+    const r = await Catalog.addFeriadoRemote(v);
+    if(!r.ok){ alert('No se pudo guardar el feriado: '+(r.error||'')); return; }
+  }
+  HOLIDAYS.push(new Date(v+'T12:00:00'));
+  HOLIDAYS.sort((a,b)=>a-b);
+  renderHolidays();
+  document.getElementById('inp-holiday').value='';
+}
+async function removeHoliday(i){
+  const h=HOLIDAYS[i];
+  if(!h)return;
+  const fecha=h.toISOString().substring(0,10);
+  if(Catalog.isRemote){
+    if(!Catalog.isLoggedIn()){ alert('Iniciá sesión como admin para editar feriados.'); return; }
+    const r = await Catalog.deleteFeriadoRemote(fecha);
+    if(!r.ok){ alert('No se pudo eliminar el feriado: '+(r.error||'')); return; }
+  }
+  HOLIDAYS.splice(i,1);
+  renderHolidays();
+}
 
 // Agregar bono nuevo — requiere admin login cuando Supabase está configurado
 function openAddModal(){
@@ -4112,6 +4178,7 @@ if(IS_FILE_PROTO){
     await Catalog.init();
     await reloadCatalog({ preserveRuntime:false });
     await loadRatingsIntoMemory(); // ratings por emisor
+    await loadFeriadosIntoMemory(); // feriados desde Supabase (seed embebido como fallback)
 
     // Subscribirse a cambios remotos (otros admins editando el catálogo)
     Catalog.onCatalogChange(async (payload)=>{
