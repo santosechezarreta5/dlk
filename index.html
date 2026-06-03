@@ -2167,7 +2167,7 @@ function render(){
 
     // ── Build tds in COL_DEFS order ───────────────────────────────────────────
     const cells={
-      ticker:   `<div class="tk-n" style="display:flex;align-items:center;gap:3px;">${b.ticker}${b.isUserBond?`<span class="user-bond-dot" title="Bono propio"></span><button class="btn-del-bond" title="Eliminar bono" onclick="event.stopPropagation();deleteUserBond('${b.ticker}')">✕</button>`:''}</div>`,
+      ticker:   `<div class="tk-n" style="display:flex;align-items:center;gap:3px;">${b.ticker}${b.isUserBond?`<span class="user-bond-dot" title="Bono propio"></span>`:''}<button class="btn-del-bond" title="Eliminar bono" onclick="event.stopPropagation();deleteUserBond('${b.ticker}')">✕</button></div>`,
       emisor:   `<span style="color:var(--text2);font-size:.65rem">${b.emisor}</span>`,
       sector:   `<span class="badge ${sc}">${b.sector}</span>`,
       bid:      bidAskCell(showBid, bidCalc, '#34d399'),
