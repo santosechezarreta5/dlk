@@ -716,9 +716,10 @@ window.SUPABASE_CONFIG = {
           <div class="form-group"><label class="form-label">Vencimiento</label><input class="form-input panel-readonly" id="fi-venc" type="date" readonly></div>
           <div class="form-group"><label class="form-label">Callable</label>
             <select class="form-select panel-readonly" id="fi-callable" disabled><option value="No">No</option><option value="Si">Sí</option></select></div>
-          <!-- Hidden: legislación y jurisdicción se mantienen en metadata pero no se muestran -->
-          <select id="fi-leg" style="display:none"><option>Argentina</option><option>Nueva York</option><option>Inglaterra</option></select>
-          <select id="fi-jur" style="display:none"><option>Argentina</option><option>Estados Unidos</option></select>
+          <div class="form-group"><label class="form-label">Legislación</label>
+            <select class="form-select panel-readonly" id="fi-leg" disabled><option>Argentina</option><option>Nueva York</option><option>Inglaterra</option></select></div>
+          <div class="form-group"><label class="form-label">Jurisdicción de pago</label>
+            <select class="form-select panel-readonly" id="fi-jur" disabled><option>Argentina</option><option>Estados Unidos</option></select></div>
         </div>
       </div>
       <div class="calc-section" id="section-cupon">
@@ -3481,6 +3482,12 @@ function toggleEditMode(){
   ['fi-leg','fi-jur','fi-callable','fi-tipo-cupon','fi-periodicidad','fi-base-dias','fi-amort-tipo','fi-tasa-base'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.disabled=false;
   });
+  // Legislación y jurisdicción: en DL siempre Argentina/Argentina, no editables
+  if(b && b.moneda==='DL'){
+    const leg=document.getElementById('fi-leg'), jur=document.getElementById('fi-jur');
+    if(leg){ leg.value='Argentina'; leg.disabled=true; }
+    if(jur){ jur.value='Argentina'; jur.disabled=true; }
+  }
   // Habilitar inputs con readonly
   ['fi-cupon','fi-emision','fi-inicio-int','fi-venc'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.removeAttribute('readonly');
