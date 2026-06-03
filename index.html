@@ -858,10 +858,13 @@ window.SUPABASE_CONFIG = {
         <div class="form-group"><label class="form-label">Sector *</label>
           <select class="form-select" id="mb-sector"><option>Energía</option><option>Energía (otros)</option><option>Finanzas</option><option>Infraestructura</option><option>Consumo</option></select></div>
         <div class="form-group"><label class="form-label">Moneda</label>
-          <select class="form-select" id="mb-moneda"><option>DL</option><option>USD</option><option>ARS</option><option>CER</option></select></div>
-        <!-- Hidden: leg/jur se mantienen en metadata con default -->
-        <select id="mb-leg" style="display:none"><option>Argentina</option><option>Nueva York</option><option>Inglaterra</option></select>
-        <select id="mb-jur" style="display:none"><option>Argentina</option><option>Estados Unidos</option></select>
+          <select class="form-select" id="mb-moneda" onchange="onMbMonedaChange()"><option>DL</option><option>USD</option><option>ARS</option><option>CER</option></select></div>
+        <!-- Legislación y jurisdicción de pago: características del bono.
+             En DL siempre Argentina/Argentina (se bloquean automáticamente). -->
+        <div class="form-group"><label class="form-label">Legislación</label>
+          <select class="form-select" id="mb-leg"><option>Argentina</option><option>Nueva York</option><option>Inglaterra</option></select></div>
+        <div class="form-group"><label class="form-label">Jurisdicción de pago</label>
+          <select class="form-select" id="mb-jur"><option>Argentina</option><option>Estados Unidos</option></select></div>
         <div class="form-group"><label class="form-label">Fecha emisión</label><input class="form-input" id="mb-emision" type="date"></div>
         <div class="form-group"><label class="form-label">Inicio pago intereses</label><input class="form-input" id="mb-inicio-int" type="date"></div>
         <div class="form-group"><label class="form-label">Vencimiento *</label><input class="form-input" id="mb-venc" type="date"></div>
@@ -3436,6 +3439,7 @@ function openAddModal(){
   sel.innerHTML=`<option value="">— Seleccioná emisor —</option>`
     +emisores.map(e=>`<option value="${escA(e)}">${e}</option>`).join('')
     +`<option value="__new__">➕ Nuevo emisor…</option>`;
+  onMbMonedaChange(); // aplicar regla DL→Argentina según la moneda seleccionada
   document.getElementById('modal-bond').classList.add('open');
 }
 
@@ -3445,6 +3449,19 @@ function onEmisorSelChange(v){
   else inp.style.display='none';
 }
 function closeBondModal(){document.getElementById('modal-bond').classList.remove('open');}
+
+// Legislación y jurisdicción de pago son características del bono.
+// En los DL (dollar-linked) siempre son Argentina/Argentina → se fijan y bloquean.
+function onMbMonedaChange(){
+  const moneda=document.getElementById('mb-moneda').value;
+  const leg=document.getElementById('mb-leg'), jur=document.getElementById('mb-jur');
+  if(moneda==='DL'){
+    leg.value='Argentina'; jur.value='Argentina';
+    leg.disabled=true; jur.disabled=true;
+  } else {
+    leg.disabled=false; jur.disabled=false;
+  }
+}
 
 // ── Panel edit mode ───────────────────────────────────────────────────────────
 let _editModeSnapshot = null; // snapshot of bond data before editing
