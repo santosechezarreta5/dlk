@@ -386,18 +386,18 @@ window.SUPABASE_CONFIG = {
 
 <!-- Modal Editor de Ratings por emisor (solo admin) -->
 <div id="modal-ratings" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;align-items:center;justify-content:center;padding:20px">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;width:min(560px,100%);max-height:88vh;display:flex;flex-direction:column">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;width:min(620px,100%);max-height:88vh;display:flex;flex-direction:column">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
       <div>
-        <div style="font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700;color:var(--text)">🏷 Ratings por emisor</div>
-        <div style="font-size:.55rem;color:var(--muted2);margin-top:2px">Calificación crediticia (escala nacional). Aplica a todos los bonos del emisor.</div>
+        <div style="font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700;color:var(--text)">🏷 Emisores · Sector y Rating</div>
+        <div style="font-size:.55rem;color:var(--muted2);margin-top:2px">Sector y calificación crediticia (escala nacional). Aplican a todos los bonos del emisor.</div>
       </div>
       <button class="btn-close" onclick="closeRatingsModal()">✕</button>
     </div>
     <div style="padding:8px 18px 0">
       <input class="form-input" id="ratings-search" type="text" placeholder="Buscar emisor…" oninput="renderRatingsList(this.value)" style="margin-bottom:6px">
-      <div style="display:grid;grid-template-columns:1fr 130px;gap:6px;padding:0 2px 4px;font-size:.5rem;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase">
-        <div>Emisor</div><div>Rating</div>
+      <div style="display:grid;grid-template-columns:1fr 140px 120px;gap:6px;padding:0 2px 4px;font-size:.5rem;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase">
+        <div>Emisor</div><div>Sector</div><div>Rating</div>
       </div>
     </div>
     <div id="ratings-list" style="padding:0 18px;overflow-y:auto;flex:1"></div>
@@ -856,8 +856,6 @@ window.SUPABASE_CONFIG = {
           <select class="form-select" id="mb-emisor-sel" onchange="onEmisorSelChange(this.value)"></select>
           <input class="form-input" id="mb-emisor-new" type="text" placeholder="Nombre del nuevo emisor" style="display:none;margin-top:6px;">
         </div>
-        <div class="form-group"><label class="form-label">Sector *</label>
-          <select class="form-select" id="mb-sector"><option>Energía</option><option>Energía (otros)</option><option>Finanzas</option><option>Infraestructura</option><option>Consumo</option></select></div>
         <div class="form-group"><label class="form-label">Moneda</label>
           <select class="form-select" id="mb-moneda" onchange="onMbMonedaChange()"><option>DL</option><option>USD</option><option>ARS</option><option>CER</option></select></div>
         <!-- Legislación y jurisdicción de pago: características del bono.
@@ -1349,7 +1347,7 @@ const Catalog = (() => {
     if(!isRemote || !client) return { ok:false, error:'Sin Supabase configurado' };
     if(!session) return { ok:false, error:'No estás logueado como admin' };
     const { error } = await client.from('issuer_ratings')
-      .upsert({ issuer_key:row.issuer_key, issuer_label:row.issuer_label, rating:row.rating||'' });
+      .upsert({ issuer_key:row.issuer_key, issuer_label:row.issuer_label, rating:row.rating||'', sector:row.sector||'' });
     if(error){ console.error('[Catalog] upsertRating error:', error); return {ok:false, error:error.message}; }
     return { ok:true };
   }
@@ -1398,20 +1396,22 @@ function normEmisor(e){
     .replace(/[^a-z0-9]/g,'');                             // solo alfanumérico
   return EMISOR_ALIAS[k] || k;
 }
-// RATINGS[issuer_key] = { label, rating }
+// RATINGS[issuer_key] = { label, rating, sector }
 let RATINGS = {};
 function getRating(bond){ return (RATINGS[normEmisor(bond.emisor)]||{}).rating || ''; }
-// Setea b.rating en todos los bonos (para columna, sort y alertas)
+// Sector ahora es propiedad del emisor (con fallback al sector propio del bono)
+function getSector(bond){ return (RATINGS[normEmisor(bond.emisor)]||{}).sector || bond.sector || ''; }
+// Setea b.rating y b.sector en todos los bonos (para columna, sort, filtros y alertas)
 function applyRatings(){
   if(typeof bonds==='undefined' || !Array.isArray(bonds)) return;
-  bonds.forEach(b=>{ b.rating = getRating(b); });
+  bonds.forEach(b=>{ b.rating = getRating(b); b.sector = getSector(b); });
 }
 // Carga la tabla issuer_ratings de Supabase a memoria
 async function loadRatingsIntoMemory(){
   try {
     const rows = await Catalog.loadRatings();
     const map = {};
-    (rows||[]).forEach(r=>{ map[r.issuer_key] = { label:r.issuer_label||r.issuer_key, rating:r.rating||'' }; });
+    (rows||[]).forEach(r=>{ map[r.issuer_key] = { label:r.issuer_label||r.issuer_key, rating:r.rating||'', sector:r.sector||'' }; });
     RATINGS = map;
     applyRatings();
   } catch(e){ console.warn('[ratings] load error', e?.message); }
@@ -1895,15 +1895,17 @@ function onAdminClick(){
 }
 
 // ── Editor admin de Ratings por emisor ───────────────────────────────────────
-let _ratingsDraft = {}; // issuer_key -> {label, rating}
+let _ratingsDraft = {}; // issuer_key -> {label, rating, sector}
 function buildRatingsDraft(){
   // Unión de: emisores en RATINGS + emisores presentes en los bonos cargados
   const draft = {};
-  Object.entries(RATINGS).forEach(([k,v])=>{ draft[k]={label:v.label||k, rating:v.rating||''}; });
+  Object.entries(RATINGS).forEach(([k,v])=>{ draft[k]={label:v.label||k, rating:v.rating||'', sector:v.sector||''}; });
   (bonds||[]).forEach(b=>{
     const k = normEmisor(b.emisor);
     if(!k) return;
-    if(!draft[k]) draft[k] = { label:b.emisor||k, rating:'' };
+    if(!draft[k]) draft[k] = { label:b.emisor||k, rating:'', sector:'' };
+    // Sembrar el sector desde el bono si el emisor todavía no tiene uno guardado
+    if(!draft[k].sector && b.sector) draft[k].sector = b.sector;
   });
   return draft;
 }
@@ -1923,9 +1925,14 @@ function renderRatingsList(filter){
   const entries=Object.entries(_ratingsDraft)
     .filter(([k,v])=>!q || v.label.toLowerCase().includes(q))
     .sort((a,b)=>a[1].label.localeCompare(b[1].label));
+  const SECTORS=['','Energía','Energía (otros)','Finanzas','Infraestructura','Consumo'];
   cont.innerHTML = entries.map(([k,v])=>`
-    <div style="display:grid;grid-template-columns:1fr 130px;gap:6px;align-items:center;padding:4px 2px;border-bottom:1px solid rgba(30,45,66,.5)">
+    <div style="display:grid;grid-template-columns:1fr 140px 120px;gap:6px;align-items:center;padding:4px 2px;border-bottom:1px solid rgba(30,45,66,.5)">
       <span style="font-size:.66rem;color:var(--text2)">${escA(v.label)}</span>
+      <select class="form-select" style="font-size:.62rem;padding:3px 7px"
+              onchange="_ratingsDraft['${k}'].sector=this.value">
+        ${SECTORS.map(s=>`<option value="${escA(s)}" ${s===(v.sector||'')?'selected':''}>${s||'—'}</option>`).join('')}
+      </select>
       <input class="form-input" style="font-size:.62rem;padding:3px 7px" value="${escA(v.rating)}" placeholder="ej: AAA(arg)"
              oninput="_ratingsDraft['${k}'].rating=this.value">
     </div>`).join('');
@@ -1936,9 +1943,10 @@ async function saveRatings(){
   btn.disabled=true; st.textContent='Guardando…';
   let ok=0, err=0;
   for(const [k,v] of Object.entries(_ratingsDraft)){
-    const prev=(RATINGS[k]||{}).rating||'';
-    if((v.rating||'')===prev && RATINGS[k]) continue; // sin cambios
-    const r=await Catalog.upsertRating({issuer_key:k, issuer_label:v.label, rating:v.rating||''});
+    const prevR=(RATINGS[k]||{}).rating||'';
+    const prevS=(RATINGS[k]||{}).sector||'';
+    if((v.rating||'')===prevR && (v.sector||'')===prevS && RATINGS[k]) continue; // sin cambios
+    const r=await Catalog.upsertRating({issuer_key:k, issuer_label:v.label, rating:v.rating||'', sector:v.sector||''});
     if(r.ok) ok++; else { err++; console.error('[saveRatings]',k,r.error); }
   }
   // Recargar a memoria y refrescar tabla
@@ -3580,7 +3588,7 @@ async function saveBond(){
 
   const newBond={
     ticker:tk, emisor:em,
-    sector:document.getElementById('mb-sector').value,
+    sector:(RATINGS[normEmisor(em)]||{}).sector||'',  // sector es propiedad del emisor (editable en el modal de ratings)
     moneda:document.getElementById('mb-moneda').value,
     leg:document.getElementById('mb-leg').value,
     jur:document.getElementById('mb-jur').value,
