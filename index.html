@@ -563,6 +563,9 @@ window.SUPABASE_CONFIG = {
       <button class="fb" data-f="call" data-v="Si">Callable</button>
       <button class="fb" data-f="call" data-v="No">No callable</button>
     </div>
+    <div class="filter-row" id="filter-row-rating"><span class="fl">Crédito</span>
+      <span id="rating-fb-wrap" style="display:inline-flex;gap:5px;flex-wrap:wrap"></span>
+    </div>
     <div class="filter-row" id="filter-row-leg" style="display:none"><span class="fl">Legislación</span>
       <button class="fb on" data-f="leg" data-v="all">Todos</button>
       <button class="fb" data-f="leg" data-v="Argentina">Argentina</button>
@@ -1517,7 +1520,7 @@ async function reloadCatalog(opts){
   return bonds;
 }
 
-let F={sector:new Set(['all']),anio:new Set(['all']),call:new Set(['all']),emisor:new Set(),leg:new Set(['all']),jur:new Set(['all'])};
+let F={sector:new Set(['all']),anio:new Set(['all']),call:new Set(['all']),emisor:new Set(),leg:new Set(['all']),jur:new Set(['all']),rating:new Set(['all'])};
 let activeType='DL';
 let hdCurrencyView='mep'; // 'mep' | 'ars' | 'cable'
 let SK='ticker',SD=1,ACTIVE_TK=null,manualPrecio=false,manualTIR=false,pendingImport=[];
@@ -2045,6 +2048,7 @@ function visible(){
     }
     if(!fMatch(F.sector, b.sector)) return false;
     if(!fMatch(F.call, b.callable)) return false;
+    if(!fMatch(F.rating, b.rating||'')) return false;
     if(!F.anio.has('all')){
       const y=b.venc?parseInt(b.venc.substring(0,4)):null;
       // Check if any selected year matches
@@ -2059,6 +2063,24 @@ function visible(){
     if(F.emisor.size>0&&!F.emisor.has(b.emisor))return false;
     return true;
   }).sort((a,b)=>{let av=a[SK],bv=b[SK];const nil=SD>0?Infinity:-Infinity;if(av==null)av=nil;if(bv==null)bv=nil;return typeof av==='string'?av.localeCompare(bv)*SD:(av-bv)*SD;});
+}
+
+// Filtro de Crédito: botones dinámicos con los ratings realmente presentes en el tab activo
+function buildRatingFilter(){
+  const wrap=document.getElementById('rating-fb-wrap'); if(!wrap) return;
+  const typeBonds=bonds.filter(b=> activeType==='DL'? b.moneda==='DL' : b.moneda!=='DL');
+  const present=new Set(typeBonds.map(b=>b.rating).filter(Boolean));
+  const ordered=RATING_OPTIONS.filter(r=>present.has(r));
+  let html=`<button class="fb ${F.rating.has('all')?'on':''}" onclick="onRatingFb('all')">Todos</button>`;
+  html+=ordered.map(r=>`<button class="fb ${F.rating.has(r)?'on':''}" onclick="onRatingFb('${r}')">${r}</button>`).join('');
+  if(ordered.length===0) html+=`<span style="font-size:.55rem;color:var(--muted2)">sin ratings cargados</span>`;
+  wrap.innerHTML=html;
+}
+function onRatingFb(v){
+  const set=F.rating;
+  if(v==='all'){ set.clear(); set.add('all'); }
+  else { set.delete('all'); if(set.has(v)){ set.delete(v); if(set.size===0) set.add('all'); } else set.add(v); }
+  render();
 }
 
 function setMainView(view){
@@ -2078,7 +2100,7 @@ function setMainView(view){
 function setTypeTab(type){
   activeType=type;
   // Reset all filters
-  ['sector','anio','call','leg','jur'].forEach(k=>{F[k].clear();F[k].add('all');});
+  ['sector','anio','call','leg','jur','rating'].forEach(k=>{F[k].clear();F[k].add('all');});
   F.emisor.clear();
   document.querySelectorAll('.fb').forEach(b=>{
     b.classList.toggle('on', b.dataset.v==='all');
@@ -2235,6 +2257,7 @@ function render(){
     tbody.appendChild(tr);
   });
   drawYield(data);
+  buildRatingFilter();
 }
 
 // ── COLUMN CONFIGURATION ──────────────────────────────────────────────────────
