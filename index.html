@@ -563,6 +563,11 @@ window.SUPABASE_CONFIG = {
       <button class="fb" data-f="call" data-v="Si">Callable</button>
       <button class="fb" data-f="call" data-v="No">No callable</button>
     </div>
+    <div class="filter-row"><span class="fl">Precio</span>
+      <button class="fb on" data-f="precio" data-v="all">Todos</button>
+      <button class="fb" data-f="precio" data-v="con">Con precio</button>
+      <button class="fb" data-f="precio" data-v="sin">Sin precio</button>
+    </div>
     <div class="filter-row" id="filter-row-rating"><span class="fl">Crédito</span>
       <span id="rating-fb-wrap" style="display:inline-flex;gap:5px;flex-wrap:wrap"></span>
     </div>
@@ -1520,7 +1525,7 @@ async function reloadCatalog(opts){
   return bonds;
 }
 
-let F={sector:new Set(['all']),anio:new Set(['all']),call:new Set(['all']),emisor:new Set(),leg:new Set(['all']),jur:new Set(['all']),rating:new Set(['all'])};
+let F={sector:new Set(['all']),anio:new Set(['all']),call:new Set(['all']),emisor:new Set(),leg:new Set(['all']),jur:new Set(['all']),rating:new Set(['all']),precio:new Set(['all'])};
 let activeType='DL';
 let hdCurrencyView='mep'; // 'mep' | 'ars' | 'cable'
 let SK='ticker',SD=1,ACTIVE_TK=null,manualPrecio=false,manualTIR=false,pendingImport=[];
@@ -2049,6 +2054,13 @@ function visible(){
     if(!fMatch(F.sector, b.sector)) return false;
     if(!fMatch(F.call, b.callable)) return false;
     if(!fMatch(F.rating, b.rating||'')) return false;
+    if(!F.precio.has('all')){
+      const hasPrice = b.precio!=null && b.precio>0;
+      let ok=false;
+      if(F.precio.has('con') && hasPrice) ok=true;
+      if(F.precio.has('sin') && !hasPrice) ok=true;
+      if(!ok) return false;
+    }
     if(!F.anio.has('all')){
       const y=b.venc?parseInt(b.venc.substring(0,4)):null;
       // Check if any selected year matches
@@ -2100,7 +2112,7 @@ function setMainView(view){
 function setTypeTab(type){
   activeType=type;
   // Reset all filters
-  ['sector','anio','call','leg','jur','rating'].forEach(k=>{F[k].clear();F[k].add('all');});
+  ['sector','anio','call','leg','jur','rating','precio'].forEach(k=>{F[k].clear();F[k].add('all');});
   F.emisor.clear();
   document.querySelectorAll('.fb').forEach(b=>{
     b.classList.toggle('on', b.dataset.v==='all');
