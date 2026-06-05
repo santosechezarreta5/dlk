@@ -1396,15 +1396,41 @@ function normEmisor(e){
     .replace(/[^a-z0-9]/g,'');                             // solo alfanumérico
   return EMISOR_ALIAS[k] || k;
 }
+// Nombre canónico (único) por clave de emisor — limpia los nombres duplicados.
+// Sirve como fallback inmediato aunque Supabase todavía no haya cargado los labels.
+const ISSUER_LABELS = {
+  aa2000:'Aeropuertos Argentina 2000', capex:'CAPEX', cgc:'CGC', msugreenenergy:'MSU Green Energy',
+  genneia:'Genneia', aluar:'Aluar', luzdetrespicos:'Luz de Tres Picos', pampa:'Pampa Energía',
+  msu:'MSU', oleoductosdelvalle:'Oleoductos del Valle', panamericanenergy:'Pan American Energy',
+  pcr:'PCR', plazalogistica:'Plaza Logística', rizobacter:'Rizobacter', telecom:'Telecom Argentina',
+  vista:'Vista Energía Argentina', ypfluz:'YPF Luz', ypf:'YPF', comafi:'Banco Comafi', cmf:'Banco CMF',
+  bbva:'BBVA Argentina', galicia:'Banco Galicia', cnh:'CNH Industrial', cresud:'Cresud', edenor:'Edenor',
+  johndeere:'John Deere', irsa:'IRSA', ledesma:'Ledesma', lomanegra:'Loma Negra', pecom:'PECOM',
+  cepu:'Central Puerto', otamericaebytem:'OTAMERICA EBYTEM', oiltanking:'OilTanking', edemsa:'EDEMSA',
+  pluspetrol:'Pluspetrol', arcor:'Arcor', sanmiguel:'San Miguel', mercadopago:'Mercado Pago / Crédito',
+  tarjetanaranja:'Tarjeta Naranja', tecpetrol:'Tecpetrol', mineraexar:'Minera EXAR', camuzzi:'Camuzzi',
+  aes:'AES Argentina', macro:'Banco Macro', tgs:'TGS', supervielle:'Banco Supervielle'
+};
+// Opciones de rating (escala nacional) — dropdown, de mejor a peor calidad crediticia
+const RATING_OPTIONS = ['AAA(arg)','AA+(arg)','AA(arg)','AA-(arg)','A+(arg)','A(arg)','A-(arg)','BBB+(arg)','BBB(arg)','BBB-(arg)','BB+(arg)','B+(arg)','B-(arg)','CC(arg)','C(arg)','D(arg)'];
+// Clave estable del emisor de un bono (se calcula una vez desde el nombre crudo)
+function emisorKey(bond){ if(!bond._ekey) bond._ekey = normEmisor(bond.emisor); return bond._ekey; }
 // RATINGS[issuer_key] = { label, rating, sector }
 let RATINGS = {};
-function getRating(bond){ return (RATINGS[normEmisor(bond.emisor)]||{}).rating || ''; }
+function getRating(bond){ return (RATINGS[emisorKey(bond)]||{}).rating || ''; }
 // Sector ahora es propiedad del emisor (con fallback al sector propio del bono)
-function getSector(bond){ return (RATINGS[normEmisor(bond.emisor)]||{}).sector || bond.sector || ''; }
-// Setea b.rating y b.sector en todos los bonos (para columna, sort, filtros y alertas)
+function getSector(bond){ return (RATINGS[emisorKey(bond)]||{}).sector || bond.sector || ''; }
+// Setea b.rating, b.sector y normaliza b.emisor al nombre canónico (limpia duplicados)
 function applyRatings(){
   if(typeof bonds==='undefined' || !Array.isArray(bonds)) return;
-  bonds.forEach(b=>{ b.rating = getRating(b); b.sector = getSector(b); });
+  bonds.forEach(b=>{
+    const key = emisorKey(b);            // clave estable (antes de renombrar)
+    const info = RATINGS[key] || {};
+    b.rating = info.rating || '';
+    b.sector = info.sector || b.sector || '';
+    const label = info.label || ISSUER_LABELS[key];
+    if(label) b.emisor = label;          // único nombre por emisor
+  });
 }
 // Carga la tabla issuer_ratings de Supabase a memoria
 async function loadRatingsIntoMemory(){
@@ -1901,9 +1927,9 @@ function buildRatingsDraft(){
   const draft = {};
   Object.entries(RATINGS).forEach(([k,v])=>{ draft[k]={label:v.label||k, rating:v.rating||'', sector:v.sector||''}; });
   (bonds||[]).forEach(b=>{
-    const k = normEmisor(b.emisor);
+    const k = emisorKey(b);
     if(!k) return;
-    if(!draft[k]) draft[k] = { label:b.emisor||k, rating:'', sector:'' };
+    if(!draft[k]) draft[k] = { label:(ISSUER_LABELS[k]||b.emisor||k), rating:'', sector:'' };
     // Sembrar el sector desde el bono si el emisor todavía no tiene uno guardado
     if(!draft[k].sector && b.sector) draft[k].sector = b.sector;
   });
@@ -1933,8 +1959,12 @@ function renderRatingsList(filter){
               onchange="_ratingsDraft['${k}'].sector=this.value">
         ${SECTORS.map(s=>`<option value="${escA(s)}" ${s===(v.sector||'')?'selected':''}>${s||'—'}</option>`).join('')}
       </select>
-      <input class="form-input" style="font-size:.62rem;padding:3px 7px" value="${escA(v.rating)}" placeholder="ej: AAA(arg)"
-             oninput="_ratingsDraft['${k}'].rating=this.value">
+      <select class="form-select" style="font-size:.62rem;padding:3px 7px"
+              onchange="_ratingsDraft['${k}'].rating=this.value">
+        <option value="" ${!v.rating?'selected':''}>—</option>
+        ${(RATING_OPTIONS.includes(v.rating)?RATING_OPTIONS:RATING_OPTIONS.concat(v.rating?[v.rating]:[]))
+          .map(r=>`<option value="${escA(r)}" ${r===(v.rating||'')?'selected':''}>${escA(r)}</option>`).join('')}
+      </select>
     </div>`).join('');
 }
 async function saveRatings(){
