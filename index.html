@@ -348,9 +348,9 @@ window.SUPABASE_CONFIG = {
 </head>
 <body>
 <header>
-  <div class="logo"><div class="logo-mark">BC</div>BONOS<span class="acc">CORP</span></div>
   <button id="menu-btn" onclick="OPS.toggleMenu()" title="Menú"
-    style="margin-left:14px;font:inherit;font-size:1.05rem;font-weight:700;color:#1F3864;background:#e8eef7;border:1px solid #B4C6E7;border-radius:6px;padding:4px 12px;cursor:pointer;line-height:1">☰</button>
+    style="margin-right:14px;font:inherit;font-size:1.05rem;font-weight:700;color:#1F3864;background:#e8eef7;border:1px solid #B4C6E7;border-radius:6px;padding:4px 12px;cursor:pointer;line-height:1">☰</button>
+  <div class="logo"><div class="logo-mark">BC</div>BONOS<span class="acc">CORP</span></div>
   <div class="hdr-r">
     <div class="pill"><div class="dot wait" id="sdot"></div><span id="stxt">Cargando…</span></div>
     <button class="hdr-btn btn-import" onclick="openImportModal()">⬆ Importar Excel</button>
@@ -4996,6 +4996,11 @@ body.ops-mode #view-ops{display:block}
 #view-ops .serie-node .sw{width:10px;height:10px;border-radius:2px;flex-shrink:0}
 #view-ops .serie-node .nt{cursor:pointer;width:12px;color:#93c5fd;user-select:none}
 #view-ops .serie-chart{flex:1;min-width:480px;background:#0c1018;border:1px solid #1e2d42;border-radius:6px;padding:10px;height:440px}
+#view-ops .filt{margin-bottom:9px}
+#view-ops .filt-h{font-weight:700;font-size:.66rem;color:#cfe0f5;margin-bottom:3px;display:flex;align-items:center;gap:5px}
+#view-ops .filt-list{max-height:110px;overflow:auto;display:flex;flex-direction:column;gap:1px;border:1px solid #16233a;border-radius:4px;padding:3px 5px}
+#view-ops .filt-list label{display:flex;align-items:center;gap:5px;font-size:.66rem;color:#cbd5e1;cursor:pointer}
+#view-ops select#ops-breakdown{width:100%;margin-top:2px}
 #view-ops .btn-mini{font:inherit;font-size:.68rem;font-weight:600;padding:5px 11px;border:1px solid #1e2d42;border-radius:5px;background:#11243f;color:#cfe0f5;cursor:pointer}
 #view-ops .btn-mini.on{background:#1F3864;color:#fff;border-color:#2E75B6}
 /* Drawer / menú lateral */
@@ -5029,9 +5034,8 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
     <label style="font-size:.7rem">Cuadro:&nbsp;<select id="ops-serie-sec" onchange="OPS.setSerieSec(this.value)"></select></label>
     <span><button class="btn-mini on" id="ops-m-tir" onclick="OPS.setMetric('tir')">TIR</button>
           <button class="btn-mini" id="ops-m-tna" onclick="OPS.setMetric('tna')">TNA</button></span>
-    <label style="font-size:.7rem">Rango:&nbsp;<select id="ops-range" onchange="OPS.setRange(+this.value)">
-      <option value="3">3 meses</option><option value="6">6 meses</option><option value="12">12 meses</option><option value="0">Todo</option>
-    </select></label>
+    <label style="font-size:.7rem">Desde:&nbsp;<input type="date" id="ops-from" onchange="OPS.setDates()"></label>
+    <label style="font-size:.7rem">Hasta:&nbsp;<input type="date" id="ops-to" onchange="OPS.setDates()"></label>
   </div>
   <div class="serie-wrap">
     <div class="serie-ctrl" id="ops-serie-ctrl"></div>
@@ -5097,7 +5101,9 @@ const OPS = (function(){
 
   // ── estado ──
   let dayMapped=[], curTab='HD', collapse={}, dayTrees={};
-  let rangeMapped=[], serieSec='hd1', metric='tir', rangeMonths=3, serieTree=null, chart=null;
+  let rangeMapped=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
+  let breakdown='rating', filters={rating:null,sector:null,empresa:null,anio:null};
+  const gv=(r,k)=>{ const v=r[k]; return (v==null||v==='')?('(s/'+k+')'):v; };
   let dates=[], maxDate=null;
 
   // ── resumen del día ──
@@ -5166,28 +5172,51 @@ const OPS = (function(){
     const opts=SEC_DEFS.filter(s=>present.includes(s.id)); sel.innerHTML=opts.map(s=>'<option value="'+s.id+'">'+s.title+'</option>').join('');
     if(!opts.find(s=>s.id===serieSec)) serieSec=opts.length?opts[0].id:null; sel.value=serieSec||'';
   }
-  function rebuildSerieTree(){ const rows=rangeMapped.filter(r=>r.sec===serieSec); serieTree=buildTree(rows); }
-  function renderSerieCtrl(){
-    const el=document.getElementById('ops-serie-ctrl'); el.innerHTML=''; if(!serieTree)return;
-    const cols=frontier(serieTree); const colorByLabel={}; cols.forEach((c,i)=>colorByLabel[c.label+'@'+c.lvl]=PAL[i%PAL.length]);
-    (function walk(node){ for(const c of sortedCh(node)){ const isFront=(!c.expanded||c.children.size===0);
-      const row=document.createElement('div'); row.className='serie-node'; row.style.paddingLeft=(c.lvl*12)+'px';
-      const tg=document.createElement('span'); tg.className='nt'; tg.textContent=c.children.size>0?(c.expanded?'▾':'▸'):'·'; if(c.children.size>0)tg.onclick=()=>{c.expanded=!c.expanded;renderSerie();}; row.appendChild(tg);
-      if(isFront){ const sw=document.createElement('span'); sw.className='sw'; sw.style.background=colorByLabel[c.label+'@'+c.lvl]||'#888'; row.appendChild(sw); }
-      const lb=document.createElement('span'); lb.textContent=c.label; row.appendChild(lb); el.appendChild(row);
-      if(!isFront) walk(c);
-    } })(serieTree);
+  const FILT_DIMS=[['rating','Rating'],['sector','Sector'],['empresa','Empresa'],['anio','Año Vto.']];
+  function _vals(sub,key){
+    let v=[...new Set(sub.map(r=>gv(r,key)))];
+    v.sort(key==='rating'?(a,b)=>rrank(a)-rrank(b):key==='anio'?(a,b)=>(''+a).localeCompare(''+b,undefined,{numeric:true}):(a,b)=>(''+a).localeCompare(''+b));
+    return v;
+  }
+  function buildFilters(){
+    const el=document.getElementById('ops-serie-ctrl'); el.innerHTML='';
+    const sub=rangeMapped.filter(r=>r.sec===serieSec);
+    const bd=document.createElement('div'); bd.className='filt'; bd.innerHTML='<div class="filt-h">Desglosar por</div>';
+    const sel=document.createElement('select'); sel.id='ops-breakdown';
+    [['rating','Rating'],['sector','Sector'],['empresa','Empresa'],['anio','Año Vto.'],['','Total']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if(v===breakdown)o.selected=true;sel.appendChild(o);});
+    sel.onchange=()=>{breakdown=sel.value;renderSerie();}; bd.appendChild(sel); el.appendChild(bd);
+    for(const [key,lbl] of FILT_DIMS){
+      const vals=_vals(sub,key);
+      if(filters[key]==null) filters[key]=new Set(vals);
+      const g=document.createElement('div'); g.className='filt';
+      const hd=document.createElement('div'); hd.className='filt-h';
+      const all=document.createElement('input'); all.type='checkbox'; all.checked=vals.length>0&&vals.every(v=>filters[key].has(v));
+      all.onchange=()=>{ if(all.checked) vals.forEach(v=>filters[key].add(v)); else filters[key].clear(); buildFilters(); renderSerie(); };
+      hd.appendChild(all); hd.appendChild(document.createTextNode(lbl)); g.appendChild(hd);
+      const list=document.createElement('div'); list.className='filt-list';
+      for(const v of vals){ const lab=document.createElement('label'); const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=filters[key].has(v);
+        cb.onchange=()=>{ cb.checked?filters[key].add(v):filters[key].delete(v); all.checked=vals.every(x=>filters[key].has(x)); renderSerie(); };
+        lab.appendChild(cb); lab.appendChild(document.createTextNode(' '+v)); list.appendChild(lab); }
+      g.appendChild(list); el.appendChild(g);
+    }
+  }
+  function filteredRows(){
+    return rangeMapped.filter(r=> r.sec===serieSec && FILT_DIMS.every(([k])=> !filters[k] || filters[k].has(gv(r,k))));
   }
   function renderSerie(){
-    if(!serieTree){ if(chart){chart.destroy();chart=null;} return; }
-    renderSerieCtrl();
-    const cols=frontier(serieTree);
-    const fechas=[...new Set(rangeMapped.filter(r=>r.sec===serieSec).map(r=>r.fecha))].sort();
-    const datasets=cols.map((c,i)=>({
-      label:c.label,
-      data:fechas.map(f=>{ const v=wavg(c.rows.filter(r=>r.fecha===f),null,metric); return v==null?null:+v.toFixed(3); }),
-      borderColor:PAL[i%PAL.length], backgroundColor:PAL[i%PAL.length], tension:.2, spanGaps:true, pointRadius:2
-    }));
+    const rows=filteredRows();
+    const fechas=[...new Set(rows.map(r=>r.fecha))].sort();
+    let groups;
+    if(!breakdown){ groups=[{label:'Total', rows}]; }
+    else{
+      let vals=[...new Set(rows.map(r=>gv(r,breakdown)))];
+      const mtot=v=>rows.filter(r=>gv(r,breakdown)===v).reduce((s,r)=>s+(r.monto||0),0);
+      vals.sort(breakdown==='rating'?(a,b)=>rrank(a)-rrank(b):breakdown==='anio'?(a,b)=>(''+a).localeCompare(''+b,undefined,{numeric:true}):(a,b)=>mtot(b)-mtot(a));
+      groups=vals.slice(0,15).map(v=>({label:''+v, rows:rows.filter(r=>gv(r,breakdown)===v)}));
+    }
+    const datasets=groups.map((g,i)=>({label:g.label,
+      data:fechas.map(f=>{const v=wavg(g.rows.filter(r=>r.fecha===f),null,metric);return v==null?null:+v.toFixed(3);}),
+      borderColor:PAL[i%PAL.length], backgroundColor:PAL[i%PAL.length], tension:.2, spanGaps:true, pointRadius:2}));
     const ctx=document.getElementById('ops-serie-canvas');
     if(chart) chart.destroy();
     chart=new Chart(ctx,{type:'line',data:{labels:fechas,datasets},options:{
@@ -5200,8 +5229,13 @@ const OPS = (function(){
   // ── carga de datos ──
   async function loadDates(){
     const r=await q('/fx_history?select=fecha&order=fecha.desc');
-    dates=r.map(x=>x.fecha); maxDate=dates[0]||null;
+    dates=r.map(x=>x.fecha); maxDate=dates[0]||null; const minDate=dates[dates.length-1]||null;
     const sel=document.getElementById('ops-date'); sel.innerHTML=dates.map(d=>'<option value="'+d+'">'+d+'</option>').join('');
+    let from=maxDate;
+    if(maxDate){ const d=new Date(maxDate); d.setMonth(d.getMonth()-3); from=d.toISOString().slice(0,10); if(minDate&&from<minDate)from=minDate; }
+    dateTo=maxDate; dateFrom=from;
+    const fi=document.getElementById('ops-from'), to=document.getElementById('ops-to');
+    if(fi&&to){ fi.min=to.min=minDate||''; fi.max=to.max=maxDate||''; fi.value=dateFrom||''; to.value=dateTo||''; }
     if(maxDate){ sel.value=maxDate; await loadDay(maxDate); }
     await loadRange();
   }
@@ -5215,10 +5249,12 @@ const OPS = (function(){
     renderResumen();
   }
   async function loadRange(){
+    filters={rating:null,sector:null,empresa:null,anio:null};
     let path='/market_ops?select=fecha,ticker,emisor,tipo,leg,jur,rating,sector,anio_vto,monto,tir,tna,outlier&order=fecha.asc';
-    if(rangeMonths>0 && maxDate){ const d=new Date(maxDate); d.setMonth(d.getMonth()-rangeMonths); path+='&fecha=gte.'+d.toISOString().slice(0,10); }
+    if(dateFrom) path+='&fecha=gte.'+dateFrom;
+    if(dateTo) path+='&fecha=lte.'+dateTo;
     const rows=await qAll(path); rangeMapped=rows.map(mapRow);
-    buildSerieSecSelector(); rebuildSerieTree(); renderSerie();
+    buildSerieSecSelector(); buildFilters(); renderSerie();
   }
 
   // ── API pública ──
@@ -5238,9 +5274,9 @@ const OPS = (function(){
       this.toggleMenu(false);
     },
     loadDay(f){ loadDay(f); },
-    setSerieSec(id){ serieSec=id; rebuildSerieTree(); renderSerie(); },
+    setSerieSec(id){ serieSec=id; filters={rating:null,sector:null,empresa:null,anio:null}; buildFilters(); renderSerie(); },
     setMetric(m){ metric=m; document.getElementById('ops-m-tir').classList.toggle('on',m==='tir'); document.getElementById('ops-m-tna').classList.toggle('on',m==='tna'); renderSerie(); },
-    setRange(mo){ rangeMonths=mo; loadRange(); },
+    setDates(){ const fi=document.getElementById('ops-from'),to=document.getElementById('ops-to'); dateFrom=fi.value||null; dateTo=to.value||null; loadRange(); },
   };
 })();
 </script>
