@@ -5049,6 +5049,18 @@ const OPS = (function(){
   const REST = (cfg.url||'') + '/rest/v1';
   const HDRS = {apikey:cfg.anonKey||'', Authorization:'Bearer '+(cfg.anonKey||'')};
   async function q(path){ try{ const r=await fetch(REST+path,{headers:HDRS}); return r.ok? await r.json():[]; }catch(e){ console.error('[OPS]',e); return []; } }
+  async function qAll(path){ // pagina (Supabase devuelve máx 1000 filas por request)
+    const out=[]; let from=0; const page=1000;
+    while(true){
+      let chunk=[];
+      try{ const r=await fetch(REST+path,{headers:{...HDRS, Range:from+'-'+(from+page-1), 'Range-Unit':'items'}}); if(r.ok) chunk=await r.json(); }
+      catch(e){ console.error('[OPS]',e); break; }
+      out.push(...chunk);
+      if(chunk.length<page) break;
+      from+=page;
+    }
+    return out;
+  }
 
   // ── jerarquía / secciones (espejo del reporte) ──
   const HIER=['rating','sector','empresa','ticker'];
@@ -5195,7 +5207,7 @@ const OPS = (function(){
   }
   async function loadDay(f){
     dayTrees={}; collapse={};
-    const rows=await q('/market_ops?fecha=eq.'+f);
+    const rows=await qAll('/market_ops?fecha=eq.'+f);
     dayMapped=rows.map(mapRow);
     const fx=(await q('/fx_history?fecha=eq.'+f))[0]||{};
     document.getElementById('ops-fx').innerHTML=[['USD A3500',fx.a3500],['USD MEP',fx.mep],['USD CABLE',fx.ccl]]
@@ -5205,7 +5217,7 @@ const OPS = (function(){
   async function loadRange(){
     let path='/market_ops?select=fecha,ticker,emisor,tipo,leg,jur,rating,sector,anio_vto,monto,tir,tna,outlier&order=fecha.asc';
     if(rangeMonths>0 && maxDate){ const d=new Date(maxDate); d.setMonth(d.getMonth()-rangeMonths); path+='&fecha=gte.'+d.toISOString().slice(0,10); }
-    const rows=await q(path); rangeMapped=rows.map(mapRow);
+    const rows=await qAll(path); rangeMapped=rows.map(mapRow);
     buildSerieSecSelector(); rebuildSerieTree(); renderSerie();
   }
 
