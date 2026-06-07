@@ -349,11 +349,8 @@ window.SUPABASE_CONFIG = {
 <body>
 <header>
   <div class="logo"><div class="logo-mark">BC</div>BONOS<span class="acc">CORP</span></div>
-  <select id="view-select" onchange="OPS.switchView(this.value)" title="Cambiar de vista"
-    style="margin-left:16px;font:inherit;font-size:.72rem;font-weight:700;color:#1F3864;background:#e8eef7;border:1px solid #B4C6E7;border-radius:6px;padding:5px 10px;cursor:pointer">
-    <option value="calc">CALCULADORAS</option>
-    <option value="ops">OPERACIONES MERCADO</option>
-  </select>
+  <button id="menu-btn" onclick="OPS.toggleMenu()" title="Menú"
+    style="margin-left:14px;font:inherit;font-size:1.05rem;font-weight:700;color:#1F3864;background:#e8eef7;border:1px solid #B4C6E7;border-radius:6px;padding:4px 12px;cursor:pointer;line-height:1">☰</button>
   <div class="hdr-r">
     <div class="pill"><div class="dot wait" id="sdot"></div><span id="stxt">Cargando…</span></div>
     <button class="hdr-btn btn-import" onclick="openImportModal()">⬆ Importar Excel</button>
@@ -4984,13 +4981,13 @@ body.ops-mode #view-ops{display:block}
 #view-ops .secind{display:inline-block;width:14px}
 #view-ops .cap{color:#94a3b8;font-size:.66rem;margin:3px 0 4px}
 #view-ops .scroll{overflow-x:auto;border:1px solid #B4C6E7;border-top:none}
-#view-ops table.pv{border-collapse:collapse;font-size:.72rem;background:#fff;color:#1b2a3a}
-#view-ops table.pv th,#view-ops table.pv td{border:1px solid #B4C6E7;padding:3px 8px;text-align:center;white-space:nowrap}
-#view-ops table.pv thead th{background:var(--hdr,#2E75B6);color:#fff;font-weight:600}
-#view-ops table.pv td.yr,#view-ops table.pv th.yr{background:var(--idx,#DDEBF7);font-weight:700;text-align:left}
-#view-ops table.pv tbody tr:nth-child(even) td:not(.yr){background:var(--alt,#EAF1FB)}
-#view-ops table.pv tr.total td{background:var(--tot,#cfe0f5)!important;font-weight:700}
-#view-ops table.pv td.tot,#view-ops table.pv th.tot{background:var(--tot,#cfe0f5);font-weight:700}
+#view-ops table.pv{border-collapse:collapse;font-size:.8rem;background:#fff}
+#view-ops table.pv th,#view-ops table.pv td{border:1px solid #9db8de;padding:4px 10px;text-align:center;white-space:nowrap;background:#ffffff;color:#10243f !important}
+#view-ops table.pv thead th{background:var(--hdr,#2E75B6) !important;color:#ffffff !important;font-weight:700}
+#view-ops table.pv td.yr,#view-ops table.pv th.yr{background:var(--idx,#DDEBF7) !important;color:#10243f !important;font-weight:700;text-align:left}
+#view-ops table.pv tbody tr:nth-child(even) td:not(.yr):not(.tot){background:#eef3fb}
+#view-ops table.pv tr.total td{background:var(--tot,#cfe0f5)!important;color:#10243f !important;font-weight:700}
+#view-ops table.pv td.tot,#view-ops table.pv th.tot{background:var(--tot,#cfe0f5) !important;color:#10243f !important;font-weight:700}
 #view-ops .tgl{cursor:pointer;user-select:none;display:inline-block;width:13px;color:#fff}
 #view-ops .empty{color:#94a3b8;font-style:italic;padding:8px}
 #view-ops .serie-wrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
@@ -5001,7 +4998,24 @@ body.ops-mode #view-ops{display:block}
 #view-ops .serie-chart{flex:1;min-width:480px;background:#0c1018;border:1px solid #1e2d42;border-radius:6px;padding:10px;height:440px}
 #view-ops .btn-mini{font:inherit;font-size:.68rem;font-weight:600;padding:5px 11px;border:1px solid #1e2d42;border-radius:5px;background:#11243f;color:#cfe0f5;cursor:pointer}
 #view-ops .btn-mini.on{background:#1F3864;color:#fff;border-color:#2E75B6}
+/* Drawer / menú lateral */
+#ops-drawer-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:600}
+body.drawer-open #ops-drawer-ov{display:block}
+#ops-drawer{position:fixed;top:0;left:0;bottom:0;width:262px;background:#0c1018;border-right:1px solid #1e2d42;z-index:601;transform:translateX(-100%);transition:transform .22s ease;padding:14px;box-shadow:2px 0 18px rgba(0,0,0,.55)}
+body.drawer-open #ops-drawer{transform:translateX(0)}
+#ops-drawer .dh{font-family:'Syne',sans-serif;font-weight:700;color:#e2e8f0;font-size:.9rem;margin:4px 2px 14px;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:center}
+#ops-drawer .dh .x{cursor:pointer;color:#94a3b8;font-weight:400}
+#ops-drawer .ditem{display:block;width:100%;text-align:left;font:inherit;font-size:.82rem;font-weight:600;color:#cfe0f5;background:transparent;border:1px solid #1e2d42;border-radius:7px;padding:11px 13px;margin-bottom:8px;cursor:pointer}
+#ops-drawer .ditem:hover{background:#11243f}
+#ops-drawer .ditem.active{background:#1F3864;color:#fff;border-color:#2E75B6}
 </style>
+
+<div id="ops-drawer-ov" onclick="OPS.toggleMenu(false)"></div>
+<aside id="ops-drawer">
+  <div class="dh"><span>Menú</span><span class="x" onclick="OPS.toggleMenu(false)">✕</span></div>
+  <button class="ditem active" data-v="calc" onclick="OPS.selectView('calc')">🧮 Calculadoras</button>
+  <button class="ditem" data-v="ops" onclick="OPS.selectView('ops')">📊 Operaciones Mercado</button>
+</aside>
 
 <div id="view-ops">
   <div class="ops-h">📊 Operaciones de Mercado · ONs Renta Fija (bilateral)</div>
@@ -5010,11 +5024,7 @@ body.ops-mode #view-ops{display:block}
     <div class="ops-fx" id="ops-fx"></div>
   </div>
 
-  <div class="ops-h">Resumen del día</div>
-  <div class="ops-tabs" id="ops-resumen-tabs"></div>
-  <div id="ops-resumen"></div>
-
-  <div class="ops-h" style="margin-top:24px">Serie de tiempo de la tasa</div>
+  <div class="ops-h">Serie de tiempo de la tasa</div>
   <div class="ops-toolbar">
     <label style="font-size:.7rem">Cuadro:&nbsp;<select id="ops-serie-sec" onchange="OPS.setSerieSec(this.value)"></select></label>
     <span><button class="btn-mini on" id="ops-m-tir" onclick="OPS.setMetric('tir')">TIR</button>
@@ -5027,6 +5037,10 @@ body.ops-mode #view-ops{display:block}
     <div class="serie-ctrl" id="ops-serie-ctrl"></div>
     <div class="serie-chart"><canvas id="ops-serie-canvas"></canvas></div>
   </div>
+
+  <div class="ops-h" style="margin-top:24px">Resumen del día</div>
+  <div class="ops-tabs" id="ops-resumen-tabs"></div>
+  <div id="ops-resumen"></div>
 </div>
 
 <script>
@@ -5105,7 +5119,7 @@ const OPS = (function(){
     const t=document.createElement('table'); t.className='pv'; const thead=document.createElement('thead');
     for(let lv=0;lv<N;lv++){ const tr=document.createElement('tr');
       if(lv===0){const th=document.createElement('th');th.className='yr';th.rowSpan=N;th.textContent='Año Vto.';tr.appendChild(th);}
-      for(const c of hr[lv]){ const th=document.createElement('th');th.colSpan=c.cs;th.rowSpan=c.rs; const nd=c.n; if(nd.children.size>0){const g=document.createElement('span');g.className='tgl';g.textContent=nd.expanded?'▾':'▸';g.onclick=()=>{nd.expanded=!nd.expanded;rerenderDay(secId,box,rows);};th.appendChild(g);} th.appendChild(document.createTextNode(nd.label)); tr.appendChild(th); }
+      for(const c of hr[lv]){ const th=document.createElement('th');th.colSpan=c.cs;th.rowSpan=c.rs; const nd=c.n; if(nd.children.size>0){const g=document.createElement('span');g.className='tgl';g.textContent=nd.expanded?'▾':'▸';g.onclick=()=>{nd.expanded=!nd.expanded;renderResumen();};th.appendChild(g);} th.appendChild(document.createTextNode(nd.label)); tr.appendChild(th); }
       if(lv===0){const th=document.createElement('th');th.className='tot';th.rowSpan=N;th.textContent='Total';tr.appendChild(th);}
       thead.appendChild(tr);
     }
@@ -5201,6 +5215,15 @@ const OPS = (function(){
     switchView(v){
       document.body.classList.toggle('ops-mode', v==='ops');
       if(v==='ops' && !inited){ inited=true; loadDates(); }
+    },
+    toggleMenu(force){
+      const open = (force===undefined) ? !document.body.classList.contains('drawer-open') : !!force;
+      document.body.classList.toggle('drawer-open', open);
+    },
+    selectView(v){
+      this.switchView(v);
+      document.querySelectorAll('#ops-drawer .ditem').forEach(b=>b.classList.toggle('active', b.dataset.v===v));
+      this.toggleMenu(false);
     },
     loadDay(f){ loadDay(f); },
     setSerieSec(id){ serieSec=id; rebuildSerieTree(); renderSerie(); },
