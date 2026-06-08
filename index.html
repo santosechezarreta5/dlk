@@ -1650,6 +1650,7 @@ async function fetchAll(){
     document.getElementById('s1').textContent=hits;
     document.getElementById('s5').textContent=new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Buenos_Aires'});
     if(ACTIVE_TK&&!manualPrecio){const ab=bonds.find(b=>b.ticker===ACTIVE_TK);if(ab&&ab.precio)document.getElementById('inp-precio').value=ab.precio.toFixed(0);}
+    try{ await loadLastTraded(); applyLastTradedFallback(); }catch(e){ console.error('[lastTraded]',e); }
     render();
     if(typeof updateDLEquiv==='function') updateDLEquiv();
     try{ evaluateAlerts(); }catch(e){ console.error('[evaluateAlerts]',e); }
@@ -1659,6 +1660,64 @@ async function fetchAll(){
     showErr(`Proxy no disponible (${e.message}). Corré <code>node server.js</code> en la carpeta del proyecto.`);
     if(!bonds.some(b=>b.loaded)){seedDemo();render();}
   }
+}
+
+// ── Último operado (Supabase market_ops) para bonos sin bid/offer ───────────
+// Para cada bono sin cotización en vivo, usa el ÚLTIMO precio operado del historial
+// y su TIR/TNA YA guardada (calculada con el FX y settlement del día de la op).
+let _lastTraded=null;            // cache: { tickerO: { moneda: {precio,tir,tna,fecha,settlement} } }
+const LASTTRADED_WINDOW_DAYS=16; // ~10 días hábiles de antigüedad máxima
+
+async function loadLastTraded(){
+  if(_lastTraded) return _lastTraded;
+  const cfg=window.SUPABASE_CONFIG||{};
+  const map={};
+  if(!cfg.url||!cfg.anonKey){ _lastTraded=map; return map; }
+  const base={apikey:cfg.anonKey, Authorization:'Bearer '+cfg.anonKey};
+  const d=new Date(); d.setDate(d.getDate()-LASTTRADED_WINDOW_DAYS);
+  const since=d.toISOString().slice(0,10);
+  const url=cfg.url+'/rest/v1/market_ops?select=ticker,moneda,settlement,precio,tir,tna,fecha'
+            +'&outlier=eq.false&fecha=gte.'+since+'&order=fecha.desc';
+  let from=0; const page=1000;
+  while(true){
+    let chunk=[];
+    try{
+      const r=await fetch(url,{headers:{...base, Range:from+'-'+(from+page-1), 'Range-Unit':'items'}});
+      if(r.ok) chunk=await r.json();
+    }catch(e){ console.error('[lastTraded]',e); break; }
+    for(const o of chunk){
+      if(o.precio==null||o.tir==null) continue;
+      const m=(map[o.ticker]=map[o.ticker]||{}); const cur=m[o.moneda];
+      // chunk ordenado por fecha desc → primer registro = más reciente; preferir 24HS a igual fecha
+      if(!cur || o.fecha>cur.fecha || (o.fecha===cur.fecha && o.settlement==='24HS' && cur.settlement!=='24HS'))
+        m[o.moneda]={precio:+o.precio, tir:+o.tir, tna:(o.tna==null?null:+o.tna), fecha:o.fecha, settlement:o.settlement};
+    }
+    if(chunk.length<page) break;
+    from+=page;
+  }
+  _lastTraded=map; return map;
+}
+
+function applyLastTradedFallback(){
+  const lt=_lastTraded; if(!lt) return 0;
+  const a3500Mid=(FX.a3500Bid&&FX.a3500Ask)?(FX.a3500Bid+FX.a3500Ask)/2:(FX.a3500Bid||FX.a3500Ask||null);
+  let n=0;
+  bonds.forEach(b=>{
+    if(b.manualOverride) return;
+    if(b.precio>0) return;                       // ya tiene cotización (bid/offer)
+    const key=b.ticker.slice(0,-1)+'O';          // ticker canónico (forma O)
+    const moneda = b.moneda==='DL' ? 'ARS' : 'USD MEP';
+    const rec = lt[key] && lt[key][moneda];
+    if(!rec || rec.tir==null) return;
+    b.precio=rec.precio; b.priceSrc='hist'; b.histDate=rec.fecha; b.loaded=true;
+    if(b.moneda==='DL'){ b.precio_ars=rec.precio; b.precio_usd_eq = a3500Mid ? +(rec.precio/a3500Mid).toFixed(4) : null; }
+    else { b.precio_usd_eq = rec.precio; }
+    if(b.precio_usd_eq>0){ try{ recalcTIR(b); }catch(e){} }   // recalcTIR solo para la duración
+    b.tir=+rec.tir; if(rec.tna!=null) b.tna=+rec.tna;          // pisar con TIR/TNA correctas del día
+    b.marketPrecio=b.precio; b.marketVp=null;
+    n++;
+  });
+  return n;
 }
 
 // ── FX: MEP / Cable / Canje via AL30 ────────────────────────────────────────
@@ -2235,8 +2294,10 @@ function render(){
       return `<span style="font-size:.72rem;font-weight:500;color:${colorVar}">${calc.tna.toFixed(2)}%</span>`;
     }
 
+    const histBadge=(b.priceSrc==='hist'&&b.histDate)
+      ?`<span class="price-manual-badge" title="Último operado ${b.histDate} (sin bid/offer)">últ.op ${b.histDate.slice(8,10)}/${b.histDate.slice(5,7)}</span>`:'';
     const tirCell=b.tir!=null
-      ?`<div class="tirw"><span class="tirv ${tc} tir-cell" id="tir-${b.ticker}">${b.tir.toFixed(2)}%</span><div class="tirb"><div class="tirf" style="width:${bw}%;background:${tc2}"></div></div></div>`
+      ?`<div class="tirw"><span class="tirv ${tc} tir-cell" id="tir-${b.ticker}">${b.tir.toFixed(2)}%</span>${histBadge}<div class="tirb"><div class="tirf" style="width:${bw}%;background:${tc2}"></div></div></div>`
       :`<span style="color:var(--muted2)">—</span>`;
 
     // ── Build tds in COL_DEFS order ───────────────────────────────────────────
@@ -2545,7 +2606,12 @@ function drawYield(data){
   // Primero todos los círculos
   pts.forEach(b=>{
     const cx=px(b.dur),cy=py(b.tir),c=SCOL[b.sector]||'#94a3b8',r=b.ticker===ACTIVE_TK?7:4.5;
-    out+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c}" opacity=".9" stroke="var(--bg)" stroke-width="${r>5?2:1.5}"><title>${b.ticker} · ${b.emisor}\nTIR: ${b.tir.toFixed(2)}%  Dur: ${b.dur.toFixed(2)}a\nVenc: ${b.venc}</title></circle>`;
+    if(b.priceSrc==='hist'){
+      // Sin bid/offer: último operado → marcador hueco punteado
+      out+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c}" stroke-width="1.6" stroke-dasharray="2.4 1.8" opacity=".95"><title>${b.ticker} · ${b.emisor} (último operado ${b.histDate||''}, sin bid/offer)\nTIR: ${b.tir.toFixed(2)}%  Dur: ${b.dur.toFixed(2)}a\nVenc: ${b.venc}</title></circle>`;
+    } else {
+      out+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c}" opacity=".9" stroke="var(--bg)" stroke-width="${r>5?2:1.5}"><title>${b.ticker} · ${b.emisor}\nTIR: ${b.tir.toFixed(2)}%  Dur: ${b.dur.toFixed(2)}a\nVenc: ${b.venc}</title></circle>`;
+    }
   });
   // Etiquetas — colocar arriba o abajo según espacio, evitar solapamiento guardando posiciones usadas
   const placed=[];
@@ -2569,9 +2635,13 @@ function drawYield(data){
     }
   });
   out+=`<text x="${pd.l+10}" y="${H-5}" font-size="9" fill="var(--muted2)" font-family="IBM Plex Mono,monospace">Duration (años) →</text>`;
-  svg.innerHTML=out;updateLegend([...new Set(pts.map(b=>b.sector))]);
+  svg.innerHTML=out;updateLegend([...new Set(pts.map(b=>b.sector))], pts.some(b=>b.priceSrc==='hist'));
 }
-function updateLegend(sectors){document.getElementById('chart-legend').innerHTML=sectors.map(s=>`<div class="leg-item"><div class="leg-dot" style="background:${SCOL[s]||'#94a3b8'}"></div>${s}</div>`).join('');}
+function updateLegend(sectors, anyHist){
+  let h=sectors.map(s=>`<div class="leg-item"><div class="leg-dot" style="background:${SCOL[s]||'#94a3b8'}"></div>${s}</div>`).join('');
+  if(anyHist) h+=`<div class="leg-item" title="Sin bid/offer: se usa el último precio operado"><div class="leg-dot" style="background:transparent;border:1.4px dashed var(--muted2)"></div>últ. operado</div>`;
+  document.getElementById('chart-legend').innerHTML=h;
+}
 function srt(k){SK===k?SD*=-1:(SK=k,SD=1);document.querySelectorAll('th').forEach(t=>t.classList.remove('asc','desc'));const th=document.querySelector(`th[data-col]`);render();}
 
 // generateCashflows devuelve dias calculados desde today (para saber qué pasó).
