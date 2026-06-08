@@ -2624,7 +2624,7 @@ function drawYield(data){
   if(yieldView){ x0=yieldView.x0; x1=yieldView.x1; y0=yieldView.y0; y1=yieldView.y1; }
   _yv={x0,x1,y0,y1};
   const px=x=>pd.l+(x-x0)/(x1-x0)*(W-pd.l-pd.r),py=y=>H-pd.b-(y-y0)/(y1-y0)*(H-pd.t-pd.b);
-  let out=`<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(59,130,246,.15)"/><stop offset="100%" stop-color="rgba(59,130,246,0)"/></linearGradient><linearGradient id="lg" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2dd4bf"/><stop offset="40%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#818cf8"/></linearGradient></defs>`;
+  let out=`<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(59,130,246,.15)"/><stop offset="100%" stop-color="rgba(59,130,246,0)"/></linearGradient><linearGradient id="lg" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#2dd4bf"/><stop offset="40%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#818cf8"/></linearGradient><clipPath id="yclip"><rect x="${pd.l}" y="${pd.t}" width="${W-pd.l-pd.r}" height="${H-pd.t-pd.b}"/></clipPath></defs>`;
   // TIR axis (Y) — espaciado automático según rango
   const tirRange=y1-y0;
   // Elegir paso según rango: <3% → 0.5, <6% → 1, <12% → 2, >=12% → 3+
@@ -2649,6 +2649,7 @@ function drawYield(data){
   const xr=x1-x0,xs2=xr>10?2:xr>5?1:.5;
   let _xg=0;
   for(let xv=Math.ceil(x0/xs2)*xs2;xv<=x1+.01 && _xg<500;xv=parseFloat((xv+xs2).toFixed(4))){_xg++;const xx=px(xv);out+=`<line x1="${xx}" y1="${pd.t}" x2="${xx}" y2="${H-pd.b}" stroke="rgba(30,45,66,.4)" stroke-width="1"/><text x="${xx}" y="${H-pd.b+14}" font-size="9" fill="var(--muted2)" text-anchor="middle" font-family="IBM Plex Mono,monospace">${xv.toFixed(1)}a</text>`;}
+  out+='<g clip-path="url(#yclip)">';   // recortar la capa de datos al área del plot (zoom)
   // ── Curva suavizada (no pasa por cada punto, muestra tendencia) ──────────
   // Usamos regresión polinómica local (LOESS) sobre la nube de puntos.
   // Generamos N puntos de la curva evaluando un ajuste cuadrático ponderado
@@ -2779,6 +2780,7 @@ function drawYield(data){
       }
     }
   });
+  out+='</g>';   // fin capa de datos clipeada
   out+=`<text x="${pd.l+10}" y="${H-5}" font-size="9" fill="var(--muted2)" font-family="IBM Plex Mono,monospace">Duration (años) →</text>`;
   svg.innerHTML=out;updateLegend([...new Set(pts.map(b=>b.sector))], pts.some(b=>b.priceSrc==='hist'));
 }
