@@ -1727,29 +1727,56 @@ function applyLastTradedFallback(){
   return n;
 }
 
-// Muestra en el panel la última operación (fecha · precio · tasa) cuando el bono
-// NO tiene bid ni offer en vivo. Carga el historial de Supabase si hace falta.
+// ── Última operación en el panel (bonos sin bid/offer) ──────────────────────
+const _fmtDMY=s=>s?(s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4)):'—';
+let _firstDataDate=null;   // primera fecha con datos en market_ops
+
+function _sbHeaders(){ const c=window.SUPABASE_CONFIG||{}; return c.anonKey?{apikey:c.anonKey,Authorization:'Bearer '+c.anonKey}:null; }
+
+async function getFirstDataDate(){
+  if(_firstDataDate!==null) return _firstDataDate;
+  const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders();
+  _firstDataDate='';
+  if(cfg.url&&H){ try{
+    const r=await fetch(cfg.url+'/rest/v1/market_ops?select=fecha&order=fecha.asc&limit=1',{headers:H});
+    const j=r.ok?await r.json():[]; _firstDataDate=j[0]?j[0].fecha:'';
+  }catch(e){} }
+  return _firstDataDate;
+}
+
+async function lastOpFor(bond){
+  const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders(); if(!cfg.url||!H) return null;
+  const m = bond.moneda!=='DL' ? 'USD MEP' : 'ARS';
+  const canon = bond.ticker.slice(0,-1)+'O';
+  const url=cfg.url+'/rest/v1/market_ops?ticker=eq.'+encodeURIComponent(canon)
+            +'&moneda=eq.'+encodeURIComponent(m)+'&outlier=eq.false'
+            +'&select=fecha,precio,tir&order=fecha.desc&limit=1';
+  try{ const r=await fetch(url,{headers:H}); const j=r.ok?await r.json():[]; return j[0]||null; }catch(e){ return null; }
+}
+
+// Muestra en el panel la última operación (fecha · precio · tasa) cuando el bono NO
+// tiene bid ni offer en vivo. Si nunca operó en el historial → "SIN OPERACIONES DESDE …".
 async function showLastOp(bond){
   const lo=document.getElementById('cp-lastop'); if(!lo) return;
   const isHD=bond.moneda!=='DL';
   const hasQuote = isHD ? (bond.bid_usd>0||bond.ask_usd>0) : (bond.bid_ars>0||bond.ask_ars>0);
-  const hide=()=>{ lo.style.display='none'; lo.innerHTML=''; };
-  if(hasQuote || bond.manualOverride){ hide(); return; }
-  let lt; try{ lt=await loadLastTraded(); }catch(e){ lt=null; }
-  if(!lt || ACTIVE_TK!==bond.ticker) return;   // cambió de bono mientras cargaba
-  const key=bond.ticker.slice(0,-1)+'O';
-  const rec = lt[key] && lt[key][isHD?'USD MEP':'ARS'];
-  if(!rec){ hide(); return; }
-  const px = isHD ? (+rec.precio).toFixed(2) : (+rec.precio).toLocaleString('es-AR',{maximumFractionDigits:0});
-  const f = rec.fecha.slice(8,10)+'/'+rec.fecha.slice(5,7)+'/'+rec.fecha.slice(0,4);
-  const tasa = rec.tir!=null ? (+rec.tir).toFixed(2)+'%' : '—';
-  lo.innerHTML='<div class="lo-h">Sin bid/offer · última operación</div>'
-    +'<div class="lo-grid">'
-    +'<div class="lo-c"><div class="lo-l">Fecha de operación</div><div class="lo-v">'+f+'</div></div>'
-    +'<div class="lo-c"><div class="lo-l">Precio</div><div class="lo-v">'+px+'</div></div>'
-    +'<div class="lo-c"><div class="lo-l">Tasa (TIR)</div><div class="lo-v">'+tasa+'</div></div>'
-    +'</div>';
-  lo.style.display='';
+  if(hasQuote || bond.manualOverride){ lo.style.display='none'; lo.innerHTML=''; return; }
+  lo.style.display=''; lo.innerHTML='<div class="lo-h">Cargando última operación…</div>';
+  const rec=await lastOpFor(bond);
+  if(ACTIVE_TK!==bond.ticker) return;            // cambió de bono mientras cargaba
+  if(rec){
+    const px = isHD ? (+rec.precio).toFixed(2) : (+rec.precio).toLocaleString('es-AR',{maximumFractionDigits:0});
+    const tasa = rec.tir!=null ? (+rec.tir).toFixed(2)+'%' : '—';
+    lo.innerHTML='<div class="lo-h">Sin bid/offer · última operación</div>'
+      +'<div class="lo-grid">'
+      +'<div class="lo-c"><div class="lo-l">Fecha de operación</div><div class="lo-v">'+_fmtDMY(rec.fecha)+'</div></div>'
+      +'<div class="lo-c"><div class="lo-l">Precio</div><div class="lo-v">'+px+'</div></div>'
+      +'<div class="lo-c"><div class="lo-l">Tasa (TIR)</div><div class="lo-v">'+tasa+'</div></div>'
+      +'</div>';
+  } else {
+    const fd=await getFirstDataDate(); if(ACTIVE_TK!==bond.ticker) return;
+    lo.innerHTML='<div class="lo-h" style="margin:0;color:var(--muted2)">SIN OPERACIONES DESDE '+_fmtDMY(fd)+'</div>';
+  }
 }
 
 // ── FX: MEP / Cable / Canje via AL30 ────────────────────────────────────────
