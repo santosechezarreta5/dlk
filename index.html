@@ -118,6 +118,10 @@ main.shifted{margin-right:var(--panel-w);}
 .cp-lastop .lo-c{text-align:center;}
 .cp-lastop .lo-l{font-size:.46rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);font-family:'IBM Plex Mono',monospace;}
 .cp-lastop .lo-v{font-size:.8rem;font-weight:700;color:var(--text);margin-top:2px;}
+.pagos-tbl{width:100%;border-collapse:collapse;font-size:.62rem;}
+.pagos-tbl thead th{position:sticky;top:0;background:var(--card);text-align:left;font-size:.5rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);font-weight:600;padding:4px 8px;border-bottom:1px solid var(--border);}
+.pagos-tbl tbody td{padding:4px 8px;border-bottom:1px solid rgba(30,45,66,.5);white-space:nowrap;}
+.pagos-tbl tbody tr:hover td{background:rgba(255,255,255,.03);}
 .cp-legend{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
 .leg-item{display:flex;align-items:center;gap:5px;font-size:.55rem;color:var(--muted2);}
 .leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
@@ -626,7 +630,7 @@ window.SUPABASE_CONFIG = {
       <!-- GRÁFICO -->
       <div class="card" style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-size:.6rem;font-weight:700;letter-spacing:.1em;color:var(--muted2);text-transform:uppercase;">Flujos Mensuales (U$S MM)</div>
+          <div style="font-size:.6rem;font-weight:700;letter-spacing:.1em;color:var(--muted2);text-transform:uppercase;">Flujos Mensuales (% del VN)</div>
           <div style="display:flex;gap:14px;font-size:.58rem;">
             <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:#fbbf24;border-radius:2px;display:inline-block;"></span><span style="color:var(--muted2)">Amortización</span></span>
             <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:#60a5fa;border-radius:2px;display:inline-block;"></span><span style="color:var(--muted2)">Cupón</span></span>
@@ -658,6 +662,11 @@ window.SUPABASE_CONFIG = {
               <button onclick="calNavToday()"   style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#94a3b8;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.65rem;">HOY</button>
               <button onclick="calNavMonth(1)"  style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#94a3b8;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.65rem;">▶</button>
             </div>
+          </div>
+          <div style="display:flex;gap:12px;font-size:.55rem;margin-bottom:6px;color:var(--muted2);">
+            <span style="display:flex;align-items:center;gap:4px;"><span style="width:9px;height:9px;border-radius:50%;background:#60a5fa;display:inline-block;"></span>Cupón</span>
+            <span style="display:flex;align-items:center;gap:4px;"><span style="width:9px;height:9px;border-radius:50%;background:#fbbf24;display:inline-block;"></span>Amortización</span>
+            <span style="display:flex;align-items:center;gap:4px;"><span style="width:9px;height:9px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>Vencimiento</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px;">
             <div style="text-align:center;font-size:.52rem;color:#475569;font-weight:600;padding:2px;">D</div>
@@ -2220,7 +2229,7 @@ function setMainView(view){
   document.getElementById('view-tabla').style.display = isTabla ? 'block' : 'none';
   document.getElementById('view-pagos').style.display = isTabla ? 'none'  : 'block';
   // Moneda tabs solo visible en tabla
-  document.querySelector('.moneda-tabs').style.display = isTabla ? 'flex' : 'none';
+  const _mt=document.querySelector('.moneda-tabs'); if(_mt) _mt.style.display = isTabla ? 'flex' : 'none';
   // Style active tab
   const activeStyle  = 'background:var(--card);border:1px solid var(--teal);border-bottom:none;color:var(--teal);';
   const inactiveStyle= 'background:rgba(30,45,66,.4);border:1px solid rgba(255,255,255,.08);border-bottom:none;color:var(--muted2);';
@@ -5421,6 +5430,10 @@ let _calMonth = new Date().getMonth(); // 0-based
 const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
+// Tipos de pago: cupón (interés), amortización, vencimiento
+const PAGO_COL = { CPN:'#60a5fa', AMT:'#fbbf24', VEN:'#a78bfa' };
+const PAGO_LBL = { CPN:'Interés',  AMT:'Amortización', VEN:'Vencimiento' };
+
 // Genera todos los flujos futuros de todos los bonos cargados
 function getAllFlows(){
   const today = new Date(); today.setHours(0,0,0,0);
@@ -5442,41 +5455,29 @@ function getAllFlows(){
       b.tasa_base||0
     );
 
-    const vn = b.vn_mm || null; // valor nominal en MM USD (opcional)
+    const vencAdj = adjustDate(vcD).getTime();
 
     cf.forEach(flow => {
       const fd = adjustDate(flow.fecha);
       if(fd < today) return;
       const dateKey = fd.toISOString().substring(0,10);
-
-      if(flow.interes > 0){
-        flows.push({
-          fecha: dateKey,
-          dateObj: fd,
-          ticker: b.ticker,
-          emisor: (b.emisor||'').substring(0,22),
-          tipo: 'CPN',
-          pct: flow.interes * 100,   // % del VN
-          monto_mm: vn ? +(flow.interes * vn).toFixed(3) : null,
-          moneda: b.moneda || 'USD',
-        });
-      }
-      if(flow.amort > 0){
-        flows.push({
-          fecha: dateKey,
-          dateObj: fd,
-          ticker: b.ticker,
-          emisor: (b.emisor||'').substring(0,22),
-          tipo: 'AMT',
-          pct: flow.amort * 100,
-          monto_mm: vn ? +(flow.amort * vn).toFixed(3) : null,
-          moneda: b.moneda || 'USD',
-        });
+      const ev = { fecha:dateKey, dateObj:fd, ticker:b.ticker,
+                   emisor:(b.emisor||'').substring(0,22), moneda:b.moneda||'USD' };
+      if(fd.getTime() === vencAdj){
+        // Vencimiento: el bono paga TODO el capital remanente
+        flows.push({ ...ev, tipo:'VEN', displayPct:null,
+                     cuponPct:flow.interes||0, amortPct:flow.amort||0 });
+      } else {
+        // interés → muestra el cupón del bono; amortización → % que amortiza
+        if(flow.interes > 0) flows.push({ ...ev, tipo:'CPN', displayPct:(b.cupon||0),
+                                          cuponPct:flow.interes, amortPct:0 });
+        if(flow.amort  > 0) flows.push({ ...ev, tipo:'AMT', displayPct:flow.amort,
+                                          cuponPct:0, amortPct:flow.amort });
       }
     });
   });
 
-  flows.sort((a,b) => a.fecha.localeCompare(b.fecha));
+  flows.sort((a,b) => a.fecha.localeCompare(b.fecha) || a.ticker.localeCompare(b.ticker));
   return flows;
 }
 
@@ -5485,10 +5486,10 @@ function flowsByMonth(flows){
   const m = {};
   flows.forEach(f => {
     const key = f.fecha.substring(0,7);
-    if(!m[key]) m[key] = {cpn_mm:0, amt_mm:0, cpn_pct:0, amt_pct:0, count:0};
+    if(!m[key]) m[key] = {cpn_pct:0, amt_pct:0, count:0};
     m[key].count++;
-    if(f.tipo==='CPN'){ m[key].cpn_mm  += f.monto_mm||0; m[key].cpn_pct  += f.pct; }
-    else               { m[key].amt_mm  += f.monto_mm||0; m[key].amt_pct  += f.pct; }
+    m[key].cpn_pct += f.cuponPct||0;   // incluye el cupón del vencimiento
+    m[key].amt_pct += f.amortPct||0;   // incluye el capital del vencimiento
   });
   return m;
 }
@@ -5506,11 +5507,9 @@ function renderCalendario(){
 function renderCalChart(flows){
   const byMonth = flowsByMonth(flows);
   const keys    = Object.keys(byMonth).sort().slice(0, 26);
-  const hasMM   = keys.some(k => byMonth[k].cpn_mm > 0 || byMonth[k].amt_mm > 0);
-
-  const labels = keys.map(k => k);
-  const amtData = keys.map(k => hasMM ? +byMonth[k].amt_mm.toFixed(1) : +byMonth[k].amt_pct.toFixed(0));
-  const cpnData = keys.map(k => hasMM ? +byMonth[k].cpn_mm.toFixed(1) : +byMonth[k].cpn_pct.toFixed(0));
+  const labels  = keys.map(k => k);
+  const amtData = keys.map(k => +byMonth[k].amt_pct.toFixed(1));
+  const cpnData = keys.map(k => +byMonth[k].cpn_pct.toFixed(1));
 
   const canvas = document.getElementById('cal-chart');
   if(!canvas) return;
@@ -5529,20 +5528,11 @@ function renderCalChart(flows){
       responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: ctx => {
-              const v = ctx.parsed.y;
-              return ` ${ctx.dataset.label}: ${hasMM ? 'U$S '+v.toFixed(1)+'M' : v.toFixed(0)+'%'}`;
-            }
-          }
-        }
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}% VN` } }
       },
       scales: {
         x: { stacked:true, ticks:{ color:'#64748b', font:{size:9}, maxRotation:45 }, grid:{ color:'rgba(255,255,255,.04)' } },
-        y: { stacked:true, ticks:{ color:'#64748b', font:{size:9},
-          callback: v => hasMM ? '$'+v+'M' : v+'%' },
-          grid:{ color:'rgba(255,255,255,.06)' } }
+        y: { stacked:true, ticks:{ color:'#64748b', font:{size:9}, callback: v => v+'%' }, grid:{ color:'rgba(255,255,255,.06)' } }
       }
     }
   });
@@ -5553,50 +5543,27 @@ function renderProximos(flows){
   const el = document.getElementById('cal-proximos');
   const ct = document.getElementById('cal-event-count');
   if(!el) return;
+  if(ct) ct.textContent = flows.length + ' eventos';
 
-  // Agrupar por fecha
-  const byDate = {};
-  flows.forEach(f => {
-    if(!byDate[f.fecha]) byDate[f.fecha] = [];
-    byDate[f.fecha].push(f);
+  if(!flows.length){ el.innerHTML = '<div style="color:#475569;padding:8px;">Sin pagos próximos</div>'; return; }
+
+  let h = '<table class="pagos-tbl"><thead><tr>'
+        + '<th>Fecha</th><th>Ticker</th><th>Tipo</th><th style="text-align:right">%</th>'
+        + '</tr></thead><tbody>';
+  flows.slice(0, 200).forEach(f => {         // ya vienen ordenados por fecha
+    const dd  = f.fecha.split('-').reverse().join('/');   // DD/MM/AAAA
+    const col = PAGO_COL[f.tipo] || '#94a3b8';
+    const pct = f.tipo==='VEN' ? 'TOTAL'
+              : (f.displayPct!=null ? (+f.displayPct).toFixed(2)+'%' : '—');
+    h += `<tr>
+      <td style="color:#94a3b8;">${dd}</td>
+      <td style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:#e2e8f0;">${f.ticker}</td>
+      <td style="color:${col};font-weight:600;">${PAGO_LBL[f.tipo]}</td>
+      <td style="text-align:right;${f.tipo==='VEN'?'color:'+PAGO_COL.VEN+';font-weight:700;':'color:#cbd5e1;'}">${pct}</td>
+    </tr>`;
   });
-
-  const dates = Object.keys(byDate).sort().slice(0, 40); // primeras 40 fechas
-  const totalEvents = flows.length;
-  if(ct) ct.textContent = totalEvents + ' eventos';
-
-  const rows = [];
-  dates.forEach(d => {
-    const items = byDate[d];
-    // Header de fecha
-    const dt  = new Date(d+'T12:00:00');
-    const dow = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dt.getDay()];
-    const dStr = d.split('-').reverse().slice(0,2).join('/'); // DD/MM
-    // Sumar por tipo
-    const cpnMM  = items.filter(i=>i.tipo==='CPN').reduce((s,i)=>s+(i.monto_mm||0),0);
-    const amtMM  = items.filter(i=>i.tipo==='AMT').reduce((s,i)=>s+(i.monto_mm||0),0);
-    const hasMM  = cpnMM>0||amtMM>0;
-    const summary = hasMM
-      ? (cpnMM>0?`CPN U$S ${cpnMM.toFixed(2)} M`:'')+( (cpnMM>0&&amtMM>0)?' · ':'')+( amtMM>0?`AMT U$S ${amtMM.toFixed(2)} M`:'')
-      : `${items.length} evento${items.length>1?'s':''}`;
-    const onCount = items.length;
-
-    rows.push(`<div class="cal-date-group">${d} &nbsp;${dow} &nbsp;<span style="color:#60a5fa">${summary}</span> &nbsp;<span style="color:#475569">(${onCount} ON${onCount>1?'s':''})</span></div>`);
-
-    items.forEach(f => {
-      const tipCol = f.tipo==='CPN' ? '#60a5fa' : '#fbbf24';
-      const montoStr = f.monto_mm!=null ? `U$S ${f.monto_mm.toFixed(3)} M` : `${f.pct.toFixed(3)}%`;
-      rows.push(`<div class="cal-pago-row">
-        <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:#e2e8f0;">${f.ticker}</span>
-        <span style="color:${tipCol};font-weight:600;">${f.tipo}</span>
-        <span style="color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.emisor}</span>
-        <span style="color:#94a3b8;text-align:right;">${f.pct.toFixed(3)}%</span>
-        <span style="color:#2dd4bf;text-align:right;font-family:'IBM Plex Mono',monospace;">${montoStr}</span>
-      </div>`);
-    });
-  });
-
-  el.innerHTML = rows.join('');
+  h += '</tbody></table>';
+  el.innerHTML = h;
 }
 
 // ── Calendario mensual ──────────────────────────────────────────────────────
@@ -5694,20 +5661,21 @@ function renderCalMes(flows){
     const events  = dayMap[d]||[];
     const hasCpn  = events.some(e=>e.tipo==='CPN');
     const hasAmt  = events.some(e=>e.tipo==='AMT');
+    const hasVen  = events.some(e=>e.tipo==='VEN');
 
-    // Background: amber si AMT, blue si solo CPN, mixed si ambos
+    // Fondo del día (vencimiento prioriza)
     let bgStyle = '';
-    if(hasAmt && hasCpn) bgStyle = 'background:linear-gradient(135deg,rgba(251,191,36,.18) 50%,rgba(96,165,250,.18) 50%);';
-    else if(hasAmt)      bgStyle = 'background:rgba(251,191,36,.15);';
-    else if(hasCpn)      bgStyle = 'background:rgba(96,165,250,.1);';
+    if(hasVen)                bgStyle = 'background:rgba(167,139,250,.16);';
+    else if(hasAmt && hasCpn) bgStyle = 'background:linear-gradient(135deg,rgba(251,191,36,.18) 50%,rgba(96,165,250,.18) 50%);';
+    else if(hasAmt)           bgStyle = 'background:rgba(251,191,36,.15);';
+    else if(hasCpn)           bgStyle = 'background:rgba(96,165,250,.1);';
 
-    // Tickers únicos
+    // Tickers únicos, coloreados por tipo (vencimiento > amortización > cupón)
     const tickers = [...new Set(events.map(e=>e.ticker))];
     const tickerHTML = tickers.slice(0,5).map(tk => {
       const evs = events.filter(e=>e.ticker===tk);
-      const hasA = evs.some(e=>e.tipo==='AMT');
-      const hasC = evs.some(e=>e.tipo==='CPN');
-      const col  = hasA&&hasC ? '#fbbf24' : hasA ? '#fbbf24' : '#60a5fa';
+      const col = evs.some(e=>e.tipo==='VEN') ? PAGO_COL.VEN
+                : evs.some(e=>e.tipo==='AMT') ? PAGO_COL.AMT : PAGO_COL.CPN;
       return `<div class="cal-ticker" style="color:${col};">${tk}</div>`;
     }).join('');
     const more = tickers.length>5 ? `<div class="cal-ticker" style="color:#475569;">+${tickers.length-5}</div>` : '';
