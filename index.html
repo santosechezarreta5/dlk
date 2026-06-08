@@ -122,6 +122,8 @@ main.shifted{margin-right:var(--panel-w);}
 .pagos-tbl thead th{position:sticky;top:0;background:var(--card);text-align:left;font-size:.5rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);font-weight:600;padding:4px 8px;border-bottom:1px solid var(--border);}
 .pagos-tbl tbody td{padding:4px 8px;border-bottom:1px solid rgba(30,45,66,.5);white-space:nowrap;}
 .pagos-tbl tbody tr:hover td{background:rgba(255,255,255,.03);}
+.btn-png{font:inherit;font-size:.55rem;font-weight:600;letter-spacing:.04em;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:var(--muted2);border-radius:5px;padding:3px 9px;cursor:pointer;white-space:nowrap;}
+.btn-png:hover{background:rgba(255,255,255,.12);color:#e2e8f0;}
 .cp-legend{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
 .leg-item{display:flex;align-items:center;gap:5px;font-size:.55rem;color:var(--muted2);}
 .leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
@@ -524,8 +526,11 @@ window.SUPABASE_CONFIG = {
   </div>
   <div class="chart-panel">
     <div class="cp-head">
-      <div><div class="cp-title">Curva de Rendimientos · TIR vs Duration</div><div class="cp-sub">LOESS · color por sector · rueda: zoom · arrastrar: mover · doble clic: reset · clic en punto: abrir bono</div></div>
-      <div class="cp-legend" id="chart-legend"></div>
+      <div><div class="cp-title">Curva de Rendimientos · TIR vs Duration</div><div class="cp-sub">LOESS · color por sector · arrastrar: zona de zoom · doble clic: reset · clic en punto: abrir bono</div></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="cp-legend" id="chart-legend"></div>
+        <button class="btn-png" onclick="exportYieldPNG()" title="Exportar gráfico a PNG">⤓ PNG</button>
+      </div>
     </div>
     <svg class="chart" viewBox="0 0 920 220" height="220" id="ysvg"></svg>
   </div>
@@ -635,6 +640,7 @@ window.SUPABASE_CONFIG = {
           <div style="display:flex;gap:14px;font-size:.58rem;">
             <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:#fbbf24;border-radius:2px;display:inline-block;"></span><span style="color:var(--muted2)">Amortización</span></span>
             <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:#60a5fa;border-radius:2px;display:inline-block;"></span><span style="color:var(--muted2)">Cupón</span></span>
+            <button class="btn-png" onclick="exportChartPNG('cal-chart','flujos_mensuales.png')" title="Exportar gráfico a PNG">⤓ PNG</button>
           </div>
         </div>
         <div style="height:180px;position:relative;"><canvas id="cal-chart"></canvas></div>
@@ -2530,28 +2536,65 @@ let yieldView=null, _lastYieldData=null, _yv=null;
 function initYieldZoom(svg){
   if(svg._zoomInit) return; svg._zoomInit=true;
   const W=920,H=220,pd={l:50,r:24,t:20,b:38};
-  let dragging=null, moved=false;
+  let sel=null, moved=false, rectEl=null;
   const toData=(cx,cy)=>{ const r=svg.getBoundingClientRect();
     const sx=(cx-r.left)/r.width*W, sy=(cy-r.top)/r.height*H;
-    return { x:_yv.x0+(sx-pd.l)/(W-pd.l-pd.r)*(_yv.x1-_yv.x0),
+    return { sx, sy,
+             x:_yv.x0+(sx-pd.l)/(W-pd.l-pd.r)*(_yv.x1-_yv.x0),
              y:_yv.y0+(H-pd.b-sy)/(H-pd.t-pd.b)*(_yv.y1-_yv.y0) }; };
-  svg.addEventListener('wheel',e=>{ if(!_yv)return; e.preventDefault();
-    const d=toData(e.clientX,e.clientY), f=e.deltaY<0?0.85:1/0.85;
-    yieldView={ x0:d.x-(d.x-_yv.x0)*f, x1:d.x+(_yv.x1-d.x)*f,
-                y0:d.y-(d.y-_yv.y0)*f, y1:d.y+(_yv.y1-d.y)*f };
-    drawYield(_lastYieldData); },{passive:false});
-  svg.addEventListener('mousedown',e=>{ if(!_yv)return; dragging={x:e.clientX,y:e.clientY,v:{..._yv}}; moved=false; svg.style.cursor='grabbing'; });
-  window.addEventListener('mousemove',e=>{ if(!dragging)return; const r=svg.getBoundingClientRect();
-    if(Math.abs(e.clientX-dragging.x)>3||Math.abs(e.clientY-dragging.y)>3) moved=true;
-    const dx=(e.clientX-dragging.x)/r.width*W*(dragging.v.x1-dragging.v.x0)/(W-pd.l-pd.r);
-    const dy=(e.clientY-dragging.y)/r.height*H*(dragging.v.y1-dragging.v.y0)/(H-pd.t-pd.b);
-    yieldView={ x0:dragging.v.x0-dx, x1:dragging.v.x1-dx, y0:dragging.v.y0+dy, y1:dragging.v.y1+dy };
-    drawYield(_lastYieldData); });
-  window.addEventListener('mouseup',()=>{ if(dragging){dragging=null; svg.style.cursor='grab';} });
+  svg.addEventListener('mousedown',e=>{ if(!_yv||e.button!==0)return; sel={d:toData(e.clientX,e.clientY),X:e.clientX,Y:e.clientY}; moved=false;
+    rectEl=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rectEl.setAttribute('fill','rgba(96,165,250,.15)'); rectEl.setAttribute('stroke','rgba(96,165,250,.6)');
+    rectEl.setAttribute('stroke-width','1'); rectEl.setAttribute('pointer-events','none'); svg.appendChild(rectEl); });
+  window.addEventListener('mousemove',e=>{ if(!sel)return; const d=toData(e.clientX,e.clientY);
+    if(Math.abs(e.clientX-sel.X)>3||Math.abs(e.clientY-sel.Y)>3) moved=true;
+    if(rectEl){ rectEl.setAttribute('x',Math.min(sel.d.sx,d.sx)); rectEl.setAttribute('y',Math.min(sel.d.sy,d.sy));
+      rectEl.setAttribute('width',Math.abs(d.sx-sel.d.sx)); rectEl.setAttribute('height',Math.abs(d.sy-sel.d.sy)); } });
+  window.addEventListener('mouseup',e=>{ if(!sel)return; const s=sel; sel=null; if(rectEl){rectEl.remove();rectEl=null;}
+    if(!moved) return;   // fue un clic → lo maneja el handler de click (abrir bono)
+    const d=toData(e.clientX,e.clientY);
+    const x0=Math.min(s.d.x,d.x), x1=Math.max(s.d.x,d.x), y0=Math.min(s.d.y,d.y), y1=Math.max(s.d.y,d.y);
+    if(x1-x0<1e-3||y1-y0<1e-3) return;
+    yieldView={x0,x1,y0,y1}; drawYield(_lastYieldData); });
   svg.addEventListener('dblclick',()=>{ yieldView=null; drawYield(_lastYieldData); });
   svg.addEventListener('click',e=>{ if(moved)return; const t=e.target.closest('[data-tk]'); if(!t)return;
     const b=bonds.find(x=>x.ticker===t.getAttribute('data-tk')); if(b) openPanel(b); });
-  svg.style.cursor='grab';
+  svg.style.cursor='crosshair';
+}
+
+// ── Exportar gráficos a PNG ─────────────────────────────────────────────────
+function _downloadDataURL(dataURL, filename){
+  const a=document.createElement('a'); a.href=dataURL; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function exportChartPNG(canvasId, filename){
+  const c = (window.Chart && Chart.getChart) ? Chart.getChart(canvasId) : null;
+  if(!c){ return; }
+  const cs=getComputedStyle(document.documentElement);
+  const bg=(cs.getPropertyValue('--card')||'#0c1018').trim()||'#0c1018';
+  const src=c.canvas, cv=document.createElement('canvas');
+  cv.width=src.width; cv.height=src.height;
+  const x=cv.getContext('2d'); x.fillStyle=bg; x.fillRect(0,0,cv.width,cv.height); x.drawImage(src,0,0);
+  _downloadDataURL(cv.toDataURL('image/png'), filename);
+}
+function exportYieldPNG(){
+  const svg=document.getElementById('ysvg'); if(!svg) return;
+  const W=920,H=220,scale=2;
+  const cs=getComputedStyle(document.documentElement);
+  const bg=(cs.getPropertyValue('--card')||'#0c1018').trim()||'#0c1018';
+  const clone=svg.cloneNode(true);
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  clone.setAttribute('width',W); clone.setAttribute('height',H); clone.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  let xml=new XMLSerializer().serializeToString(clone)
+    .replace(/var\((--[a-z0-9-]+)\)/gi,(m,n)=>(cs.getPropertyValue(n).trim()||'#888'));
+  const img=new Image();
+  const url=URL.createObjectURL(new Blob([xml],{type:'image/svg+xml;charset=utf-8'}));
+  img.onload=()=>{ const cv=document.createElement('canvas'); cv.width=W*scale; cv.height=H*scale;
+    const x=cv.getContext('2d'); x.fillStyle=bg; x.fillRect(0,0,cv.width,cv.height);
+    x.drawImage(img,0,0,cv.width,cv.height); URL.revokeObjectURL(url);
+    _downloadDataURL(cv.toDataURL('image/png'),'curva_tir_duration.png'); };
+  img.onerror=()=>{ URL.revokeObjectURL(url); };
+  img.src=url;
 }
 
 function drawYield(data){
@@ -5210,6 +5253,7 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
           <button class="btn-mini" id="ops-m-tna" onclick="OPS.setMetric('tna')">TNA</button></span>
     <label style="font-size:.7rem">Desde:&nbsp;<input type="date" id="ops-from" onchange="OPS.setDates()"></label>
     <label style="font-size:.7rem">Hasta:&nbsp;<input type="date" id="ops-to" onchange="OPS.setDates()"></label>
+    <button class="btn-png" onclick="exportChartPNG('ops-serie-canvas','serie_tiempo.png')" title="Exportar gráfico a PNG">⤓ PNG</button>
   </div>
   <div class="serie-wrap">
     <div class="serie-ctrl" id="ops-serie-ctrl"></div>
@@ -5397,12 +5441,12 @@ const OPS = (function(){
       responsive:true,maintainAspectRatio:false,interaction:{mode:'nearest',intersect:false},
       plugins:{legend:{labels:{color:'#cbd5e1',boxWidth:10,font:{size:10}}},
         tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y!=null?c.parsed.y.toFixed(2)+'%':'—')}},
-        zoom:{ pan:{enabled:true,mode:'xy'},
-               zoom:{wheel:{enabled:true},pinch:{enabled:true},drag:{enabled:false},mode:'xy'} }},
+        zoom:{ pan:{enabled:false},
+               zoom:{drag:{enabled:true,backgroundColor:'rgba(96,165,250,.15)',borderColor:'rgba(96,165,250,.6)',borderWidth:1},wheel:{enabled:false},pinch:{enabled:false},mode:'xy'} }},
       scales:{x:{ticks:{color:'#94a3b8',font:{size:9}},grid:{color:'#16233a'}},y:{ticks:{color:'#94a3b8',callback:v=>v+'%'},grid:{color:'#16233a'}}}
     }});
     ctx.ondblclick=()=>chart.resetZoom();
-    ctx.title='Rueda: zoom · arrastrar: mover · doble clic: reset';
+    ctx.title='Arrastrar: seleccionar zona de zoom · doble clic: reset';
   }
 
   // ── carga de datos ──
@@ -5568,8 +5612,8 @@ function renderCalChart(flows){
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}% VN` } },
-        zoom: { pan:{enabled:true,mode:'x'},
-                zoom:{wheel:{enabled:true},pinch:{enabled:true},drag:{enabled:false},mode:'x'} }
+        zoom: { pan:{enabled:false},
+                zoom:{drag:{enabled:true,backgroundColor:'rgba(96,165,250,.15)',borderColor:'rgba(96,165,250,.6)',borderWidth:1},wheel:{enabled:false},pinch:{enabled:false},mode:'x'} }
       },
       scales: {
         x: { stacked:true, ticks:{ color:'#64748b', font:{size:9}, maxRotation:45 }, grid:{ color:'rgba(255,255,255,.04)' } },
@@ -5578,7 +5622,7 @@ function renderCalChart(flows){
     }
   });
   canvas.ondblclick = () => _calChart && _calChart.resetZoom();
-  canvas.title = 'Rueda: zoom · arrastrar: mover · doble clic: reset';
+  canvas.title = 'Arrastrar: seleccionar zona de zoom · doble clic: reset';
 }
 
 // ── Lista próximos pagos ────────────────────────────────────────────────────
