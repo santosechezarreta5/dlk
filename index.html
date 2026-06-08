@@ -112,6 +112,12 @@ main.shifted{margin-right:var(--panel-w);}
 .cp-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:13px;flex-wrap:wrap;gap:8px;}
 .cp-title{font-family:'Syne',sans-serif;font-weight:700;font-size:.9rem;letter-spacing:-.02em;}
 .cp-sub{font-size:.53rem;color:var(--muted2);margin-top:2px;}
+.cp-lastop{margin:0 0 4px;border:1px solid rgba(251,191,36,.3);background:rgba(251,191,36,.07);border-radius:6px;padding:6px 9px;}
+.cp-lastop .lo-h{font-size:.5rem;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
+.cp-lastop .lo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+.cp-lastop .lo-c{text-align:center;}
+.cp-lastop .lo-l{font-size:.46rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);font-family:'IBM Plex Mono',monospace;}
+.cp-lastop .lo-v{font-size:.8rem;font-weight:700;color:var(--text);margin-top:2px;}
 .cp-legend{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
 .leg-item{display:flex;align-items:center;gap:5px;font-size:.55rem;color:var(--muted2);}
 .leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
@@ -682,6 +688,7 @@ window.SUPABASE_CONFIG = {
       <button class="btn-close" onclick="closePanel()">✕</button>
     </div>
   </div>
+  <div class="cp-lastop" id="cp-lastop" style="display:none"></div>
   <div class="panel-tabs">
     <button class="ptab active" data-tab="calc" onclick="switchTab(this,'calc')">Calculadora</button>
     <button class="ptab" data-tab="feriados" onclick="switchTab(this,'feriados')">Feriados AR</button>
@@ -3063,6 +3070,24 @@ function openPanel(bond) {
   panelDirty = false;
   document.getElementById('cp-title').textContent = bond.emisor;
   document.getElementById('cp-sub').textContent   = bond.ticker + ' · ' + bond.sector + ' · ' + bond.moneda;
+  // Bono sin precio en vivo: mostrar la última operación (fecha · precio · tasa)
+  const lo=document.getElementById('cp-lastop');
+  if(lo){
+    if(bond.priceSrc==='hist' && bond.histDate){
+      const isHD=bond.moneda!=='DL';
+      const px = isHD ? (bond.precio!=null?bond.precio.toFixed(2):'—')
+                      : (bond.precio!=null?bond.precio.toLocaleString('es-AR',{maximumFractionDigits:0}):'—');
+      const f = bond.histDate.slice(8,10)+'/'+bond.histDate.slice(5,7)+'/'+bond.histDate.slice(0,4);
+      const tasa = bond.tir!=null ? bond.tir.toFixed(2)+'%' : '—';
+      lo.innerHTML='<div class="lo-h">Sin precio en vivo · última operación</div>'
+        +'<div class="lo-grid">'
+        +'<div class="lo-c"><div class="lo-l">Fecha de operación</div><div class="lo-v">'+f+'</div></div>'
+        +'<div class="lo-c"><div class="lo-l">Precio</div><div class="lo-v">'+px+'</div></div>'
+        +'<div class="lo-c"><div class="lo-l">Tasa (TIR)</div><div class="lo-v">'+tasa+'</div></div>'
+        +'</div>';
+      lo.style.display='';
+    } else { lo.style.display='none'; lo.innerHTML=''; }
+  }
   // Adaptar label e input de precio según tipo de bono
   const isHDBond = bond.moneda !== 'DL';
   const lbP = document.querySelector('label[for="inp-precio"],label:has(#inp-precio)');
