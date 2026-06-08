@@ -1727,6 +1727,31 @@ function applyLastTradedFallback(){
   return n;
 }
 
+// Muestra en el panel la última operación (fecha · precio · tasa) cuando el bono
+// NO tiene bid ni offer en vivo. Carga el historial de Supabase si hace falta.
+async function showLastOp(bond){
+  const lo=document.getElementById('cp-lastop'); if(!lo) return;
+  const isHD=bond.moneda!=='DL';
+  const hasQuote = isHD ? (bond.bid_usd>0||bond.ask_usd>0) : (bond.bid_ars>0||bond.ask_ars>0);
+  const hide=()=>{ lo.style.display='none'; lo.innerHTML=''; };
+  if(hasQuote || bond.manualOverride){ hide(); return; }
+  let lt; try{ lt=await loadLastTraded(); }catch(e){ lt=null; }
+  if(!lt || ACTIVE_TK!==bond.ticker) return;   // cambió de bono mientras cargaba
+  const key=bond.ticker.slice(0,-1)+'O';
+  const rec = lt[key] && lt[key][isHD?'USD MEP':'ARS'];
+  if(!rec){ hide(); return; }
+  const px = isHD ? (+rec.precio).toFixed(2) : (+rec.precio).toLocaleString('es-AR',{maximumFractionDigits:0});
+  const f = rec.fecha.slice(8,10)+'/'+rec.fecha.slice(5,7)+'/'+rec.fecha.slice(0,4);
+  const tasa = rec.tir!=null ? (+rec.tir).toFixed(2)+'%' : '—';
+  lo.innerHTML='<div class="lo-h">Sin bid/offer · última operación</div>'
+    +'<div class="lo-grid">'
+    +'<div class="lo-c"><div class="lo-l">Fecha de operación</div><div class="lo-v">'+f+'</div></div>'
+    +'<div class="lo-c"><div class="lo-l">Precio</div><div class="lo-v">'+px+'</div></div>'
+    +'<div class="lo-c"><div class="lo-l">Tasa (TIR)</div><div class="lo-v">'+tasa+'</div></div>'
+    +'</div>';
+  lo.style.display='';
+}
+
 // ── FX: MEP / Cable / Canje via AL30 ────────────────────────────────────────
 async function fetchFX(){
   try{
@@ -3070,24 +3095,8 @@ function openPanel(bond) {
   panelDirty = false;
   document.getElementById('cp-title').textContent = bond.emisor;
   document.getElementById('cp-sub').textContent   = bond.ticker + ' · ' + bond.sector + ' · ' + bond.moneda;
-  // Bono sin precio en vivo: mostrar la última operación (fecha · precio · tasa)
-  const lo=document.getElementById('cp-lastop');
-  if(lo){
-    if(bond.priceSrc==='hist' && bond.histDate){
-      const isHD=bond.moneda!=='DL';
-      const px = isHD ? (bond.precio!=null?bond.precio.toFixed(2):'—')
-                      : (bond.precio!=null?bond.precio.toLocaleString('es-AR',{maximumFractionDigits:0}):'—');
-      const f = bond.histDate.slice(8,10)+'/'+bond.histDate.slice(5,7)+'/'+bond.histDate.slice(0,4);
-      const tasa = bond.tir!=null ? bond.tir.toFixed(2)+'%' : '—';
-      lo.innerHTML='<div class="lo-h">Sin precio en vivo · última operación</div>'
-        +'<div class="lo-grid">'
-        +'<div class="lo-c"><div class="lo-l">Fecha de operación</div><div class="lo-v">'+f+'</div></div>'
-        +'<div class="lo-c"><div class="lo-l">Precio</div><div class="lo-v">'+px+'</div></div>'
-        +'<div class="lo-c"><div class="lo-l">Tasa (TIR)</div><div class="lo-v">'+tasa+'</div></div>'
-        +'</div>';
-      lo.style.display='';
-    } else { lo.style.display='none'; lo.innerHTML=''; }
-  }
+  // Bono sin bid/offer: mostrar la última operación (fecha · precio · tasa)
+  showLastOp(bond);
   // Adaptar label e input de precio según tipo de bono
   const isHDBond = bond.moneda !== 'DL';
   const lbP = document.querySelector('label[for="inp-precio"],label:has(#inp-precio)');
