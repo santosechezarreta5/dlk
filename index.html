@@ -1421,14 +1421,14 @@ const Catalog = (() => {
 // ── Ratings crediticios por EMISOR ───────────────────────────────────────────
 // Clave canónica de emisor (normaliza mayúsculas, acentos, S.A., nombre corto)
 const EMISOR_ALIAS = { pampaenergia:'pampa', vistaenergyargentina:'vista', telecomargentina:'telecom', aa200:'aa2000' };
-function normEmisor(e){
-  let k = String(e||'').toLowerCase()
+function _emisorBase(e){
+  return String(e||'').toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g,'')      // sin acentos
     .replace(/\bs\.?a\.?(c\.?i\.?f.*)?\b/g,'')             // saca S.A./SACIF
     .replace(/\bsucursal argentina\b/g,'')
     .replace(/[^a-z0-9]/g,'');                             // solo alfanumérico
-  return EMISOR_ALIAS[k] || k;
 }
+function normEmisor(e){ const k=_emisorBase(e); return EMISOR_ALIAS[k] || k; }
 // Nombre canónico (único) por clave de emisor — limpia los nombres duplicados.
 // Sirve como fallback inmediato aunque Supabase todavía no haya cargado los labels.
 const ISSUER_LABELS = {
@@ -1450,6 +1450,16 @@ const RATING_OPTIONS = ['AAA(arg)','AA+(arg)','AA(arg)','AA-(arg)','A+(arg)','A(
 function emisorKey(bond){ if(!bond._ekey) bond._ekey = normEmisor(bond.emisor); return bond._ekey; }
 // RATINGS[issuer_key] = { label, rating, sector }
 let RATINGS = {};
+// Hace que la ETIQUETA de cada emisor normalice a su CLAVE real. Sin esto, agregar un
+// bono eligiendo un emisor existente del dropdown (que pasa la etiqueta, ej. "Banco
+// Comafi") genera una clave distinta ("bancocomafi" vs "comafi") → emisor duplicado.
+function registerEmisorAliases(){
+  const reg=(label,key)=>{ if(!label||!key) return; const base=_emisorBase(label);
+    if(base && base!==key && !(base in EMISOR_ALIAS)) EMISOR_ALIAS[base]=key; };
+  for(const [key,label] of Object.entries(ISSUER_LABELS)) reg(label,key);
+  for(const [key,v] of Object.entries(RATINGS||{})) reg(v&&v.label,key);
+}
+registerEmisorAliases();
 function getRating(bond){ return (RATINGS[emisorKey(bond)]||{}).rating || ''; }
 // Sector ahora es propiedad del emisor (con fallback al sector propio del bono)
 function getSector(bond){ return (RATINGS[emisorKey(bond)]||{}).sector || bond.sector || ''; }
@@ -1472,6 +1482,7 @@ async function loadRatingsIntoMemory(){
     const map = {};
     (rows||[]).forEach(r=>{ map[r.issuer_key] = { label:r.issuer_label||r.issuer_key, rating:r.rating||'', sector:r.sector||'' }; });
     RATINGS = map;
+    registerEmisorAliases();   // etiqueta de cada emisor → su clave (evita duplicados)
     applyRatings();
   } catch(e){ console.warn('[ratings] load error', e?.message); }
 }
