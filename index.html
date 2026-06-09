@@ -5293,8 +5293,15 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
       <label style="font-size:.7rem">Plazo:&nbsp;<select id="ops-list-settle" onchange="OPS.setListSettle(this.value)">
         <option value="all">Todos</option><option value="CI">CI</option><option value="24HS">24HS</option></select></label>
       <span id="ops-list-count" style="font-size:.65rem;color:#94a3b8"></span>
+      <label style="font-size:.7rem">Filas:&nbsp;<select id="ops-list-size" onchange="OPS.setListSize(this.value)">
+        <option value="50">50</option><option value="100" selected>100</option><option value="250">250</option><option value="500">500</option><option value="0">Todas</option></select></label>
+      <span style="display:flex;align-items:center;gap:4px">
+        <button class="btn-mini" onclick="OPS.listPageGo(-1)">◀</button>
+        <span id="ops-list-page" style="font-size:.62rem;color:#cbd5e1;min-width:120px;text-align:center"></span>
+        <button class="btn-mini" onclick="OPS.listPageGo(1)">▶</button>
+      </span>
       <button class="btn-mini" onclick="OPS.clearListFilters()">Limpiar filtros</button>
-      <button class="btn-png" onclick="OPS.exportListCSV()" title="Exportar a CSV">⤓ CSV</button>
+      <button class="btn-png" onclick="OPS.exportListCSV()" title="Exportar a CSV (todo lo filtrado)">⤓ CSV</button>
     </div>
     <div class="ops-list-wrap"><table class="ops-list" id="ops-list-table"></table></div>
   </div>
@@ -5355,6 +5362,7 @@ const OPS = (function(){
   // ── estado ──
   let dayMapped=[], curTab='HD', collapse={}, dayTrees={};
   let dayRaw=[], opsTab='main', listSettle='all', listFilters={}, listSort={col:null,dir:1};
+  let listPage=0, listPageSize=100;
   const LIST_COLS=[['fecha','Fecha'],['ticker','Ticker'],['tipo','Tipo de bono'],['emisor','Emisor'],['rating','Rating'],
     ['sector','Sector'],['leg','Legislación'],['jur','Jurisdicción'],['settlement','Settlement'],
     ['moneda','Moneda'],['precio','Precio'],['tna','TNA'],['tir','TIR'],['monto','Monto'],['fuente','Fuente']];
@@ -5530,14 +5538,23 @@ const OPS = (function(){
   function renderListBody(){
     const t=document.getElementById('ops-list-table'); if(!t)return; const tb=t.querySelector('tbody'); if(!tb)return;
     const rows=listRows();
-    const cnt=document.getElementById('ops-list-count'); if(cnt) cnt.textContent=rows.length+' operaciones';
+    const total=rows.length;
+    const size=listPageSize>0?listPageSize:(total||1);
+    const pages=Math.max(1,Math.ceil(total/size));
+    if(listPage>=pages) listPage=pages-1; if(listPage<0) listPage=0;
+    const start=listPage*size;
+    const pageRows = listPageSize>0 ? rows.slice(start,start+size) : rows;
+    const cnt=document.getElementById('ops-list-count'); if(cnt) cnt.textContent=total+' operaciones';
+    const pg=document.getElementById('ops-list-page');
+    if(pg) pg.textContent = total ? ('Pág. '+(listPage+1)+'/'+pages+' · '+(start+1)+'-'+Math.min(start+size,total)) : '—';
     let h='';
-    for(const o of rows){ h+='<tr>'; for(const [col] of LIST_COLS){ h+='<td'+(LIST_NUM.has(col)?' class="num"':'')+'>'+_esc(_listDisp(o,col))+'</td>'; } h+='</tr>'; }
-    if(!rows.length) h='<tr><td colspan="'+LIST_COLS.length+'" style="text-align:center;color:#94a3b8;padding:10px">(sin operaciones)</td></tr>';
+    for(const o of pageRows){ h+='<tr>'; for(const [col] of LIST_COLS){ h+='<td'+(LIST_NUM.has(col)?' class="num"':'')+'>'+_esc(_listDisp(o,col))+'</td>'; } h+='</tr>'; }
+    if(!total) h='<tr><td colspan="'+LIST_COLS.length+'" style="text-align:center;color:#94a3b8;padding:10px">(sin operaciones)</td></tr>';
     tb.innerHTML=h;
   }
   function renderList(){
     const t=document.getElementById('ops-list-table'); if(!t) return;
+    listPage=0;
     let h='<thead><tr>';
     for(const [col,lbl] of LIST_COLS){ const ind=listSort.col===col?(listSort.dir>0?'▲':'▼'):''; h+="<th onclick=\"OPS.sortList('"+col+"')\">"+lbl+'<span class="sortind">'+ind+'</span></th>'; }
     h+='</tr><tr class="filt">';
@@ -5603,7 +5620,9 @@ const OPS = (function(){
       if(t==='list') renderList();
     },
     setListSettle(v){ listSettle=v; renderList(); },
-    setListFilter(col,val){ listFilters[col]=val; renderListBody(); },
+    setListFilter(col,val){ listFilters[col]=val; listPage=0; renderListBody(); },
+    setListSize(v){ listPageSize=+v||0; listPage=0; renderListBody(); },
+    listPageGo(d){ listPage+=d; const w=document.querySelector('#ops-tab-list .ops-list-wrap'); if(w) w.scrollTop=0; renderListBody(); },
     clearListFilters(){ listFilters={}; listSettle='all'; const s=document.getElementById('ops-list-settle'); if(s)s.value='all'; renderList(); },
     sortList(col){ if(listSort.col===col) listSort.dir*=-1; else { listSort.col=col; listSort.dir=1; } renderList(); },
     exportListCSV(){
