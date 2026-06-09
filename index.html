@@ -5220,6 +5220,19 @@ body.ops-mode #view-ops{display:block}
 #view-ops .filt-list{max-height:110px;overflow:auto;display:flex;flex-direction:column;gap:1px;border:1px solid #16233a;border-radius:4px;padding:3px 5px}
 #view-ops .filt-list label{display:flex;align-items:center;gap:5px;font-size:.66rem;color:#cbd5e1;cursor:pointer}
 #view-ops select#ops-breakdown{width:100%;margin-top:2px}
+#view-ops .ops-subtabs{display:flex;gap:6px;margin:6px 0 12px;border-bottom:2px solid #1F3864}
+#view-ops .ops-subtab{font-weight:700;font-size:.8rem;padding:7px 16px;border:1px solid #1e2d42;border-bottom:none;border-radius:7px 7px 0 0;background:#0c1018;color:#94a3b8;cursor:pointer}
+#view-ops .ops-subtab.active{background:#1F3864;color:#fff}
+#view-ops .ops-list-wrap{overflow:auto;max-height:calc(100vh - 240px);border:1px solid #1e2d42;border-radius:6px}
+#view-ops table.ops-list{border-collapse:separate;border-spacing:0;font-size:.66rem;width:100%;background:#0c1018;color:#e2e8f0}
+#view-ops table.ops-list th{position:sticky;top:0;background:#142235;color:#cfe0f5;font-weight:600;text-align:left;padding:5px 8px;border-bottom:1px solid #1e2d42;white-space:nowrap;cursor:pointer;z-index:2}
+#view-ops table.ops-list th .sortind{color:#60a5fa;font-size:.6rem;margin-left:3px}
+#view-ops table.ops-list tr.filt th{position:sticky;top:27px;background:#0f1a2a;padding:3px 6px;cursor:auto;z-index:1}
+#view-ops table.ops-list tr.filt input{width:100%;box-sizing:border-box;font:inherit;font-size:.62rem;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:3px;padding:2px 4px}
+#view-ops table.ops-list td{padding:3px 8px;border-bottom:1px solid #16233a;white-space:nowrap}
+#view-ops table.ops-list td.num{text-align:right;font-variant-numeric:tabular-nums}
+#view-ops table.ops-list tbody tr:hover td{background:rgba(255,255,255,.04)}
+#view-ops table.ops-list tbody tr:nth-child(even) td{background:rgba(255,255,255,.015)}
 #view-ops .btn-mini{font:inherit;font-size:.68rem;font-weight:600;padding:5px 11px;border:1px solid #1e2d42;border-radius:5px;background:#11243f;color:#cfe0f5;cursor:pointer}
 #view-ops .btn-mini.on{background:#1F3864;color:#fff;border-color:#2E75B6}
 /* Drawer / menú lateral */
@@ -5248,23 +5261,41 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
     <div class="ops-fx" id="ops-fx"></div>
   </div>
 
-  <div class="ops-h">Serie de tiempo de la tasa</div>
-  <div class="ops-toolbar">
-    <label style="font-size:.7rem">Cuadro:&nbsp;<select id="ops-serie-sec" onchange="OPS.setSerieSec(this.value)"></select></label>
-    <span><button class="btn-mini on" id="ops-m-tir" onclick="OPS.setMetric('tir')">TIR</button>
-          <button class="btn-mini" id="ops-m-tna" onclick="OPS.setMetric('tna')">TNA</button></span>
-    <label style="font-size:.7rem">Desde:&nbsp;<input type="date" id="ops-from" onchange="OPS.setDates()"></label>
-    <label style="font-size:.7rem">Hasta:&nbsp;<input type="date" id="ops-to" onchange="OPS.setDates()"></label>
-    <button class="btn-png" onclick="exportChartPNG('ops-serie-canvas','serie_tiempo.png')" title="Exportar gráfico a PNG">⤓ PNG</button>
-  </div>
-  <div class="serie-wrap">
-    <div class="serie-ctrl" id="ops-serie-ctrl"></div>
-    <div class="serie-chart"><canvas id="ops-serie-canvas"></canvas></div>
+  <div class="ops-subtabs">
+    <button class="ops-subtab active" id="ost-main" onclick="OPS.setOpsTab('main')">📈 Resumen y serie</button>
+    <button class="ops-subtab" id="ost-list" onclick="OPS.setOpsTab('list')">📋 Operaciones del día</button>
   </div>
 
-  <div class="ops-h" style="margin-top:24px">Resumen del día</div>
-  <div class="ops-tabs" id="ops-resumen-tabs"></div>
-  <div id="ops-resumen"></div>
+  <div id="ops-tab-main">
+    <div class="ops-h">Serie de tiempo de la tasa</div>
+    <div class="ops-toolbar">
+      <label style="font-size:.7rem">Cuadro:&nbsp;<select id="ops-serie-sec" onchange="OPS.setSerieSec(this.value)"></select></label>
+      <span><button class="btn-mini on" id="ops-m-tir" onclick="OPS.setMetric('tir')">TIR</button>
+            <button class="btn-mini" id="ops-m-tna" onclick="OPS.setMetric('tna')">TNA</button></span>
+      <label style="font-size:.7rem">Desde:&nbsp;<input type="date" id="ops-from" onchange="OPS.setDates()"></label>
+      <label style="font-size:.7rem">Hasta:&nbsp;<input type="date" id="ops-to" onchange="OPS.setDates()"></label>
+      <button class="btn-png" onclick="exportChartPNG('ops-serie-canvas','serie_tiempo.png')" title="Exportar gráfico a PNG">⤓ PNG</button>
+    </div>
+    <div class="serie-wrap">
+      <div class="serie-ctrl" id="ops-serie-ctrl"></div>
+      <div class="serie-chart"><canvas id="ops-serie-canvas"></canvas></div>
+    </div>
+
+    <div class="ops-h" style="margin-top:24px">Resumen del día</div>
+    <div class="ops-tabs" id="ops-resumen-tabs"></div>
+    <div id="ops-resumen"></div>
+  </div>
+
+  <div id="ops-tab-list" style="display:none">
+    <div class="ops-toolbar">
+      <label style="font-size:.7rem">Plazo:&nbsp;<select id="ops-list-settle" onchange="OPS.setListSettle(this.value)">
+        <option value="all">Todos</option><option value="CI">CI</option><option value="24HS">24HS</option></select></label>
+      <span id="ops-list-count" style="font-size:.65rem;color:#94a3b8"></span>
+      <button class="btn-mini" onclick="OPS.clearListFilters()">Limpiar filtros</button>
+      <button class="btn-png" onclick="OPS.exportListCSV()" title="Exportar a CSV">⤓ CSV</button>
+    </div>
+    <div class="ops-list-wrap"><table class="ops-list" id="ops-list-table"></table></div>
+  </div>
 </div>
 
 <script>
@@ -5321,6 +5352,11 @@ const OPS = (function(){
 
   // ── estado ──
   let dayMapped=[], curTab='HD', collapse={}, dayTrees={};
+  let dayRaw=[], opsTab='main', listSettle='all', listFilters={}, listSort={col:null,dir:1};
+  const LIST_COLS=[['ticker','Ticker'],['tipo','Tipo de bono'],['emisor','Emisor'],['rating','Rating'],
+    ['sector','Sector'],['leg','Legislación'],['jur','Jurisdicción'],['settlement','Settlement'],
+    ['moneda','Moneda'],['precio','Precio'],['tna','TNA'],['tir','TIR'],['monto','Monto'],['fuente','Fuente']];
+  const LIST_NUM=new Set(['precio','tna','tir','monto']);
   let rangeMapped=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
   let breakdown='rating', filters={rating:null,sector:null,empresa:null,anio:null};
   const gv=(r,k)=>{ const v=r[k]; return (v==null||v==='')?('(s/'+k+')'):v; };
@@ -5464,14 +5500,57 @@ const OPS = (function(){
     if(maxDate){ sel.value=maxDate; await loadDay(maxDate); }
     await loadRange();
   }
+  // ── Lista de operaciones del día ──
+  const _esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  function _listDisp(o,col){
+    const v=o[col];
+    if(v==null||v==='') return '';
+    if(col==='precio') return Number(v).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if(col==='tna'||col==='tir') return Number(v).toFixed(2)+'%';
+    if(col==='monto') return Number(v).toLocaleString('es-AR',{maximumFractionDigits:0});
+    return ''+v;
+  }
+  function listRows(){
+    let rows=dayRaw.slice();
+    if(listSettle!=='all') rows=rows.filter(r=>r.settlement===listSettle);
+    for(const [col] of LIST_COLS){ const f=(listFilters[col]||'').trim().toLowerCase(); if(!f) continue;
+      rows=rows.filter(r=>_listDisp(r,col).toLowerCase().includes(f)); }
+    if(listSort.col){ const c=listSort.col, num=LIST_NUM.has(c), d=listSort.dir;
+      rows.sort((a,b)=>{ let va=a[c],vb=b[c];
+        if(num){ va=+va; vb=+vb; if(isNaN(va))va=-Infinity; if(isNaN(vb))vb=-Infinity; return (va-vb)*d; }
+        return String(va==null?'':va).localeCompare(String(vb==null?'':vb))*d; }); }
+    return rows;
+  }
+  function renderListBody(){
+    const t=document.getElementById('ops-list-table'); if(!t)return; const tb=t.querySelector('tbody'); if(!tb)return;
+    const rows=listRows();
+    const cnt=document.getElementById('ops-list-count'); if(cnt) cnt.textContent=rows.length+' operaciones';
+    let h='';
+    for(const o of rows){ h+='<tr>'; for(const [col] of LIST_COLS){ h+='<td'+(LIST_NUM.has(col)?' class="num"':'')+'>'+_esc(_listDisp(o,col))+'</td>'; } h+='</tr>'; }
+    if(!rows.length) h='<tr><td colspan="'+LIST_COLS.length+'" style="text-align:center;color:#94a3b8;padding:10px">(sin operaciones)</td></tr>';
+    tb.innerHTML=h;
+  }
+  function renderList(){
+    const t=document.getElementById('ops-list-table'); if(!t) return;
+    let h='<thead><tr>';
+    for(const [col,lbl] of LIST_COLS){ const ind=listSort.col===col?(listSort.dir>0?'▲':'▼'):''; h+="<th onclick=\"OPS.sortList('"+col+"')\">"+lbl+'<span class="sortind">'+ind+'</span></th>'; }
+    h+='</tr><tr class="filt">';
+    for(const [col] of LIST_COLS){ h+='<th><input type="text" value="'+(listFilters[col]||'').replace(/"/g,'&quot;')+"\" oninput=\"OPS.setListFilter('"+col+"',this.value)\" placeholder=\"filtrar…\"></th>"; }
+    h+='</tr></thead><tbody></tbody>';
+    t.innerHTML=h;
+    renderListBody();
+  }
+
   async function loadDay(f){
     dayTrees={}; collapse={};
     const rows=await qAll('/market_ops?fecha=eq.'+f);
     dayMapped=rows.map(mapRow);
+    dayRaw=rows;
     const fx=(await q('/fx_history?fecha=eq.'+f))[0]||{};
     document.getElementById('ops-fx').innerHTML=[['USD A3500',fx.a3500],['USD MEP',fx.mep],['USD CABLE',fx.ccl]]
       .map(([l,v])=>'<div class="c"><div class="l">'+l+'</div><div class="v">'+(v!=null?Number(v).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—')+'</div></div>').join('');
     renderResumen();
+    renderList();
   }
   async function loadRange(){
     filters={rating:null,sector:null,empresa:null,anio:null};
@@ -5502,6 +5581,24 @@ const OPS = (function(){
     setSerieSec(id){ serieSec=id; filters={rating:null,sector:null,empresa:null,anio:null}; buildFilters(); renderSerie(); },
     setMetric(m){ metric=m; document.getElementById('ops-m-tir').classList.toggle('on',m==='tir'); document.getElementById('ops-m-tna').classList.toggle('on',m==='tna'); renderSerie(); },
     setDates(){ const fi=document.getElementById('ops-from'),to=document.getElementById('ops-to'); dateFrom=fi.value||null; dateTo=to.value||null; loadRange(); },
+    setOpsTab(t){ opsTab=t;
+      document.getElementById('ops-tab-main').style.display = t==='main'?'':'none';
+      document.getElementById('ops-tab-list').style.display = t==='list'?'':'none';
+      document.getElementById('ost-main').classList.toggle('active',t==='main');
+      document.getElementById('ost-list').classList.toggle('active',t==='list');
+      if(t==='list') renderList();
+    },
+    setListSettle(v){ listSettle=v; renderList(); },
+    setListFilter(col,val){ listFilters[col]=val; renderListBody(); },
+    clearListFilters(){ listFilters={}; listSettle='all'; const s=document.getElementById('ops-list-settle'); if(s)s.value='all'; renderList(); },
+    sortList(col){ if(listSort.col===col) listSort.dir*=-1; else { listSort.col=col; listSort.dir=1; } renderList(); },
+    exportListCSV(){
+      const rows=listRows(); const esc=v=>{ v=(v==null?'':String(v)); return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+      let csv=LIST_COLS.map(c=>esc(c[1])).join(';')+'\n';
+      for(const o of rows) csv+=LIST_COLS.map(([col])=>esc(o[col])).join(';')+'\n';
+      const f=document.getElementById('ops-date'), fecha=f?f.value:'';
+      _downloadDataURL('data:text/csv;charset=utf-8,'+encodeURIComponent('﻿'+csv),'operaciones_'+fecha+'.csv');
+    },
   };
 })();
 </script>
