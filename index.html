@@ -5257,13 +5257,15 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
 <div id="view-ops">
   <div class="ops-h">📊 Operaciones de Mercado · ONs Renta Fija (bilateral)</div>
   <div class="ops-toolbar">
-    <label style="font-size:.7rem">Fecha:&nbsp;<select id="ops-date" onchange="OPS.loadDay(this.value)"></select></label>
+    <span style="font-size:.6rem;color:#94a3b8;letter-spacing:.05em">PERÍODO (resumen y operaciones)</span>
+    <label style="font-size:.7rem">Desde:&nbsp;<input type="date" id="ops-d-from" onchange="OPS.loadDayRange()"></label>
+    <label style="font-size:.7rem">Hasta:&nbsp;<input type="date" id="ops-d-to" onchange="OPS.loadDayRange()"></label>
     <div class="ops-fx" id="ops-fx"></div>
   </div>
 
   <div class="ops-subtabs">
     <button class="ops-subtab active" id="ost-main" onclick="OPS.setOpsTab('main')">📈 Resumen y serie</button>
-    <button class="ops-subtab" id="ost-list" onclick="OPS.setOpsTab('list')">📋 Operaciones del día</button>
+    <button class="ops-subtab" id="ost-list" onclick="OPS.setOpsTab('list')">📋 Operaciones</button>
   </div>
 
   <div id="ops-tab-main">
@@ -5281,7 +5283,7 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
       <div class="serie-chart"><canvas id="ops-serie-canvas"></canvas></div>
     </div>
 
-    <div class="ops-h" style="margin-top:24px">Resumen del día</div>
+    <div class="ops-h" style="margin-top:24px">Resumen del período</div>
     <div class="ops-tabs" id="ops-resumen-tabs"></div>
     <div id="ops-resumen"></div>
   </div>
@@ -5353,7 +5355,7 @@ const OPS = (function(){
   // ── estado ──
   let dayMapped=[], curTab='HD', collapse={}, dayTrees={};
   let dayRaw=[], opsTab='main', listSettle='all', listFilters={}, listSort={col:null,dir:1};
-  const LIST_COLS=[['ticker','Ticker'],['tipo','Tipo de bono'],['emisor','Emisor'],['rating','Rating'],
+  const LIST_COLS=[['fecha','Fecha'],['ticker','Ticker'],['tipo','Tipo de bono'],['emisor','Emisor'],['rating','Rating'],
     ['sector','Sector'],['leg','Legislación'],['jur','Jurisdicción'],['settlement','Settlement'],
     ['moneda','Moneda'],['precio','Precio'],['tna','TNA'],['tir','TIR'],['monto','Monto'],['fuente','Fuente']];
   const LIST_NUM=new Set(['precio','tna','tir','monto']);
@@ -5491,13 +5493,16 @@ const OPS = (function(){
   async function loadDates(){
     const r=await q('/fx_history?select=fecha&order=fecha.desc');
     dates=r.map(x=>x.fecha); maxDate=dates[0]||null; const minDate=dates[dates.length-1]||null;
-    const sel=document.getElementById('ops-date'); sel.innerHTML=dates.map(d=>'<option value="'+d+'">'+d+'</option>').join('');
+    // Período (resumen + operaciones): por defecto el último día disponible
+    const df=document.getElementById('ops-d-from'), dt=document.getElementById('ops-d-to');
+    if(df&&dt){ df.min=dt.min=minDate||''; df.max=dt.max=maxDate||''; df.value=maxDate||''; dt.value=maxDate||''; }
+    // Serie de tiempo: por defecto últimos ~3 meses
     let from=maxDate;
     if(maxDate){ const d=new Date(maxDate); d.setMonth(d.getMonth()-3); from=d.toISOString().slice(0,10); if(minDate&&from<minDate)from=minDate; }
     dateTo=maxDate; dateFrom=from;
     const fi=document.getElementById('ops-from'), to=document.getElementById('ops-to');
     if(fi&&to){ fi.min=to.min=minDate||''; fi.max=to.max=maxDate||''; fi.value=dateFrom||''; to.value=dateTo||''; }
-    if(maxDate){ sel.value=maxDate; await loadDay(maxDate); }
+    if(maxDate){ await loadDayRange(); }
     await loadRange();
   }
   // ── Lista de operaciones del día ──
@@ -5505,6 +5510,7 @@ const OPS = (function(){
   function _listDisp(o,col){
     const v=o[col];
     if(v==null||v==='') return '';
+    if(col==='fecha') return String(v).split('-').reverse().join('/');
     if(col==='precio') return Number(v).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
     if(col==='tna'||col==='tir') return Number(v).toFixed(2)+'%';
     if(col==='monto') return Number(v).toLocaleString('es-AR',{maximumFractionDigits:0});
@@ -5541,13 +5547,21 @@ const OPS = (function(){
     renderListBody();
   }
 
-  async function loadDay(f){
+  async function loadDayRange(){
     dayTrees={}; collapse={};
-    const rows=await qAll('/market_ops?fecha=eq.'+f);
+    const f=(document.getElementById('ops-d-from')||{}).value||null;
+    const t=(document.getElementById('ops-d-to')||{}).value||null;
+    let path='/market_ops?order=fecha.asc,ticker.asc';
+    if(f) path+='&fecha=gte.'+f;
+    if(t) path+='&fecha=lte.'+t;
+    const rows=await qAll(path);
     dayMapped=rows.map(mapRow);
     dayRaw=rows;
-    const fx=(await q('/fx_history?fecha=eq.'+f))[0]||{};
-    document.getElementById('ops-fx').innerHTML=[['USD A3500',fx.a3500],['USD MEP',fx.mep],['USD CABLE',fx.ccl]]
+    const fxDate=t||f;
+    const fx=(fxDate?(await q('/fx_history?fecha=eq.'+fxDate))[0]:null)||{};
+    document.getElementById('ops-fx').innerHTML=
+      '<div class="c"><div class="l">TC al</div><div class="v" style="font-size:.7rem">'+(fxDate?fxDate.split('-').reverse().join('/'):'—')+'</div></div>'
+      +[['USD A3500',fx.a3500],['USD MEP',fx.mep],['USD CABLE',fx.ccl]]
       .map(([l,v])=>'<div class="c"><div class="l">'+l+'</div><div class="v">'+(v!=null?Number(v).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—')+'</div></div>').join('');
     renderResumen();
     renderList();
@@ -5577,7 +5591,7 @@ const OPS = (function(){
       document.querySelectorAll('#ops-drawer .ditem').forEach(b=>b.classList.toggle('active', b.dataset.v===v));
       this.toggleMenu(false);
     },
-    loadDay(f){ loadDay(f); },
+    loadDayRange(){ loadDayRange(); },
     setSerieSec(id){ serieSec=id; filters={rating:null,sector:null,empresa:null,anio:null}; buildFilters(); renderSerie(); },
     setMetric(m){ metric=m; document.getElementById('ops-m-tir').classList.toggle('on',m==='tir'); document.getElementById('ops-m-tna').classList.toggle('on',m==='tna'); renderSerie(); },
     setDates(){ const fi=document.getElementById('ops-from'),to=document.getElementById('ops-to'); dateFrom=fi.value||null; dateTo=to.value||null; loadRange(); },
