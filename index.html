@@ -5375,9 +5375,10 @@ const OPS = (function(){
   let dayRaw=[], opsTab='main', listSettle='all', listFilters={}, listSort={col:null,dir:1};
   let listPage=0, listPageSize=100;
   const LIST_COLS=[['fecha','Fecha'],['ticker','Ticker'],['tipo','Tipo de bono'],['emisor','Emisor'],['rating','Rating'],
-    ['sector','Sector'],['leg','Legislación'],['jur','Jurisdicción'],['settlement','Settlement'],
+    ['sector','Sector'],['leg','Legislación'],['jur','Jurisdicción'],['venc','Fecha Vto.'],['settlement','Settlement'],
     ['moneda','Moneda'],['precio','Precio'],['tna','TNA'],['tir','TIR'],['monto','Monto'],['fuente','Fuente']];
   const LIST_NUM=new Set(['precio','tna','tir','monto']);
+  const LIST_DATE=new Set(['fecha','venc']);
   let rangeMapped=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
   let breakdown='rating', filters={rating:null,sector:null,empresa:null,anio:null};
   const gv=(r,k)=>{ const v=r[k]; return (v==null||v==='')?('(s/'+k+')'):v; };
@@ -5529,17 +5530,53 @@ const OPS = (function(){
   function _listDisp(o,col){
     const v=o[col];
     if(v==null||v==='') return '';
-    if(col==='fecha') return String(v).split('-').reverse().join('/');
+    if(col==='fecha'||col==='venc') return String(v).split('-').reverse().join('/');
     if(col==='precio') return Number(v).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
     if(col==='tna'||col==='tir') return Number(v).toFixed(2)+'%';
     if(col==='monto') return Number(v).toLocaleString('es-AR',{maximumFractionDigits:0});
     return ''+v;
   }
+  // Parseo de número (acepta 7,5 · 1.000.000 · 7.5)
+  function _num(s){ s=(''+s).trim(); if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+    else if((s.match(/\./g)||[]).length>1) s=s.replace(/\./g,''); const n=parseFloat(s); return isNaN(n)?null:n; }
+  // Convierte una fecha tipeada a ISO (o prefijo ISO): YYYY-MM-DD · DD/MM/AAAA · MM/AAAA · AAAA
+  function _toISO(s){ s=(''+s).trim();
+    let m;
+    if(m=s.match(/^(\d{4})-(\d{2})(-(\d{2}))?$/)) return s;
+    if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+    if(m=s.match(/^(\d{1,2})\/(\d{4})$/)) return m[2]+'-'+m[1].padStart(2,'0');
+    if(m=s.match(/^(\d{4})$/)) return s;
+    return null;
+  }
+  // Predicado de comparación numérica: >N <N >=N <=N =N  ·  rango N..M  (si no aplica → null)
+  function _numPred(f){ f=f.replace(/\s/g,''); let m;
+    if(m=f.match(/^(-?[\d.,]+)\.\.(-?[\d.,]+)$/)){ const a=_num(m[1]),b=_num(m[2]); if(a==null||b==null)return null; const lo=Math.min(a,b),hi=Math.max(a,b); return v=>v!=null&&v>=lo&&v<=hi; }
+    if(m=f.match(/^(>=|<=|>|<|=)(-?[\d.,]+)$/)){ const op=m[1],n=_num(m[2]); if(n==null)return null;
+      return v=>v!=null&&(op==='>'?v>n:op==='<'?v<n:op==='>='?v>=n:op==='<='?v<=n:v===n); }
+    return null;
+  }
+  // Predicado de comparación de fechas (sobre el ISO crudo): >D <D >=D <=D =D (si no aplica → null)
+  function _datePred(f){ const m=f.match(/^\s*(>=|<=|>|<|=)?\s*(.+?)\s*$/); if(!m)return null;
+    const op=m[1]||'=', iso=_toISO(m[2]); if(!iso)return null;
+    if(op==='=') return v=>(''+(v||'')).startsWith(iso);
+    // padear parciales (AAAA o AAAA-MM) al límite inferior/superior según el operador
+    const lo = iso.length===4 ? iso+'-01-01' : iso.length===7 ? iso+'-01' : iso;
+    const hi = iso.length===4 ? iso+'-12-31' : iso.length===7 ? iso+'-31' : iso;
+    return v=>{ v=''+(v||''); if(!v)return false;
+      return op==='>'?v>hi : op==='<'?v<lo : op==='>='?v>=lo : v<=hi; };
+  }
+  // ¿la fila pasa el filtro de esa columna? numérico/fecha con operadores; si no, "contiene".
+  function _passFilter(o,col,f){
+    f=f.trim(); if(!f) return true;
+    if(LIST_NUM.has(col)){ const p=_numPred(f); if(p) return p(o[col]==null?null:+o[col]); }
+    if(LIST_DATE.has(col)){ const p=_datePred(f); if(p) return p(o[col]); }
+    return _listDisp(o,col).toLowerCase().includes(f.toLowerCase());
+  }
   function listRows(){
     let rows=dayRaw.slice();
     if(listSettle!=='all') rows=rows.filter(r=>r.settlement===listSettle);
-    for(const [col] of LIST_COLS){ const f=(listFilters[col]||'').trim().toLowerCase(); if(!f) continue;
-      rows=rows.filter(r=>_listDisp(r,col).toLowerCase().includes(f)); }
+    for(const [col] of LIST_COLS){ const f=(listFilters[col]||'').trim(); if(!f) continue;
+      rows=rows.filter(r=>_passFilter(r,col,f)); }
     if(listSort.col){ const c=listSort.col, num=LIST_NUM.has(c), d=listSort.dir;
       rows.sort((a,b)=>{ let va=a[c],vb=b[c];
         if(num){ va=+va; vb=+vb; if(isNaN(va))va=-Infinity; if(isNaN(vb))vb=-Infinity; return (va-vb)*d; }
@@ -5569,7 +5606,9 @@ const OPS = (function(){
     let h='<thead><tr>';
     for(const [col,lbl] of LIST_COLS){ const ind=listSort.col===col?(listSort.dir>0?'▲':'▼'):''; h+="<th onclick=\"OPS.sortList('"+col+"')\">"+lbl+'<span class="sortind">'+ind+'</span></th>'; }
     h+='</tr><tr class="filt">';
-    for(const [col] of LIST_COLS){ h+='<th><input type="text" value="'+(listFilters[col]||'').replace(/"/g,'&quot;')+"\" oninput=\"OPS.setListFilter('"+col+"',this.value)\" placeholder=\"filtrar…\"></th>"; }
+    for(const [col] of LIST_COLS){
+      const ph=(LIST_NUM.has(col)||LIST_DATE.has(col)) ? '&gt; &lt; =  ej: &gt;7' : 'filtrar…';
+      h+='<th><input type="text" value="'+(listFilters[col]||'').replace(/"/g,'&quot;')+"\" oninput=\"OPS.setListFilter('"+col+"',this.value)\" placeholder=\""+ph+"\" title=\"Operadores: &gt; &lt; &gt;= &lt;= = · rango a..b (fechas: AAAA-MM-DD o DD/MM/AAAA)\"></th>"; }
     h+='</tr></thead><tbody></tbody>';
     t.innerHTML=h;
     renderListBody();
@@ -5584,6 +5623,10 @@ const OPS = (function(){
     if(t) path+='&fecha=lte.'+t;
     const rows=await qAll(path);
     dayMapped=rows.map(mapRow);
+    // Fecha de vencimiento desde el catálogo de bonos (market_ops solo guarda el año)
+    const vmap={};
+    if(typeof bonds!=='undefined' && Array.isArray(bonds)) bonds.forEach(b=>{ if(b&&b.venc&&b.ticker){ vmap[b.ticker]=b.venc; const c=b.ticker.slice(0,-1)+'O'; if(!(c in vmap)) vmap[c]=b.venc; } });
+    rows.forEach(r=>{ r.venc = vmap[r.ticker] || vmap[(r.ticker||'').slice(0,-1)+'O'] || ''; });
     dayRaw=rows;
     const fxDate=t||f;
     const fx=(fxDate?(await q('/fx_history?fecha=eq.'+fxDate))[0]:null)||{};
