@@ -5722,6 +5722,18 @@ const OPS = (function(){
   #view-fci .scroll{overflow:auto;max-height:560px;border:1px solid #1e2d42;border-radius:6px}
   #view-fci .empty{color:#7c93ad;font-style:italic;padding:14px}
   #view-fci .fci-note{font-size:.66rem;color:#7c93ad;margin:2px 0 8px}
+  #view-fci .ms{position:relative;display:inline-block}
+  #view-fci .ms-btn{font:inherit;font-size:.74rem;text-align:left;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:5px;padding:5px 22px 5px 9px;min-width:170px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #view-fci .ms-btn:hover{border-color:#2E8B6B}
+  #view-fci .ms-pan{position:absolute;z-index:60;top:calc(100% + 3px);left:0;width:290px;max-width:90vw;background:#0e141d;border:1px solid #1e2d42;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.45);padding:7px}
+  #view-fci .ms-q{width:100%;margin-bottom:5px}
+  #view-fci .ms-list{max-height:240px;overflow:auto}
+  #view-fci .ms-opt{display:flex;align-items:center;gap:7px;padding:4px 6px;font-size:.72rem;border-radius:4px;cursor:pointer;text-transform:none;letter-spacing:0;color:#e2e8f0}
+  #view-fci .ms-opt:hover{background:#16202e}
+  #view-fci .ms-empty{color:#7c93ad;padding:6px;font-size:.7rem}
+  #view-fci .ms-act{display:flex;justify-content:space-between;border-top:1px solid #1e2d42;margin-top:6px;padding-top:6px}
+  #view-fci .ms-act a{font-size:.66rem;color:#43d39e;text-decoration:none}
+  #view-fci th[data-k]{user-select:none}
 </style>
 
 <div id="view-fci">
@@ -5740,10 +5752,10 @@ const OPS = (function(){
   <div id="fci-tab-bono">
     <div class="fci-note">Elegí uno o varios bonos (o un tipo) y agrupá por gerente/fondo. El tipo filtra la lista de bonos; sin bonos elegidos se toman todos los del tipo.</div>
     <div class="fci-bar">
-      <label>Tipo de activo<select id="fci-tipo" multiple size="4" onchange="FCI.rebuildBonoList()"></select></label>
-      <label>Bono / Activo<input type="text" id="fci-bono-q" placeholder="Buscar…" oninput="FCI.rebuildBonoList()"><select id="fci-bono" multiple size="4" style="min-width:240px"></select></label>
-      <label>Gerente<select id="fci-ger" multiple size="4"></select></label>
-      <label>Agrupar por<select id="fci-agr"><option value="gerente">Gerente</option><option value="fondo">Fondo</option><option value="bono">Bono</option><option value="tipo">Tipo</option></select></label>
+      <label>Tipo de activo<div id="fci-tipo"></div></label>
+      <label>Bono / Activo<div id="fci-bono"></div></label>
+      <label>Gerente<div id="fci-ger"></div></label>
+      <label>Agrupar por<select id="fci-agr"><option value="gerente">Gerente</option><option value="fondo">Fondo</option></select></label>
       <button class="fci-go" onclick="FCI.runBono()">Analizar</button>
     </div>
     <div id="fci-bono-out"><div class="empty">Cargando…</div></div>
@@ -5776,15 +5788,60 @@ window.FCI = (function(){
     if(a>=1e12)o=NF.format(v/1e12)+' B'; else if(a>=1e9)o=NF.format(v/1e9)+' mil M';
     else if(a>=1e6)o=NF.format(v/1e6)+' M'; else if(a>=1e3)o=NF.format(v/1e3)+' K'; else o=NF.format(v);
     return pref+' '+o; }
-  let usd=false;
+  let usd=true;  // US$ por defecto
   const money = v => compact(v, usd?'US$':'$');
   function val(montoMill, fecha){ if(usd){ const d=dolar[fecha]; return d? montoMill*1e6/d : 0; } return montoMill*1e6; }
   function signed(v){ const c=v>0?'pos':(v<0?'neg':''); return `<span class="${c}">${(v>0?'+':'')+money(v)}</span>`; }
 
   let inited=false, tab='bono';
-  let fechas=[], fondos=[], bonos=[], dolar={}, gerentes=[], tipos=[];
+  let fechas=[], fondos=[], bonos=[], dolar={}, gerentes=[], tipos=[], bmap={};
+  let msTipo=null, msBono=null, msGer=null;
 
-  function getMulti(el){ return [...el.selectedOptions].map(o=>o.value).filter(Boolean); }
+  // ── multi-select buscable ──
+  function mksel(container, options, {placeholder='(todos)', onChange}={}){
+    let norm=(options||[]).map(o=>typeof o==='string'?{value:o,label:o}:o);
+    const set=new Set();
+    container.classList.add('ms');
+    container.innerHTML=`<button type="button" class="ms-btn"></button>
+      <div class="ms-pan" style="display:none">
+        <input type="text" class="ms-q" placeholder="Buscar…">
+        <div class="ms-list"></div>
+        <div class="ms-act"><a href="#" class="ms-all">Todos</a><a href="#" class="ms-none">Limpiar</a></div>
+      </div>`;
+    const btn=container.querySelector('.ms-btn'),pan=container.querySelector('.ms-pan'),
+          q=container.querySelector('.ms-q'),list=container.querySelector('.ms-list');
+    const lbl=()=> set.size===0?placeholder : set.size===1?[...set][0] : set.size+' seleccionados';
+    const rb=()=>{ btn.textContent=lbl(); btn.title=[...set].join(', '); };
+    function rl(){ const t=q.value.toLowerCase().trim();
+      const items=norm.filter(o=>o.label.toLowerCase().includes(t)).slice(0,400);
+      list.innerHTML=items.map(o=>`<label class="ms-opt"><input type="checkbox" ${set.has(o.value)?'checked':''} data-v="${esc(o.value)}"> ${esc(o.label)}</label>`).join('')||'<div class="ms-empty">Sin opciones</div>';
+      list.querySelectorAll('input').forEach(i=>i.onchange=()=>{ const v=i.dataset.v; if(i.checked)set.add(v); else set.delete(v); rb(); onChange&&onChange([...set]); });
+    }
+    btn.onclick=e=>{ e.stopPropagation(); const open=pan.style.display!=='none'; document.querySelectorAll('#view-fci .ms-pan').forEach(p=>p.style.display='none'); pan.style.display=open?'none':'block'; if(!open){q.value='';rl();q.focus();} };
+    q.oninput=rl;
+    container.querySelector('.ms-all').onclick=e=>{e.preventDefault(); norm.forEach(o=>set.add(o.value)); rb(); rl(); onChange&&onChange([...set]);};
+    container.querySelector('.ms-none').onclick=e=>{e.preventDefault(); set.clear(); rb(); rl(); onChange&&onChange([]);};
+    document.addEventListener('click',e=>{ if(!container.contains(e.target))pan.style.display='none'; });
+    rb();
+    return { get:()=>[...set], set:a=>{set.clear();(a||[]).forEach(x=>set.add(x));rb();},
+      setOptions:n=>{ norm=(n||[]).map(o=>typeof o==='string'?{value:o,label:o}:o); const ok=new Set(norm.map(o=>o.value)); [...set].forEach(v=>{if(!ok.has(v))set.delete(v);}); rb(); rl(); } };
+  }
+  const bonoOpts = ts => (ts.length?bonos.filter(b=>ts.includes(b.tipo)):bonos).map(b=>({value:b.activo,label:`${b.activo} · ${b.n_fondos}`}));
+
+  // ── tabla ordenable ──
+  function sortableTable(target, rows, cols, {key=null, dir=-1}={}){
+    let sk=key, sd=dir;
+    function draw(){
+      const data=rows.slice();
+      if(sk){ data.sort((a,b)=>{ let x=a[sk],y=b[sk]; if(x==null)return 1; if(y==null)return -1;
+        if(typeof x==='number'&&typeof y==='number')return sd*(x-y); return sd*String(x).localeCompare(String(y)); }); }
+      let h='<div class="scroll"><table><thead><tr>'+cols.map(c=>`<th class="${c.tx?'tx':''}" data-k="${c.k}">${esc(c.t)}${sk===c.k?(sd<0?' ▾':' ▴'):''}</th>`).join('')+'</tr></thead><tbody>';
+      for(const r of data){ h+='<tr>'+cols.map(c=>`<td class="${c.tx?'tx':''}">${c.raw?c.fmt(r):esc(c.fmt(r))}</td>`).join('')+'</tr>'; }
+      target.innerHTML=h+'</tbody></table></div>';
+      target.querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(sk===k)sd*=-1; else{sk=k;sd=-1;} draw(); });
+    }
+    draw();
+  }
 
   async function init(){
     if(inited) return; inited=true;
@@ -5792,33 +5849,30 @@ window.FCI = (function(){
     fondos = await rpc('fci_fondos',{});
     bonos  = await rpc('fci_bonos',{});
     (await sel('/fci_dolar?select=fecha,venta')).forEach(d=>dolar[String(d.fecha).slice(0,10)]=d.venta);
+    bonos.forEach(b=>bmap[b.activo]={tipo:b.tipo,moneda:b.moneda});
     gerentes = [...new Set(fondos.map(f=>f.gerente).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     tipos    = [...new Set(bonos.map(b=>b.tipo).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     if(!fechas.length){ $('fci-bono-out').innerHTML='<div class="empty">Sin datos de FCI en Supabase todavía. Corré el sync (python -m src.supabase_sync) y el SQL fci_supabase.sql.</div>'; return; }
+    $('fci-usd').checked = usd;
     const opt=f=>`<option>${f}</option>`;
     $('fci-ini').innerHTML=fechas.map(opt).join(''); $('fci-fin').innerHTML=fechas.map(opt).join('');
     $('fci-ini').value=fechas[Math.max(0,fechas.length-2)]; $('fci-fin').value=fechas[fechas.length-1];
-    $('fci-tipo').innerHTML=tipos.map(t=>`<option>${esc(t)}</option>`).join('');
-    $('fci-ger').innerHTML=gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
+    msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:s=>msBono.setOptions(bonoOpts(s))});
+    msBono = mksel($('fci-bono'), bonoOpts([]), {placeholder:'(elegí bono/s)'});
+    msGer  = mksel($('fci-ger'),  gerentes,    {placeholder:'(todas las gerentes)'});
     $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
     rebuildFondoList();
     const def = tipos.includes('Soberano CER') ? 'Soberano CER' : tipos[0];
-    if(def){ for(const o of $('fci-tipo').options){ if(o.value===def){o.selected=true;break;} } }
-    rebuildBonoList();
+    if(def){ msTipo.set([def]); msBono.setOptions(bonoOpts([def])); }
     runBono();
   }
 
-  function rebuildBonoList(){
-    const ts=getMulti($('fci-tipo'));
-    let list = ts.length ? bonos.filter(b=>ts.includes(b.tipo)) : bonos;
-    const q=($('fci-bono-q').value||'').toLowerCase().trim();
-    if(q) list=list.filter(b=>(b.activo||'').toLowerCase().includes(q));
-    $('fci-bono').innerHTML = list.slice(0,1500).map(b=>`<option value="${esc(b.activo)}">${esc(b.activo)} · ${b.n_fondos}</option>`).join('');
-  }
   function rebuildFondoList(){
     const g=$('fci-f-ger').value;
     const list = g ? fondos.filter(f=>f.gerente===g) : fondos;
-    $('fci-f-fondo').innerHTML = list.map(f=>`<option value="${esc(f.fondo)}">${esc(f.fondo)}</option>`).join('');
+    let html = list.map(f=>`<option value="${esc(f.fondo)}">${esc(f.fondo)}</option>`).join('');
+    if(g) html = `<option value="__GER__">★ TODOS los FCIs de ${esc(g)} (agregado)</option>` + html;
+    $('fci-f-fondo').innerHTML = html;
   }
   function setTab(t){ tab=t;
     $('fci-tab-bono').style.display = t==='bono'?'':'none';
@@ -5836,19 +5890,13 @@ window.FCI = (function(){
         scales:{x:{ticks:{callback:v=>money(v),color:'#9fb2c8',font:{size:9}},grid:{color:'#16202e'}},
                 y:{ticks:{color:'#cdd9e8',font:{size:10}},grid:{display:false}}}}}); }
 
-  function tbl(cols, rows){
-    let h='<div class="scroll"><table><thead><tr>'+cols.map(c=>`<th class="${c.tx?'tx':''}">${esc(c.t)}</th>`).join('')+'</tr></thead><tbody>';
-    for(const r of rows){ h+='<tr>'+cols.map(c=>`<td class="${c.tx?'tx':''}">${c.raw?c.fmt(r):esc(c.fmt(r))}</td>`).join('')+'</tr>'; }
-    return h+'</tbody></table></div>';
-  }
-
   // ── BONO ──
   let _lastBono=null;
   async function runBono(){
     const ini=$('fci-ini').value, fin=$('fci-fin').value, agr=$('fci-agr').value;
-    const activos=getMulti($('fci-bono'));
-    const tiposSel = activos.length?[]:getMulti($('fci-tipo'));
-    const gers=getMulti($('fci-ger'));
+    const activos=msBono.get();
+    const tiposSel = activos.length?[]:msTipo.get();
+    const gers=msGer.get();
     if(!activos.length && !tiposSel.length){ $('fci-bono-out').innerHTML='<div class="empty">Elegí al menos un bono o un tipo de activo.</div>'; return; }
     $('fci-bono-out').innerHTML='<div class="empty">Calculando…</div>';
     const raw=await rpc('fci_mov_consulta',{p_ini:ini,p_fin:fin,p_tipos:tiposSel,p_activos:activos,p_gerentes:gers,p_agrupar:agr});
@@ -5857,7 +5905,7 @@ window.FCI = (function(){
   function renderBono({ini,fin,agr,raw}){
     const data=raw.map(r=>({clave:r.clave, ini:val(r.monto_ini,ini), fin:val(r.monto_fin,fin), delta:val(r.monto_fin,fin)-val(r.monto_ini,ini)}));
     const totI=data.reduce((s,r)=>s+r.ini,0), totF=data.reduce((s,r)=>s+r.fin,0);
-    const dim={gerente:'gerente',fondo:'fondo',bono:'bono',tipo:'tipo de activo'}[agr];
+    const dim={gerente:'gerente',fondo:'fondo'}[agr]||'grupo';
     let h=`<div class="fci-cards">
       <div class="fci-card"><div class="k">Tenencia ${ini}</div><div class="v">${money(totI)}</div></div>
       <div class="fci-card"><div class="k">Tenencia ${fin}</div><div class="v">${money(totF)}</div></div>
@@ -5866,41 +5914,57 @@ window.FCI = (function(){
     if(!data.length){ $('fci-bono-out').innerHTML=h+'<div class="empty">Sin tenencias para esa selección/fechas.</div>'; return; }
     h+=`<div class="ops-h">Tenencia por ${dim} (final)</div>
         <div style="height:${Math.max(240,Math.min(data.length,25)*26)}px"><canvas id="fci-bono-canvas"></canvas></div>
-        <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-bono-canvas','mov_bono.png')">⤓ PNG</button></div>`;
-    h+=tbl([{t:cap(dim),tx:1,fmt:r=>r.clave},{t:'Tenencia '+ini,fmt:r=>money(r.ini)},{t:'Tenencia '+fin,fmt:r=>money(r.fin)},{t:'Δ',raw:1,fmt:r=>signed(r.delta)}], data);
+        <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-bono-canvas','mov_bono.png')">⤓ PNG</button></div>
+        <div id="fci-bono-tbl"></div>`;
     $('fci-bono-out').innerHTML=h;
-    const top=data.slice(0,25).reverse();
+    sortableTable($('fci-bono-tbl'), data,
+      [{k:'clave',t:cap(dim),tx:1,fmt:r=>r.clave},{k:'ini',t:'Tenencia '+ini,fmt:r=>money(r.ini)},
+       {k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:'Δ',raw:1,fmt:r=>signed(r.delta)}],
+      {key:'fin', dir:-1});
+    const top=data.slice().sort((a,b)=>b.fin-a.fin).slice(0,25);
     chart('fci-bono-canvas', top.map(r=>r.clave), top.map(r=>r.fin));
   }
 
   // ── FONDO ──
   let _lastFondo=null;
   async function runFondo(){
-    const fondo=$('fci-f-fondo').value, ini=$('fci-ini').value, fin=$('fci-fin').value;
-    if(!fondo){ $('fci-fondo-out').innerHTML='<div class="empty">Elegí un FCI.</div>'; return; }
+    const fondoVal=$('fci-f-fondo').value, ini=$('fci-ini').value, fin=$('fci-fin').value;
+    if(!fondoVal){ $('fci-fondo-out').innerHTML='<div class="empty">Elegí un FCI.</div>'; return; }
     $('fci-fondo-out').innerHTML='<div class="empty">Calculando…</div>';
-    const raw=await rpc('fci_mov_fondo',{p_fondo:fondo,p_ini:ini,p_fin:fin});
-    _lastFondo={fondo,ini,fin,raw}; renderFondo(_lastFondo);
+    let title, raw;
+    if(fondoVal==='__GER__'){
+      const g=$('fci-f-ger').value;
+      const rows=await rpc('fci_mov_consulta',{p_ini:ini,p_fin:fin,p_tipos:tipos,p_activos:[],p_gerentes:[g],p_agrupar:'bono'});
+      raw=rows.map(r=>({activo:r.clave, tipo:(bmap[r.clave]||{}).tipo, moneda:(bmap[r.clave]||{}).moneda, monto_ini:r.monto_ini, monto_fin:r.monto_fin}));
+      title=g+' — todos los FCIs (agregado)';
+    } else {
+      raw=await rpc('fci_mov_fondo',{p_fondo:fondoVal,p_ini:ini,p_fin:fin});
+      title=fondoVal;
+    }
+    _lastFondo={title,ini,fin,raw}; renderFondo(_lastFondo);
   }
-  function renderFondo({fondo,ini,fin,raw}){
+  function renderFondo({title,ini,fin,raw}){
     const data=raw.map(r=>({activo:r.activo,tipo:r.tipo,moneda:r.moneda, ini:val(r.monto_ini,ini), fin:val(r.monto_fin,fin), delta:val(r.monto_fin,fin)-val(r.monto_ini,ini)}));
     const totI=data.reduce((s,r)=>s+r.ini,0), totF=data.reduce((s,r)=>s+r.fin,0);
-    let h=`<div class="ops-h">${esc(fondo)}</div><div class="fci-cards">
+    let h=`<div class="ops-h">${esc(title)}</div><div class="fci-cards">
       <div class="fci-card"><div class="k">Patrimonio ${ini}</div><div class="v">${money(totI)}</div></div>
       <div class="fci-card"><div class="k">Patrimonio ${fin}</div><div class="v">${money(totF)}</div></div>
       <div class="fci-card"><div class="k">Activos</div><div class="v">${data.length}</div></div></div>`;
     if(!data.length){ $('fci-fondo-out').innerHTML=h+'<div class="empty">Sin tenencias en esas fechas.</div>'; return; }
     h+=`<div style="height:${Math.max(240,Math.min(data.length,25)*26)}px"><canvas id="fci-fondo-canvas"></canvas></div>
-        <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-fondo-canvas','mov_fondo.png')">⤓ PNG</button></div>`;
-    h+=tbl([{t:'Activo',tx:1,fmt:r=>r.activo},{t:'Tipo',tx:1,fmt:r=>r.tipo||''},{t:'Mon.',tx:1,fmt:r=>r.moneda||''},
-            {t:'Tenencia '+ini,fmt:r=>money(r.ini)},{t:'Tenencia '+fin,fmt:r=>money(r.fin)},{t:'Δ',raw:1,fmt:r=>signed(r.delta)}], data);
+        <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-fondo-canvas','mov_fondo.png')">⤓ PNG</button></div>
+        <div id="fci-fondo-tbl"></div>`;
     $('fci-fondo-out').innerHTML=h;
-    const top=data.slice(0,25).reverse();
+    sortableTable($('fci-fondo-tbl'), data,
+      [{k:'activo',t:'Activo',tx:1,fmt:r=>r.activo},{k:'tipo',t:'Tipo',tx:1,fmt:r=>r.tipo||''},{k:'moneda',t:'Mon.',tx:1,fmt:r=>r.moneda||''},
+       {k:'ini',t:'Tenencia '+ini,fmt:r=>money(r.ini)},{k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:'Δ',raw:1,fmt:r=>signed(r.delta)}],
+      {key:'fin', dir:-1});
+    const top=data.slice().sort((a,b)=>b.fin-a.fin).slice(0,25);
     chart('fci-fondo-canvas', top.map(r=>r.activo), top.map(r=>r.fin));
   }
   function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
 
-  return { init, setTab, toggleUsd, rebuildBonoList, rebuildFondoList, runBono, runFondo };
+  return { init, setTab, toggleUsd, rebuildFondoList, runBono, runFondo };
 })();
 </script>
 </body>
