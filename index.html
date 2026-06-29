@@ -121,7 +121,9 @@ main.shifted{margin-right:var(--panel-w);}
 .cp-extras{margin:0 0 4px;display:flex;flex-direction:column;gap:5px;}
 .cp-extra-px{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid rgba(45,212,191,.28);background:rgba(45,212,191,.06);border-radius:6px;padding:6px 9px;}
 .cp-extra-px .lo-l{font-size:.5rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);font-family:'IBM Plex Mono',monospace;}
+.cp-extra-px .cp-extra-vals{display:flex;flex-direction:column;align-items:flex-end;gap:1px;}
 .cp-extra-px .cp-extra-v{font-size:.85rem;font-weight:700;color:var(--teal);font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+.cp-extra-px .cp-extra-tir{font-size:.55rem;font-weight:600;color:var(--amber);font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
 .cp-holders{border:1px solid var(--border2);background:rgba(255,255,255,.02);border-radius:6px;padding:6px 9px;}
 .cp-holders .lo-h{font-size:.5rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
 .cp-htbl{width:100%;border-collapse:collapse;font-size:.58rem;}
@@ -1827,7 +1829,8 @@ function _fmtUSDc(v){
   return 'US$ '+v.toLocaleString('es-AR',{maximumFractionDigits:0});
 }
 
-// Top 5 fondos que tienen este bono, en su última fecha de cartera, valuados en US$.
+// Top 5 GERENTES que tienen este bono (sumando todos sus fondos), en su última
+// fecha de cartera, valuados en US$.
 async function topTenedoresFci(canon){
   const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders(); if(!cfg.url||!H) return null;
   try{
@@ -1836,10 +1839,14 @@ async function topTenedoresFci(canon){
     const jf=rf.ok?await rf.json():[]; const fecha=jf[0]&&jf[0].fecha; if(!fecha) return null;
     const [rh,rd]=await Promise.all([
       fetch(cfg.url+'/rest/v1/fci_tenencias?ticker=eq.'+encodeURIComponent(canon)
-        +'&fecha=eq.'+fecha+'&select=fondo,gerente,monto&order=monto.desc&limit=5',{headers:H}),
+        +'&fecha=eq.'+fecha+'&select=gerente,monto',{headers:H}),
       fetch(cfg.url+'/rest/v1/fci_dolar?fecha=eq.'+fecha+'&select=venta&limit=1',{headers:H})
     ]);
-    const holders=rh.ok?await rh.json():[]; const jd=rd.ok?await rd.json():[];
+    const rows=rh.ok?await rh.json():[]; const jd=rd.ok?await rd.json():[];
+    const agg={};
+    rows.forEach(r=>{ const g=r.gerente||'(s/d)'; agg[g]=(agg[g]||0)+(+r.monto||0); });
+    const holders=Object.entries(agg).map(([gerente,monto])=>({gerente,monto}))
+      .sort((a,b)=>b.monto-a.monto).slice(0,5);
     return {fecha, venta: jd[0]?+jd[0].venta:null, holders};
   }catch(e){ return null; }
 }
@@ -1851,17 +1858,20 @@ async function pxPromedioSemanal(bond){
   const canon = bond.ticker.slice(0,-1)+'O';
   const url=cfg.url+'/rest/v1/market_ops?ticker=eq.'+encodeURIComponent(canon)
     +'&moneda=eq.'+encodeURIComponent(m)+'&outlier=eq.false'
-    +'&select=fecha,precio,monto&order=fecha.desc&limit=40';
+    +'&select=fecha,precio,monto,tir&order=fecha.desc&limit=40';
   try{
     const r=await fetch(url,{headers:H}); const j=r.ok?await r.json():[];
     if(!j.length) return null;
     const lim=new Date(j[0].fecha); lim.setDate(lim.getDate()-6);   // últimos 7 días
     const sem=j.filter(x=> new Date(x.fecha) >= lim);
     const dias=new Set(sem.map(x=>x.fecha)).size;
-    let sp=0, sw=0, sm=0, nm=0;
-    sem.forEach(x=>{ const p=+x.precio, w=+x.monto; if(p>0){ if(w>0){sp+=p*w; sw+=w;} sm+=p; nm++; } });
+    let sp=0, sw=0, sm=0, nm=0, st=0, stw=0, sti=0, nti=0;
+    sem.forEach(x=>{ const p=+x.precio, w=+x.monto, t=+x.tir;
+      if(p>0){ if(w>0){sp+=p*w; sw+=w;} sm+=p; nm++; }
+      if(x.tir!=null && isFinite(t)){ if(w>0){st+=t*w; stw+=w;} sti+=t; nti++; } });
     const vwap = sw>0 ? sp/sw : (nm? sm/nm : null);
-    return vwap==null?null:{vwap, dias};
+    const tir  = stw>0 ? st/stw : (nti? sti/nti : null);
+    return vwap==null?null:{vwap, tir, dias};
   }catch(e){ return null; }
 }
 
@@ -1875,14 +1885,17 @@ async function loadBondExtras(bond){
   let html='';
   if(px){
     const pv = isHD ? px.vwap.toFixed(2) : Math.round(px.vwap).toLocaleString('es-AR');
+    const tv = px.tir!=null ? 'TIR '+px.tir.toFixed(2)+'%' : '';
     html+='<div class="cp-extra-px"><div class="lo-l">Px prom. operado · últ. semana ('
-        + px.dias + (px.dias===1?' día':' días') + ')</div><div class="cp-extra-v">' + pv + '</div></div>';
+        + px.dias + (px.dias===1?' día':' días') + ')</div>'
+        + '<div class="cp-extra-vals"><span class="cp-extra-v">' + pv + '</span>'
+        + (tv?'<span class="cp-extra-tir">'+tv+'</span>':'') + '</div></div>';
   }
   if(ten && ten.holders && ten.holders.length){
-    html+='<div class="cp-holders"><div class="lo-h">Top 5 tenedores FCI · US$ · '+_fmtDMY(ten.fecha)+'</div><table class="cp-htbl">';
+    html+='<div class="cp-holders"><div class="lo-h">Top 5 tenedores por gerente · US$ · '+_fmtDMY(ten.fecha)+'</div><table class="cp-htbl">';
     ten.holders.forEach(h=>{
       const usd = ten.venta ? (+h.monto)*1e6/ten.venta : null;
-      html+='<tr><td class="cp-h-f" title="'+(h.gerente||'')+'">'+(h.fondo||'')+'</td><td class="cp-h-u">'+_fmtUSDc(usd)+'</td></tr>';
+      html+='<tr><td class="cp-h-f">'+(h.gerente||'')+'</td><td class="cp-h-u">'+_fmtUSDc(usd)+'</td></tr>';
     });
     html+='</table></div>';
   }
