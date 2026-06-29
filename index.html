@@ -118,6 +118,17 @@ main.shifted{margin-right:var(--panel-w);}
 .cp-lastop .lo-c{text-align:center;}
 .cp-lastop .lo-l{font-size:.46rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);font-family:'IBM Plex Mono',monospace;}
 .cp-lastop .lo-v{font-size:.8rem;font-weight:700;color:var(--text);margin-top:2px;}
+.cp-extras{margin:0 0 4px;display:flex;flex-direction:column;gap:5px;}
+.cp-extra-px{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid rgba(45,212,191,.28);background:rgba(45,212,191,.06);border-radius:6px;padding:6px 9px;}
+.cp-extra-px .lo-l{font-size:.5rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);font-family:'IBM Plex Mono',monospace;}
+.cp-extra-px .cp-extra-v{font-size:.85rem;font-weight:700;color:var(--teal);font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+.cp-holders{border:1px solid var(--border2);background:rgba(255,255,255,.02);border-radius:6px;padding:6px 9px;}
+.cp-holders .lo-h{font-size:.5rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
+.cp-htbl{width:100%;border-collapse:collapse;font-size:.58rem;}
+.cp-htbl td{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05);}
+.cp-htbl tr:last-child td{border-bottom:0;}
+.cp-htbl .cp-h-f{color:var(--text);max-width:175px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cp-htbl .cp-h-u{color:var(--teal);text-align:right;font-weight:600;font-family:'IBM Plex Mono',monospace;white-space:nowrap;padding-left:8px;}
 .pagos-tbl{width:100%;border-collapse:collapse;font-size:.62rem;}
 .pagos-tbl thead th{position:sticky;top:0;background:var(--card);text-align:left;font-size:.5rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);font-weight:600;padding:4px 8px;border-bottom:1px solid var(--border);}
 .pagos-tbl tbody td{padding:4px 8px;border-bottom:1px solid rgba(30,45,66,.5);white-space:nowrap;}
@@ -705,6 +716,7 @@ window.SUPABASE_CONFIG = {
     </div>
   </div>
   <div class="cp-lastop" id="cp-lastop" style="display:none"></div>
+  <div class="cp-extras" id="cp-extras" style="display:none"></div>
   <div class="panel-tabs">
     <button class="ptab active" data-tab="calc" onclick="switchTab(this,'calc')">Calculadora</button>
     <button class="ptab" data-tab="feriados" onclick="switchTab(this,'feriados')">Feriados AR</button>
@@ -1804,6 +1816,77 @@ async function showLastOp(bond){
     const fd=await getFirstDataDate(); if(ACTIVE_TK!==bond.ticker) return;
     lo.innerHTML='<div class="lo-h" style="margin:0;color:var(--muted2)">SIN OPERACIONES DESDE '+_fmtDMY(fd)+'</div>';
   }
+}
+
+// ── Extras del panel: top tenedores FCI (US$) + px promedio operado semanal ──
+function _fmtUSDc(v){
+  if(v==null||!isFinite(v)) return '—';
+  const a=Math.abs(v);
+  if(a>=1e6) return 'US$ '+(v/1e6).toLocaleString('es-AR',{minimumFractionDigits:1,maximumFractionDigits:1})+' M';
+  if(a>=1e3) return 'US$ '+(v/1e3).toLocaleString('es-AR',{maximumFractionDigits:0})+' mil';
+  return 'US$ '+v.toLocaleString('es-AR',{maximumFractionDigits:0});
+}
+
+// Top 5 fondos que tienen este bono, en su última fecha de cartera, valuados en US$.
+async function topTenedoresFci(canon){
+  const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders(); if(!cfg.url||!H) return null;
+  try{
+    const rf=await fetch(cfg.url+'/rest/v1/fci_tenencias?ticker=eq.'+encodeURIComponent(canon)
+      +'&select=fecha&order=fecha.desc&limit=1',{headers:H});
+    const jf=rf.ok?await rf.json():[]; const fecha=jf[0]&&jf[0].fecha; if(!fecha) return null;
+    const [rh,rd]=await Promise.all([
+      fetch(cfg.url+'/rest/v1/fci_tenencias?ticker=eq.'+encodeURIComponent(canon)
+        +'&fecha=eq.'+fecha+'&select=fondo,gerente,monto&order=monto.desc&limit=5',{headers:H}),
+      fetch(cfg.url+'/rest/v1/fci_dolar?fecha=eq.'+fecha+'&select=venta&limit=1',{headers:H})
+    ]);
+    const holders=rh.ok?await rh.json():[]; const jd=rd.ok?await rd.json():[];
+    return {fecha, venta: jd[0]?+jd[0].venta:null, holders};
+  }catch(e){ return null; }
+}
+
+// Precio promedio operado en la última semana (VWAP por volumen), misma moneda que el panel.
+async function pxPromedioSemanal(bond){
+  const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders(); if(!cfg.url||!H) return null;
+  const m = bond.moneda!=='DL' ? 'USD MEP' : 'ARS';
+  const canon = bond.ticker.slice(0,-1)+'O';
+  const url=cfg.url+'/rest/v1/market_ops?ticker=eq.'+encodeURIComponent(canon)
+    +'&moneda=eq.'+encodeURIComponent(m)+'&outlier=eq.false'
+    +'&select=fecha,precio,monto&order=fecha.desc&limit=40';
+  try{
+    const r=await fetch(url,{headers:H}); const j=r.ok?await r.json():[];
+    if(!j.length) return null;
+    const lim=new Date(j[0].fecha); lim.setDate(lim.getDate()-6);   // últimos 7 días
+    const sem=j.filter(x=> new Date(x.fecha) >= lim);
+    const dias=new Set(sem.map(x=>x.fecha)).size;
+    let sp=0, sw=0, sm=0, nm=0;
+    sem.forEach(x=>{ const p=+x.precio, w=+x.monto; if(p>0){ if(w>0){sp+=p*w; sw+=w;} sm+=p; nm++; } });
+    const vwap = sw>0 ? sp/sw : (nm? sm/nm : null);
+    return vwap==null?null:{vwap, dias};
+  }catch(e){ return null; }
+}
+
+async function loadBondExtras(bond){
+  const el=document.getElementById('cp-extras'); if(!el) return;
+  el.style.display='none'; el.innerHTML='';
+  if(!bond||!bond.ticker) return;
+  const canon=bond.ticker.slice(0,-1)+'O', isHD=bond.moneda!=='DL';
+  const [px, ten]=await Promise.all([pxPromedioSemanal(bond), topTenedoresFci(canon)]);
+  if(ACTIVE_TK!==bond.ticker) return;            // cambió de bono mientras cargaba
+  let html='';
+  if(px){
+    const pv = isHD ? px.vwap.toFixed(2) : Math.round(px.vwap).toLocaleString('es-AR');
+    html+='<div class="cp-extra-px"><div class="lo-l">Px prom. operado · últ. semana ('
+        + px.dias + (px.dias===1?' día':' días') + ')</div><div class="cp-extra-v">' + pv + '</div></div>';
+  }
+  if(ten && ten.holders && ten.holders.length){
+    html+='<div class="cp-holders"><div class="lo-h">Top 5 tenedores FCI · US$ · '+_fmtDMY(ten.fecha)+'</div><table class="cp-htbl">';
+    ten.holders.forEach(h=>{
+      const usd = ten.venta ? (+h.monto)*1e6/ten.venta : null;
+      html+='<tr><td class="cp-h-f" title="'+(h.gerente||'')+'">'+(h.fondo||'')+'</td><td class="cp-h-u">'+_fmtUSDc(usd)+'</td></tr>';
+    });
+    html+='</table></div>';
+  }
+  if(html){ el.innerHTML=html; el.style.display=''; }
 }
 
 // ── FX: MEP / Cable / Canje via AL30 ────────────────────────────────────────
@@ -3223,6 +3306,8 @@ function openPanel(bond) {
   document.getElementById('cp-sub').textContent   = bond.ticker + ' · ' + bond.sector + ' · ' + bond.moneda;
   // Bono sin bid/offer: mostrar la última operación (fecha · precio · tasa)
   showLastOp(bond);
+  // Arriba del panel: top 5 tenedores FCI (US$) + px promedio operado semanal
+  loadBondExtras(bond);
   // Adaptar label e input de precio según tipo de bono
   const isHDBond = bond.moneda !== 'DL';
   const lbP = document.querySelector('label[for="inp-precio"],label:has(#inp-precio)');
