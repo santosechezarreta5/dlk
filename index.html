@@ -5263,6 +5263,7 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
   <div class="dh"><span>Menú</span><span class="x" onclick="OPS.toggleMenu(false)">✕</span></div>
   <button class="ditem active" data-v="calc" onclick="OPS.selectView('calc')">🧮 Calculadoras</button>
   <button class="ditem" data-v="ops" onclick="OPS.selectView('ops')">📊 Operaciones Mercado</button>
+  <button class="ditem" data-v="fci" onclick="OPS.selectView('fci')">📈 Movimientos de FCI</button>
 </aside>
 
 <div id="view-ops">
@@ -5651,7 +5652,9 @@ const OPS = (function(){
   return {
     switchView(v){
       document.body.classList.toggle('ops-mode', v==='ops');
+      document.body.classList.toggle('fci-mode', v==='fci');
       if(v==='ops' && !inited){ inited=true; loadDates(); }
+      if(v==='fci' && window.FCI){ window.FCI.init(); }
     },
     toggleMenu(force){
       const open = (force===undefined) ? !document.body.classList.contains('drawer-open') : !!force;
@@ -5687,6 +5690,217 @@ const OPS = (function(){
       _downloadDataURL('data:text/csv;charset=utf-8,'+encodeURIComponent('﻿'+csv),'operaciones_'+fecha+'.csv');
     },
   };
+})();
+</script>
+
+<!-- ════════════════ MOVIMIENTOS DE FCI ════════════════ -->
+<style>
+  #view-fci{display:none;padding:16px 22px;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif}
+  body.fci-mode #main-content, body.fci-mode #calc-panel{display:none !important}
+  body.fci-mode #view-fci{display:block}
+  #view-fci .ops-h{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:#e2e8f0;margin:16px 0 6px}
+  #view-fci .fci-sub{display:flex;gap:6px;margin:4px 0 12px;border-bottom:2px solid #1F5C4D}
+  #view-fci .fci-stab{font-weight:700;font-size:.82rem;padding:7px 18px;border:1px solid #234;border-bottom:none;border-radius:7px 7px 0 0;background:#0c1018;color:#9fb2c8;cursor:pointer}
+  #view-fci .fci-stab.active{background:#1F5C4D;color:#fff}
+  #view-fci .fci-bar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
+  #view-fci label{font-size:.62rem;color:#7c93ad;text-transform:uppercase;letter-spacing:.04em;display:flex;flex-direction:column;gap:3px}
+  #view-fci select,#view-fci input{font:inherit;font-size:.74rem;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:5px;padding:5px 8px}
+  #view-fci select[multiple]{min-width:150px}
+  #view-fci .fci-go{background:#2E8B6B;color:#fff;border:0;border-radius:6px;padding:7px 16px;font-weight:700;font-size:.78rem;cursor:pointer}
+  #view-fci .fci-go:hover{background:#37a37e}
+  #view-fci .tg{display:flex;align-items:center;gap:6px;font-size:.72rem;color:#cdd9e8;text-transform:none;letter-spacing:0;flex-direction:row}
+  #view-fci .fci-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0 14px}
+  #view-fci .fci-card{background:#0e141d;border:1px solid #1e2d42;border-radius:8px;padding:10px 13px}
+  #view-fci .fci-card .k{font-size:.6rem;color:#7c93ad;text-transform:uppercase;letter-spacing:.04em}
+  #view-fci .fci-card .v{font-size:1.05rem;font-weight:700;color:#e2e8f0;margin-top:3px}
+  #view-fci .pos{color:#43d39e}#view-fci .neg{color:#ff6b6b}
+  #view-fci table{border-collapse:collapse;width:100%;font-size:.72rem;background:#0c1018;margin-top:4px}
+  #view-fci th,#view-fci td{border:1px solid #1e2d42;padding:4px 9px;text-align:right;white-space:nowrap}
+  #view-fci th{background:#16202e;color:#cdd9e8;cursor:pointer}
+  #view-fci td.tx,#view-fci th.tx{text-align:left}
+  #view-fci tbody tr:nth-child(even) td{background:#0e151f}
+  #view-fci .scroll{overflow:auto;max-height:560px;border:1px solid #1e2d42;border-radius:6px}
+  #view-fci .empty{color:#7c93ad;font-style:italic;padding:14px}
+  #view-fci .fci-note{font-size:.66rem;color:#7c93ad;margin:2px 0 8px}
+</style>
+
+<div id="view-fci">
+  <div class="ops-h">📈 Movimientos de FCI <span style="font-size:.6rem;color:#7c93ad;font-weight:400">· composición de cartera (Tabla de Montos)</span></div>
+  <div class="fci-sub">
+    <button class="fci-stab active" id="fci-st-bono" onclick="FCI.setTab('bono')">📊 Movimiento del bono</button>
+    <button class="fci-stab" id="fci-st-fondo" onclick="FCI.setTab('fondo')">🏦 Movimiento del fondo</button>
+  </div>
+  <div class="fci-bar">
+    <label>Fecha inicial<select id="fci-ini"></select></label>
+    <label>Fecha final<select id="fci-fin"></select></label>
+    <label class="tg"><input type="checkbox" id="fci-usd" onchange="FCI.toggleUsd(this.checked)"> Ver en US$</label>
+  </div>
+
+  <!-- ── BONO ── -->
+  <div id="fci-tab-bono">
+    <div class="fci-note">Elegí uno o varios bonos (o un tipo) y agrupá por gerente/fondo. El tipo filtra la lista de bonos; sin bonos elegidos se toman todos los del tipo.</div>
+    <div class="fci-bar">
+      <label>Tipo de activo<select id="fci-tipo" multiple size="4" onchange="FCI.rebuildBonoList()"></select></label>
+      <label>Bono / Activo<input type="text" id="fci-bono-q" placeholder="Buscar…" oninput="FCI.rebuildBonoList()"><select id="fci-bono" multiple size="4" style="min-width:240px"></select></label>
+      <label>Gerente<select id="fci-ger" multiple size="4"></select></label>
+      <label>Agrupar por<select id="fci-agr"><option value="gerente">Gerente</option><option value="fondo">Fondo</option><option value="bono">Bono</option><option value="tipo">Tipo</option></select></label>
+      <button class="fci-go" onclick="FCI.runBono()">Analizar</button>
+    </div>
+    <div id="fci-bono-out"><div class="empty">Cargando…</div></div>
+  </div>
+
+  <!-- ── FONDO ── -->
+  <div id="fci-tab-fondo" style="display:none">
+    <div class="fci-note">Cartera completa de un fondo y su variación entre dos fechas.</div>
+    <div class="fci-bar">
+      <label>Gerente<select id="fci-f-ger" onchange="FCI.rebuildFondoList()"></select></label>
+      <label>FCI<select id="fci-f-fondo" style="min-width:240px"></select></label>
+      <button class="fci-go" onclick="FCI.runFondo()">Analizar</button>
+    </div>
+    <div id="fci-fondo-out"></div>
+  </div>
+</div>
+
+<script>
+window.FCI = (function(){
+  const cfg = window.SUPABASE_CONFIG || {};
+  const REST = (cfg.url||'') + '/rest/v1';
+  const H = {apikey:cfg.anonKey||'', Authorization:'Bearer '+(cfg.anonKey||''), 'Content-Type':'application/json'};
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  async function rpc(fn,args){ try{ const r=await fetch(REST+'/rpc/'+fn,{method:'POST',headers:H,body:JSON.stringify(args||{})}); return r.ok?await r.json():[]; }catch(e){ console.error('[FCI]',e); return []; } }
+  async function sel(p){ try{ const r=await fetch(REST+p,{headers:H}); return r.ok?await r.json():[]; }catch(e){ return []; } }
+
+  const NF = new Intl.NumberFormat('es-AR',{maximumFractionDigits:1});
+  function compact(v,pref){ if(v==null||isNaN(v))return'—'; const a=Math.abs(v); let o;
+    if(a>=1e12)o=NF.format(v/1e12)+' B'; else if(a>=1e9)o=NF.format(v/1e9)+' mil M';
+    else if(a>=1e6)o=NF.format(v/1e6)+' M'; else if(a>=1e3)o=NF.format(v/1e3)+' K'; else o=NF.format(v);
+    return pref+' '+o; }
+  let usd=false;
+  const money = v => compact(v, usd?'US$':'$');
+  function val(montoMill, fecha){ if(usd){ const d=dolar[fecha]; return d? montoMill*1e6/d : 0; } return montoMill*1e6; }
+  function signed(v){ const c=v>0?'pos':(v<0?'neg':''); return `<span class="${c}">${(v>0?'+':'')+money(v)}</span>`; }
+
+  let inited=false, tab='bono';
+  let fechas=[], fondos=[], bonos=[], dolar={}, gerentes=[], tipos=[];
+
+  function getMulti(el){ return [...el.selectedOptions].map(o=>o.value).filter(Boolean); }
+
+  async function init(){
+    if(inited) return; inited=true;
+    fechas = (await rpc('fci_fechas',{})).map(x=>String(x).slice(0,10));
+    fondos = await rpc('fci_fondos',{});
+    bonos  = await rpc('fci_bonos',{});
+    (await sel('/fci_dolar?select=fecha,venta')).forEach(d=>dolar[String(d.fecha).slice(0,10)]=d.venta);
+    gerentes = [...new Set(fondos.map(f=>f.gerente).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    tipos    = [...new Set(bonos.map(b=>b.tipo).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    if(!fechas.length){ $('fci-bono-out').innerHTML='<div class="empty">Sin datos de FCI en Supabase todavía. Corré el sync (python -m src.supabase_sync) y el SQL fci_supabase.sql.</div>'; return; }
+    const opt=f=>`<option>${f}</option>`;
+    $('fci-ini').innerHTML=fechas.map(opt).join(''); $('fci-fin').innerHTML=fechas.map(opt).join('');
+    $('fci-ini').value=fechas[Math.max(0,fechas.length-2)]; $('fci-fin').value=fechas[fechas.length-1];
+    $('fci-tipo').innerHTML=tipos.map(t=>`<option>${esc(t)}</option>`).join('');
+    $('fci-ger').innerHTML=gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
+    $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
+    rebuildFondoList();
+    const def = tipos.includes('Soberano CER') ? 'Soberano CER' : tipos[0];
+    if(def){ for(const o of $('fci-tipo').options){ if(o.value===def){o.selected=true;break;} } }
+    rebuildBonoList();
+    runBono();
+  }
+
+  function rebuildBonoList(){
+    const ts=getMulti($('fci-tipo'));
+    let list = ts.length ? bonos.filter(b=>ts.includes(b.tipo)) : bonos;
+    const q=($('fci-bono-q').value||'').toLowerCase().trim();
+    if(q) list=list.filter(b=>(b.activo||'').toLowerCase().includes(q));
+    $('fci-bono').innerHTML = list.slice(0,1500).map(b=>`<option value="${esc(b.activo)}">${esc(b.activo)} · ${b.n_fondos}</option>`).join('');
+  }
+  function rebuildFondoList(){
+    const g=$('fci-f-ger').value;
+    const list = g ? fondos.filter(f=>f.gerente===g) : fondos;
+    $('fci-f-fondo').innerHTML = list.map(f=>`<option value="${esc(f.fondo)}">${esc(f.fondo)}</option>`).join('');
+  }
+  function setTab(t){ tab=t;
+    $('fci-tab-bono').style.display = t==='bono'?'':'none';
+    $('fci-tab-fondo').style.display = t==='fondo'?'':'none';
+    $('fci-st-bono').classList.toggle('active',t==='bono');
+    $('fci-st-fondo').classList.toggle('active',t==='fondo');
+  }
+  function toggleUsd(v){ usd=v; if(tab==='bono'&&_lastBono) renderBono(_lastBono); else if(tab==='fondo'&&_lastFondo) renderFondo(_lastFondo); }
+
+  let _chart=null;
+  function chart(canvasId, labels, values){ const ctx=$(canvasId); if(!ctx)return; if(_chart)_chart.destroy();
+    _chart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{data:values,backgroundColor:'#2E8B6B'}]},
+      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.parsed.x)}}},
+        scales:{x:{ticks:{callback:v=>money(v),color:'#9fb2c8',font:{size:9}},grid:{color:'#16202e'}},
+                y:{ticks:{color:'#cdd9e8',font:{size:10}},grid:{display:false}}}}}); }
+
+  function tbl(cols, rows){
+    let h='<div class="scroll"><table><thead><tr>'+cols.map(c=>`<th class="${c.tx?'tx':''}">${esc(c.t)}</th>`).join('')+'</tr></thead><tbody>';
+    for(const r of rows){ h+='<tr>'+cols.map(c=>`<td class="${c.tx?'tx':''}">${c.raw?c.fmt(r):esc(c.fmt(r))}</td>`).join('')+'</tr>'; }
+    return h+'</tbody></table></div>';
+  }
+
+  // ── BONO ──
+  let _lastBono=null;
+  async function runBono(){
+    const ini=$('fci-ini').value, fin=$('fci-fin').value, agr=$('fci-agr').value;
+    const activos=getMulti($('fci-bono'));
+    const tiposSel = activos.length?[]:getMulti($('fci-tipo'));
+    const gers=getMulti($('fci-ger'));
+    if(!activos.length && !tiposSel.length){ $('fci-bono-out').innerHTML='<div class="empty">Elegí al menos un bono o un tipo de activo.</div>'; return; }
+    $('fci-bono-out').innerHTML='<div class="empty">Calculando…</div>';
+    const raw=await rpc('fci_mov_consulta',{p_ini:ini,p_fin:fin,p_tipos:tiposSel,p_activos:activos,p_gerentes:gers,p_agrupar:agr});
+    _lastBono={ini,fin,agr,raw}; renderBono(_lastBono);
+  }
+  function renderBono({ini,fin,agr,raw}){
+    const data=raw.map(r=>({clave:r.clave, ini:val(r.monto_ini,ini), fin:val(r.monto_fin,fin), delta:val(r.monto_fin,fin)-val(r.monto_ini,ini)}));
+    const totI=data.reduce((s,r)=>s+r.ini,0), totF=data.reduce((s,r)=>s+r.fin,0);
+    const dim={gerente:'gerente',fondo:'fondo',bono:'bono',tipo:'tipo de activo'}[agr];
+    let h=`<div class="fci-cards">
+      <div class="fci-card"><div class="k">Tenencia ${ini}</div><div class="v">${money(totI)}</div></div>
+      <div class="fci-card"><div class="k">Tenencia ${fin}</div><div class="v">${money(totF)}</div></div>
+      <div class="fci-card"><div class="k">Variación</div><div class="v ${totF-totI>=0?'pos':'neg'}">${(totF-totI>0?'+':'')+money(totF-totI)}</div></div>
+      <div class="fci-card"><div class="k">Filas</div><div class="v">${data.length}</div></div></div>`;
+    if(!data.length){ $('fci-bono-out').innerHTML=h+'<div class="empty">Sin tenencias para esa selección/fechas.</div>'; return; }
+    h+=`<div class="ops-h">Tenencia por ${dim} (final)</div>
+        <div style="height:${Math.max(240,Math.min(data.length,25)*26)}px"><canvas id="fci-bono-canvas"></canvas></div>
+        <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-bono-canvas','mov_bono.png')">⤓ PNG</button></div>`;
+    h+=tbl([{t:cap(dim),tx:1,fmt:r=>r.clave},{t:'Tenencia '+ini,fmt:r=>money(r.ini)},{t:'Tenencia '+fin,fmt:r=>money(r.fin)},{t:'Δ',raw:1,fmt:r=>signed(r.delta)}], data);
+    $('fci-bono-out').innerHTML=h;
+    const top=data.slice(0,25).reverse();
+    chart('fci-bono-canvas', top.map(r=>r.clave), top.map(r=>r.fin));
+  }
+
+  // ── FONDO ──
+  let _lastFondo=null;
+  async function runFondo(){
+    const fondo=$('fci-f-fondo').value, ini=$('fci-ini').value, fin=$('fci-fin').value;
+    if(!fondo){ $('fci-fondo-out').innerHTML='<div class="empty">Elegí un FCI.</div>'; return; }
+    $('fci-fondo-out').innerHTML='<div class="empty">Calculando…</div>';
+    const raw=await rpc('fci_mov_fondo',{p_fondo:fondo,p_ini:ini,p_fin:fin});
+    _lastFondo={fondo,ini,fin,raw}; renderFondo(_lastFondo);
+  }
+  function renderFondo({fondo,ini,fin,raw}){
+    const data=raw.map(r=>({activo:r.activo,tipo:r.tipo,moneda:r.moneda, ini:val(r.monto_ini,ini), fin:val(r.monto_fin,fin), delta:val(r.monto_fin,fin)-val(r.monto_ini,ini)}));
+    const totI=data.reduce((s,r)=>s+r.ini,0), totF=data.reduce((s,r)=>s+r.fin,0);
+    let h=`<div class="ops-h">${esc(fondo)}</div><div class="fci-cards">
+      <div class="fci-card"><div class="k">Patrimonio ${ini}</div><div class="v">${money(totI)}</div></div>
+      <div class="fci-card"><div class="k">Patrimonio ${fin}</div><div class="v">${money(totF)}</div></div>
+      <div class="fci-card"><div class="k">Activos</div><div class="v">${data.length}</div></div></div>`;
+    if(!data.length){ $('fci-fondo-out').innerHTML=h+'<div class="empty">Sin tenencias en esas fechas.</div>'; return; }
+    h+=`<div style="height:${Math.max(240,Math.min(data.length,25)*26)}px"><canvas id="fci-fondo-canvas"></canvas></div>
+        <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-fondo-canvas','mov_fondo.png')">⤓ PNG</button></div>`;
+    h+=tbl([{t:'Activo',tx:1,fmt:r=>r.activo},{t:'Tipo',tx:1,fmt:r=>r.tipo||''},{t:'Mon.',tx:1,fmt:r=>r.moneda||''},
+            {t:'Tenencia '+ini,fmt:r=>money(r.ini)},{t:'Tenencia '+fin,fmt:r=>money(r.fin)},{t:'Δ',raw:1,fmt:r=>signed(r.delta)}], data);
+    $('fci-fondo-out').innerHTML=h;
+    const top=data.slice(0,25).reverse();
+    chart('fci-fondo-canvas', top.map(r=>r.activo), top.map(r=>r.fin));
+  }
+  function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+
+  return { init, setTab, toggleUsd, rebuildBonoList, rebuildFondoList, runBono, runFondo };
 })();
 </script>
 </body>
