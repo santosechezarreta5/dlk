@@ -1858,7 +1858,7 @@ async function pxPromedioSemanal(bond){
   const canon = bond.ticker.slice(0,-1)+'O';
   const url=cfg.url+'/rest/v1/market_ops?ticker=eq.'+encodeURIComponent(canon)
     +'&moneda=eq.'+encodeURIComponent(m)+'&outlier=eq.false'
-    +'&select=fecha,precio,monto,tir&order=fecha.desc&limit=40';
+    +'&select=fecha,precio,monto,tna&order=fecha.desc&limit=40';
   try{
     const r=await fetch(url,{headers:H}); const j=r.ok?await r.json():[];
     if(!j.length) return null;
@@ -1866,12 +1866,12 @@ async function pxPromedioSemanal(bond){
     const sem=j.filter(x=> new Date(x.fecha) >= lim);
     const dias=new Set(sem.map(x=>x.fecha)).size;
     let sp=0, sw=0, sm=0, nm=0, st=0, stw=0, sti=0, nti=0;
-    sem.forEach(x=>{ const p=+x.precio, w=+x.monto, t=+x.tir;
+    sem.forEach(x=>{ const p=+x.precio, w=+x.monto, t=+x.tna;
       if(p>0){ if(w>0){sp+=p*w; sw+=w;} sm+=p; nm++; }
-      if(x.tir!=null && isFinite(t)){ if(w>0){st+=t*w; stw+=w;} sti+=t; nti++; } });
+      if(x.tna!=null && isFinite(t)){ if(w>0){st+=t*w; stw+=w;} sti+=t; nti++; } });
     const vwap = sw>0 ? sp/sw : (nm? sm/nm : null);
-    const tir  = stw>0 ? st/stw : (nti? sti/nti : null);
-    return vwap==null?null:{vwap, tir, dias};
+    const tna  = stw>0 ? st/stw : (nti? sti/nti : null);
+    return vwap==null?null:{vwap, tna, dias};
   }catch(e){ return null; }
 }
 
@@ -1885,7 +1885,7 @@ async function loadBondExtras(bond){
   let html='';
   if(px){
     const pv = isHD ? px.vwap.toFixed(2) : Math.round(px.vwap).toLocaleString('es-AR');
-    const tv = px.tir!=null ? 'TIR '+px.tir.toFixed(2)+'%' : '';
+    const tv = px.tna!=null ? 'TNA '+px.tna.toFixed(2)+'%' : '';
     html+='<div class="cp-extra-px"><div class="lo-l">Px prom. operado · últ. semana ('
         + px.dias + (px.dias===1?' día':' días') + ')</div>'
         + '<div class="cp-extra-vals"><span class="cp-extra-v">' + pv + '</span>'
