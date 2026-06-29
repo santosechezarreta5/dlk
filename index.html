@@ -5735,6 +5735,11 @@ const OPS = (function(){
   #view-fci .ms-act{display:flex;justify-content:space-between;border-top:1px solid #1e2d42;margin-top:6px;padding-top:6px}
   #view-fci .ms-act a{font-size:.66rem;color:#43d39e;text-decoration:none}
   #view-fci th[data-k]{user-select:none}
+  #view-fci .fci-cm{display:inline-flex;margin-left:10px;vertical-align:middle}
+  #view-fci .cm{font:inherit;font-size:.66rem;font-weight:700;padding:4px 11px;border:1px solid #1e2d42;background:#0c1018;color:#9fb2c8;cursor:pointer}
+  #view-fci .cm:first-child{border-radius:5px 0 0 5px}
+  #view-fci .cm:last-child{border-radius:0 5px 5px 0;border-left:0}
+  #view-fci .cm.on{background:#1F5C4D;color:#fff;border-color:#1F5C4D}
 </style>
 
 <div id="view-fci">
@@ -5791,6 +5796,7 @@ window.FCI = (function(){
     else if(a>=1e6)o=NF.format(v/1e6)+' M'; else if(a>=1e3)o=NF.format(v/1e3)+' K'; else o=NF.format(v);
     return pref+' '+o; }
   let usd=true;  // US$ por defecto
+  let chartMode='tenencia';  // 'tenencia' | 'variacion'
   const money = v => compact(v, usd?'US$':'$');
   function val(montoMill, fecha){ if(usd){ const d=dolar[fecha]; return d? montoMill*1e6/d : 0; } return montoMill*1e6; }
   function signed(v){ const c=v>0?'pos':(v<0?'neg':''); return `<span class="${c}">${(v>0?'+':'')+money(v)}</span>`; }
@@ -5869,7 +5875,7 @@ window.FCI = (function(){
     msGer  = mksel($('fci-ger'),  gerentes,    {placeholder:'(todas las gerentes)'});
     $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
     rebuildFondoList();
-    const def = tipos.includes('Soberano CER') ? 'Soberano CER' : tipos[0];
+    const def = tipos.includes('Soberano ARS') ? 'Soberano ARS' : tipos[0];
     if(def){ msTipo.set([def]); msBono.setOptions(bonoOpts([def], [])); }
     runBono();
   }
@@ -5887,11 +5893,13 @@ window.FCI = (function(){
     $('fci-st-bono').classList.toggle('active',t==='bono');
     $('fci-st-fondo').classList.toggle('active',t==='fondo');
   }
-  function toggleUsd(v){ usd=v; if(tab==='bono'&&_lastBono) renderBono(_lastBono); else if(tab==='fondo'&&_lastFondo) renderFondo(_lastFondo); }
+  function toggleUsd(v){ usd=v; rerender(); }
+  function setChartMode(m){ chartMode=m; rerender(); }
+  function rerender(){ if(tab==='bono'&&_lastBono) renderBono(_lastBono); else if(tab==='fondo'&&_lastFondo) renderFondo(_lastFondo); }
 
   let _chart=null;
-  function chart(canvasId, labels, values){ const ctx=$(canvasId); if(!ctx)return; if(_chart)_chart.destroy();
-    _chart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{data:values,backgroundColor:'#2E8B6B'}]},
+  function chart(canvasId, labels, values, color){ const ctx=$(canvasId); if(!ctx)return; if(_chart)_chart.destroy();
+    _chart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{data:values,backgroundColor:color||'#2E8B6B'}]},
       options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
         plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.parsed.x)}}},
         scales:{x:{ticks:{callback:v=>money(v),color:'#9fb2c8',font:{size:9}},grid:{color:'#16202e'}},
@@ -5927,7 +5935,9 @@ window.FCI = (function(){
       <div class="fci-card"><div class="k">Variación</div><div class="v ${totF-totI>=0?'pos':'neg'}">${(totF-totI>0?'+':'')+money(totF-totI)}</div></div>
       <div class="fci-card"><div class="k">Filas</div><div class="v">${data.length}</div></div></div>`;
     if(!data.length){ $('fci-bono-out').innerHTML=h+'<div class="empty">Sin tenencias para esa selección/fechas.</div>'; return; }
-    h+=`<div class="ops-h">Tenencia por ${dim} (final)</div>
+    const useDelta = chartMode==='variacion';
+    h+=`<div class="ops-h">${useDelta?'Variación':'Tenencia'} por ${dim}
+          <span class="fci-cm"><button class="cm ${!useDelta?'on':''}" onclick="FCI.setChartMode('tenencia')">Tenencia</button><button class="cm ${useDelta?'on':''}" onclick="FCI.setChartMode('variacion')">Variación</button></span></div>
         <div style="height:${Math.max(240,Math.min(data.length,25)*26)}px"><canvas id="fci-bono-canvas"></canvas></div>
         <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-bono-canvas','mov_bono.png')">⤓ PNG</button></div>
         <div id="fci-bono-tbl"></div>`;
@@ -5936,8 +5946,9 @@ window.FCI = (function(){
       [{k:'clave',t:cap(dim),tx:1,fmt:r=>r.clave},{k:'ini',t:'Tenencia '+ini,fmt:r=>money(r.ini)},
        {k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:'Δ',raw:1,fmt:r=>signed(r.delta)}],
       {key:'fin', dir:-1});
-    const top=data.slice().sort((a,b)=>b.fin-a.fin).slice(0,25);
-    chart('fci-bono-canvas', top.map(r=>r.clave), top.map(r=>r.fin));
+    const top=data.slice().sort((a,b)=> useDelta ? (b.delta-a.delta) : (b.fin-a.fin)).slice(0,25);
+    chart('fci-bono-canvas', top.map(r=>r.clave), top.map(r=> useDelta?r.delta:r.fin),
+      useDelta ? top.map(r=> r.delta>=0?'#2E8B6B':'#c0392b') : '#2E8B6B');
   }
 
   // ── FONDO ──
@@ -5966,7 +5977,10 @@ window.FCI = (function(){
       <div class="fci-card"><div class="k">Patrimonio ${fin}</div><div class="v">${money(totF)}</div></div>
       <div class="fci-card"><div class="k">Activos</div><div class="v">${data.length}</div></div></div>`;
     if(!data.length){ $('fci-fondo-out').innerHTML=h+'<div class="empty">Sin tenencias en esas fechas.</div>'; return; }
-    h+=`<div style="height:${Math.max(240,Math.min(data.length,25)*26)}px"><canvas id="fci-fondo-canvas"></canvas></div>
+    const useDelta = chartMode==='variacion';
+    h+=`<div class="ops-h" style="font-size:.85rem">${useDelta?'Variación':'Tenencia'} por activo
+          <span class="fci-cm"><button class="cm ${!useDelta?'on':''}" onclick="FCI.setChartMode('tenencia')">Tenencia</button><button class="cm ${useDelta?'on':''}" onclick="FCI.setChartMode('variacion')">Variación</button></span></div>
+        <div style="height:${Math.max(240,Math.min(data.length,25)*26)}px"><canvas id="fci-fondo-canvas"></canvas></div>
         <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-fondo-canvas','mov_fondo.png')">⤓ PNG</button></div>
         <div id="fci-fondo-tbl"></div>`;
     $('fci-fondo-out').innerHTML=h;
@@ -5974,12 +5988,13 @@ window.FCI = (function(){
       [{k:'activo',t:'Activo',tx:1,fmt:r=>r.activo},{k:'tipo',t:'Tipo',tx:1,fmt:r=>r.tipo||''},{k:'moneda',t:'Mon.',tx:1,fmt:r=>r.moneda||''},
        {k:'ini',t:'Tenencia '+ini,fmt:r=>money(r.ini)},{k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:'Δ',raw:1,fmt:r=>signed(r.delta)}],
       {key:'fin', dir:-1});
-    const top=data.slice().sort((a,b)=>b.fin-a.fin).slice(0,25);
-    chart('fci-fondo-canvas', top.map(r=>r.activo), top.map(r=>r.fin));
+    const top=data.slice().sort((a,b)=> useDelta ? (b.delta-a.delta) : (b.fin-a.fin)).slice(0,25);
+    chart('fci-fondo-canvas', top.map(r=>r.activo), top.map(r=> useDelta?r.delta:r.fin),
+      useDelta ? top.map(r=> r.delta>=0?'#2E8B6B':'#c0392b') : '#2E8B6B');
   }
   function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
 
-  return { init, setTab, toggleUsd, rebuildFondoList, runBono, runFondo };
+  return { init, setTab, toggleUsd, setChartMode, rebuildFondoList, runBono, runFondo };
 })();
 </script>
 </body>
