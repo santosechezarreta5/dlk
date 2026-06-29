@@ -5946,7 +5946,7 @@ window.FCI = (function(){
       [{k:'clave',t:cap(dim),tx:1,fmt:r=>r.clave},{k:'ini',t:'Tenencia '+ini,fmt:r=>money(r.ini)},
        {k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:'Δ',raw:1,fmt:r=>signed(r.delta)}],
       {key:'fin', dir:-1});
-    const top=data.slice().sort((a,b)=> useDelta ? (b.delta-a.delta) : (b.fin-a.fin)).slice(0,25);
+    const top=data.slice().sort((a,b)=> useDelta ? (Math.abs(b.delta)-Math.abs(a.delta)) : (b.fin-a.fin)).slice(0,25);
     chart('fci-bono-canvas', top.map(r=>r.clave), top.map(r=> useDelta?r.delta:r.fin),
       useDelta ? top.map(r=> r.delta>=0?'#2E8B6B':'#c0392b') : '#2E8B6B');
   }
@@ -5988,7 +5988,7 @@ window.FCI = (function(){
       [{k:'activo',t:'Activo',tx:1,fmt:r=>r.activo},{k:'tipo',t:'Tipo',tx:1,fmt:r=>r.tipo||''},{k:'moneda',t:'Mon.',tx:1,fmt:r=>r.moneda||''},
        {k:'ini',t:'Tenencia '+ini,fmt:r=>money(r.ini)},{k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:'Δ',raw:1,fmt:r=>signed(r.delta)}],
       {key:'fin', dir:-1});
-    const top=data.slice().sort((a,b)=> useDelta ? (b.delta-a.delta) : (b.fin-a.fin)).slice(0,25);
+    const top=data.slice().sort((a,b)=> useDelta ? (Math.abs(b.delta)-Math.abs(a.delta)) : (b.fin-a.fin)).slice(0,25);
     chart('fci-fondo-canvas', top.map(r=>r.activo), top.map(r=> useDelta?r.delta:r.fin),
       useDelta ? top.map(r=> r.delta>=0?'#2E8B6B':'#c0392b') : '#2E8B6B');
   }
