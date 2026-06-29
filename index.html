@@ -5752,6 +5752,7 @@ const OPS = (function(){
   <div id="fci-tab-bono">
     <div class="fci-note">Elegí uno o varios bonos (o un tipo) y agrupá por gerente/fondo. El tipo filtra la lista de bonos; sin bonos elegidos se toman todos los del tipo.</div>
     <div class="fci-bar">
+      <label>Moneda<div id="fci-moneda"></div></label>
       <label>Tipo de activo<div id="fci-tipo"></div></label>
       <label>Bono / Activo<div id="fci-bono"></div></label>
       <label>Gerente<div id="fci-ger"></div></label>
@@ -5794,8 +5795,8 @@ window.FCI = (function(){
   function signed(v){ const c=v>0?'pos':(v<0?'neg':''); return `<span class="${c}">${(v>0?'+':'')+money(v)}</span>`; }
 
   let inited=false, tab='bono';
-  let fechas=[], fondos=[], bonos=[], dolar={}, gerentes=[], tipos=[], bmap={};
-  let msTipo=null, msBono=null, msGer=null;
+  let fechas=[], fondos=[], bonos=[], dolar={}, gerentes=[], tipos=[], monedas=[], bmap={};
+  let msTipo=null, msBono=null, msGer=null, msMoneda=null;
 
   // ── multi-select buscable ──
   function mksel(container, options, {placeholder='(todos)', onChange}={}){
@@ -5826,7 +5827,9 @@ window.FCI = (function(){
     return { get:()=>[...set], set:a=>{set.clear();(a||[]).forEach(x=>set.add(x));rb();},
       setOptions:n=>{ norm=(n||[]).map(o=>typeof o==='string'?{value:o,label:o}:o); const ok=new Set(norm.map(o=>o.value)); [...set].forEach(v=>{if(!ok.has(v))set.delete(v);}); rb(); rl(); } };
   }
-  const bonoOpts = ts => (ts.length?bonos.filter(b=>ts.includes(b.tipo)):bonos).map(b=>({value:b.activo,label:`${b.activo} · ${b.n_fondos}`}));
+  const bonoOpts = (ts, ms) => bonos
+    .filter(b=>(!ts||!ts.length||ts.includes(b.tipo)) && (!ms||!ms.length||ms.includes(b.moneda)))
+    .map(b=>({value:b.activo,label:`${b.activo} · ${b.n_fondos}`}));
 
   // ── tabla ordenable ──
   function sortableTable(target, rows, cols, {key=null, dir=-1}={}){
@@ -5852,18 +5855,21 @@ window.FCI = (function(){
     bonos.forEach(b=>bmap[b.activo]={tipo:b.tipo,moneda:b.moneda});
     gerentes = [...new Set(fondos.map(f=>f.gerente).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     tipos    = [...new Set(bonos.map(b=>b.tipo).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    monedas  = [...new Set(bonos.map(b=>b.moneda).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     if(!fechas.length){ $('fci-bono-out').innerHTML='<div class="empty">Sin datos de FCI en Supabase todavía. Corré el sync (python -m src.supabase_sync) y el SQL fci_supabase.sql.</div>'; return; }
     $('fci-usd').checked = usd;
     const opt=f=>`<option>${f}</option>`;
     $('fci-ini').innerHTML=fechas.map(opt).join(''); $('fci-fin').innerHTML=fechas.map(opt).join('');
     $('fci-ini').value=fechas[Math.max(0,fechas.length-2)]; $('fci-fin').value=fechas[fechas.length-1];
-    msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:s=>msBono.setOptions(bonoOpts(s))});
-    msBono = mksel($('fci-bono'), bonoOpts([]), {placeholder:'(elegí bono/s)'});
+    const reBono = ()=>msBono.setOptions(bonoOpts(msTipo.get(), msMoneda.get()));
+    msMoneda = mksel($('fci-moneda'), monedas, {placeholder:'(todas)', onChange:reBono});
+    msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:reBono});
+    msBono = mksel($('fci-bono'), bonoOpts([],[]), {placeholder:'(elegí bono/s)'});
     msGer  = mksel($('fci-ger'),  gerentes,    {placeholder:'(todas las gerentes)'});
     $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
     rebuildFondoList();
     const def = tipos.includes('Soberano CER') ? 'Soberano CER' : tipos[0];
-    if(def){ msTipo.set([def]); msBono.setOptions(bonoOpts([def])); }
+    if(def){ msTipo.set([def]); msBono.setOptions(bonoOpts([def], [])); }
     runBono();
   }
 
@@ -5895,11 +5901,19 @@ window.FCI = (function(){
   async function runBono(){
     const ini=$('fci-ini').value, fin=$('fci-fin').value, agr=$('fci-agr').value;
     const activos=msBono.get();
-    const tiposSel = activos.length?[]:msTipo.get();
+    const tiposSel=msTipo.get(), monedasSel=msMoneda.get();
     const gers=msGer.get();
-    if(!activos.length && !tiposSel.length){ $('fci-bono-out').innerHTML='<div class="empty">Elegí al menos un bono o un tipo de activo.</div>'; return; }
+    let p_activos=activos, p_tipos=[];
+    if(!activos.length){
+      if(monedasSel.length){  // moneda activa: expandir por tipo∩moneda en el cliente
+        p_activos = bonos.filter(b=>(!tiposSel.length||tiposSel.includes(b.tipo)) && monedasSel.includes(b.moneda)).map(b=>b.activo);
+      } else {
+        p_tipos = tiposSel;
+      }
+    }
+    if(!p_activos.length && !p_tipos.length){ $('fci-bono-out').innerHTML='<div class="empty">Elegí al menos un bono, un tipo o una moneda.</div>'; return; }
     $('fci-bono-out').innerHTML='<div class="empty">Calculando…</div>';
-    const raw=await rpc('fci_mov_consulta',{p_ini:ini,p_fin:fin,p_tipos:tiposSel,p_activos:activos,p_gerentes:gers,p_agrupar:agr});
+    const raw=await rpc('fci_mov_consulta',{p_ini:ini,p_fin:fin,p_tipos:p_tipos,p_activos:p_activos,p_gerentes:gers,p_agrupar:agr});
     _lastBono={ini,fin,agr,raw}; renderBono(_lastBono);
   }
   function renderBono({ini,fin,agr,raw}){
