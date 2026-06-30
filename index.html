@@ -5896,6 +5896,7 @@ const OPS = (function(){
     <div class="fci-bar">
       <label>Gerente<select id="fci-f-ger" onchange="FCI.rebuildFondoList()"></select></label>
       <label>FCI<select id="fci-f-fondo" style="min-width:240px"></select></label>
+      <label>Tipo de activo<div id="fci-f-tipo"></div></label>
       <button class="fci-go" onclick="FCI.runFondo()">Analizar</button>
     </div>
     <div id="fci-fondo-out"></div>
@@ -5925,7 +5926,7 @@ window.FCI = (function(){
 
   let inited=false, tab='bono';
   let fechas=[], fondos=[], bonos=[], dolar={}, gerentes=[], tipos=[], monedas=[], bmap={};
-  let msTipo=null, msBono=null, msGer=null, msMoneda=null;
+  let msTipo=null, msBono=null, msGer=null, msMoneda=null, msFTipo=null;
 
   // ── multi-select buscable ──
   function mksel(container, options, {placeholder='(todos)', onChange}={}){
@@ -5995,6 +5996,7 @@ window.FCI = (function(){
     msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:reBono});
     msBono = mksel($('fci-bono'), bonoOpts([],[]), {placeholder:'(elegí bono/s)'});
     msGer  = mksel($('fci-ger'),  gerentes,    {placeholder:'(todas las gerentes)'});
+    msFTipo= mksel($('fci-f-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:()=>{ if(_lastFondo) renderFondo(_lastFondo); }});
     $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
     rebuildFondoList();
     const def = tipos.includes('Soberano ARS') ? 'Soberano ARS' : tipos[0];
@@ -6089,10 +6091,12 @@ window.FCI = (function(){
       raw=await rpc('fci_mov_fondo',{p_fondo:fondoVal,p_ini:ini,p_fin:fin});
       title=fondoVal;
     }
+    if(msFTipo) msFTipo.setOptions([...new Set((raw||[]).map(r=>r.tipo).filter(Boolean))].sort((a,b)=>a.localeCompare(b)));
     _lastFondo={title,ini,fin,raw}; renderFondo(_lastFondo);
   }
   function renderFondo({title,ini,fin,raw}){
-    const data=raw.map(r=>({activo:r.activo,tipo:r.tipo,moneda:r.moneda, ini:val(r.monto_ini,ini), fin:val(r.monto_fin,fin), delta:val(r.monto_fin,fin)-val(r.monto_ini,ini)}));
+    let data=raw.map(r=>({activo:r.activo,tipo:r.tipo,moneda:r.moneda, ini:val(r.monto_ini,ini), fin:val(r.monto_fin,fin), delta:val(r.monto_fin,fin)-val(r.monto_ini,ini)}));
+    const _tsel=(msFTipo&&msFTipo.get())||[]; if(_tsel.length) data=data.filter(r=>_tsel.includes(r.tipo));
     const totI=data.reduce((s,r)=>s+r.ini,0), totF=data.reduce((s,r)=>s+r.fin,0);
     let h=`<div class="ops-h">${esc(title)}</div><div class="fci-cards">
       <div class="fci-card"><div class="k">Patrimonio ${ini}</div><div class="v">${money(totI)}</div></div>
