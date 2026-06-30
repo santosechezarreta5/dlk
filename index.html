@@ -5479,7 +5479,7 @@ const OPS = (function(){
   const LIST_NUM=new Set(['precio','tna','tir','monto']);
   const LIST_DATE=new Set(['fecha','venc']);
   let rangeMapped=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
-  let breakdown='rating', filters={rating:null,sector:null,empresa:null,anio:null};
+  let breakdownKeys=['rating'], filters={rating:null,sector:null,empresa:null,anio:null};
   const gv=(r,k)=>{ const v=r[k]; return (v==null||v==='')?('(s/'+k+')'):v; };
   let dates=[], maxDate=null;
 
@@ -5549,7 +5549,9 @@ const OPS = (function(){
     const opts=SEC_DEFS.filter(s=>present.includes(s.id)); sel.innerHTML=opts.map(s=>'<option value="'+s.id+'">'+s.title+'</option>').join('');
     if(!opts.find(s=>s.id===serieSec)) serieSec=opts.length?opts[0].id:null; sel.value=serieSec||'';
   }
-  const FILT_DIMS=[['rating','Rating'],['sector','Sector'],['empresa','Empresa'],['anio','Año Vto.']];
+  const FILT_DIMS=[['rating','Rating'],['sector','Sector'],['empresa','Emisor'],['anio','Año Vto.']];
+  // Dimensiones para "Desglosar" (combinables). 'empresa' = emisor (mapRow: empresa:o.emisor).
+  const BD_DIMS=[['rating','Rating'],['sector','Sector'],['empresa','Emisor'],['anio','Año Vto.'],['ticker','Ticker']];
   function _vals(sub,key){
     let v=[...new Set(sub.map(r=>gv(r,key)))];
     v.sort(key==='rating'?(a,b)=>rrank(a)-rrank(b):key==='anio'?(a,b)=>(''+a).localeCompare(''+b,undefined,{numeric:true}):(a,b)=>(''+a).localeCompare(''+b));
@@ -5558,10 +5560,17 @@ const OPS = (function(){
   function buildFilters(){
     const el=document.getElementById('ops-serie-ctrl'); el.innerHTML='';
     const sub=rangeMapped.filter(r=>r.sec===serieSec);
-    const bd=document.createElement('div'); bd.className='filt'; bd.innerHTML='<div class="filt-h">Desglosar por</div>';
-    const sel=document.createElement('select'); sel.id='ops-breakdown';
-    [['rating','Rating'],['sector','Sector'],['empresa','Empresa'],['anio','Año Vto.'],['','Total']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if(v===breakdown)o.selected=true;sel.appendChild(o);});
-    sel.onchange=()=>{breakdown=sel.value;renderSerie();}; bd.appendChild(sel); el.appendChild(bd);
+    const bd=document.createElement('div'); bd.className='filt';
+    bd.innerHTML='<div class="filt-h">Desglosar por (combinable)</div>';
+    const bdList=document.createElement('div'); bdList.className='filt-list';
+    for(const [k,lbl] of BD_DIMS){
+      const lab=document.createElement('label'); const cb=document.createElement('input'); cb.type='checkbox';
+      cb.checked=breakdownKeys.includes(k);
+      cb.onchange=()=>{ if(cb.checked){ if(!breakdownKeys.includes(k)) breakdownKeys.push(k); }
+                        else breakdownKeys=breakdownKeys.filter(x=>x!==k); renderSerie(); };
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(' '+lbl)); bdList.appendChild(lab);
+    }
+    bd.appendChild(bdList); el.appendChild(bd);
     for(const [key,lbl] of FILT_DIMS){
       const vals=_vals(sub,key);
       if(filters[key]==null) filters[key]=new Set(vals);
@@ -5584,12 +5593,19 @@ const OPS = (function(){
     const rows=filteredRows();
     const fechas=[...new Set(rows.map(r=>r.fecha))].sort();
     let groups;
-    if(!breakdown){ groups=[{label:'Total', rows}]; }
+    if(!breakdownKeys.length){ groups=[{label:'Total', rows}]; }
     else{
-      let vals=[...new Set(rows.map(r=>gv(r,breakdown)))];
-      const mtot=v=>rows.filter(r=>gv(r,breakdown)===v).reduce((s,r)=>s+(r.monto||0),0);
-      vals.sort(breakdown==='rating'?(a,b)=>rrank(a)-rrank(b):breakdown==='anio'?(a,b)=>(''+a).localeCompare(''+b,undefined,{numeric:true}):(a,b)=>mtot(b)-mtot(a));
-      groups=vals.slice(0,15).map(v=>({label:''+v, rows:rows.filter(r=>gv(r,breakdown)===v)}));
+      const keyOf=r=>breakdownKeys.map(k=>gv(r,k)).join(' · ');
+      const map=new Map();
+      for(const r of rows){ const k=keyOf(r); (map.get(k)||map.set(k,[]).get(k)).push(r); }
+      let entries=[...map.entries()].map(([label,rs])=>({label, rows:rs, m:rs.reduce((s,r)=>s+(r.monto||0),0)}));
+      // un solo criterio rating/año: orden natural; en cualquier otro caso, por volumen desc
+      if(breakdownKeys.length===1 && (breakdownKeys[0]==='rating'||breakdownKeys[0]==='anio')){
+        const k=breakdownKeys[0];
+        entries.sort(k==='rating'?(a,b)=>rrank(a.label)-rrank(b.label)
+                                 :(a,b)=>(''+a.label).localeCompare(''+b.label,undefined,{numeric:true}));
+      } else entries.sort((a,b)=>b.m-a.m);
+      groups=entries.slice(0,15);
     }
     const datasets=groups.map((g,i)=>({label:g.label,
       data:fechas.map(f=>{const v=wavg(g.rows.filter(r=>r.fecha===f),null,metric);return v==null?null:+v.toFixed(3);}),
