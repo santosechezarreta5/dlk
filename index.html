@@ -1576,7 +1576,7 @@ async function reloadCatalog(opts){
 }
 
 let F={sector:new Set(['all']),anio:new Set(['all']),call:new Set(['all']),emisor:new Set(),leg:new Set(['all']),jur:new Set(['all']),rating:new Set(['all']),precio:new Set(['all'])};
-let activeType='DL';
+let activeType='HD';
 let hdCurrencyView='mep'; // 'mep' | 'ars' | 'cable'
 let SK='ticker',SD=1,ACTIVE_TK=null,manualPrecio=false,manualTIR=false,pendingImport=[];
 const PROXY='http://localhost:3000';
@@ -4640,7 +4640,7 @@ if(IS_FILE_PROTO){
   }
   // Después arrancan los flujos de mercado normales
   await fetchFX();
-  fetchAll();
+  fetchAll().then(()=>{ try{ setTypeTab('HD'); }catch(_){} });   // por defecto: HD · Hard Dollar
 })();
 
 // Refresh cada 30s con data912 — pero si llevamos N fallos consecutivos, paramos el interval
