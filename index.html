@@ -5459,7 +5459,7 @@ const OPS = (function(){
   function secId(o){ for(const s of SEC_DEFS) if(s.match(o)) return s.id; return 'hd_otras'; }
   function secDef(id){ return SEC_DEFS.find(s=>s.id===id); }
 
-  function mapRow(o){ return {sec:secId(o), anio:o.anio_vto, rating:o.rating||'', sector:o.sector||'', empresa:o.emisor||'', ticker:o.ticker, monto:+o.monto||0, tir:o.tir==null?null:+o.tir, tna:o.tna==null?null:+o.tna, outlier:!!o.outlier, fecha:o.fecha}; }
+  function mapRow(o){ return {sec:secId(o), anio:o.anio_vto, rating:o.rating||'', sector:o.sector||'', empresa:o.emisor||'', ticker:o.ticker, monto:+o.monto||0, moneda:o.moneda||'', tir:o.tir==null?null:+o.tir, tna:o.tna==null?null:+o.tna, outlier:!!o.outlier, fecha:o.fecha}; }
 
   const fmtPct=v=>v==null||isNaN(v)?'':v.toFixed(2)+'%';
   function wavg(rows,anio,metric){ metric=metric||'tir'; let n=0,d=0; for(const r of rows){ if(r.outlier)continue; if(anio!=null&&r.anio!==anio)continue; const x=r[metric]; if(x==null||isNaN(x))continue; if(r.monto>0){n+=x*r.monto;d+=r.monto;} } return d>0?n/d:null; }
@@ -5535,10 +5535,12 @@ const OPS = (function(){
   function renderOutliers(box, outs){
     const cap=document.createElement('div'); cap.className='cap ops-out'; cap.textContent='Outliers ('+outs.length+')'; box.appendChild(cap);
     if(!outs.length) return;
-    const cols=[['ticker','Ticker'],['rating','Rating'],['anio','Año'],['ticker','']]; // compacto
+    const fmtVol=v=>{ v=+v||0; if(v>=1e6) return (v/1e6).toLocaleString('es-AR',{maximumFractionDigits:1})+' M';
+      if(v>=1e3) return (v/1e3).toLocaleString('es-AR',{maximumFractionDigits:0})+' k';
+      return v? v.toLocaleString('es-AR',{maximumFractionDigits:0}) : '—'; };
     const t=document.createElement('table');t.className='pv';t.style.fontSize='.66rem';
-    let h='<thead><tr><th>Ticker</th><th>Rating</th><th>Año</th><th>Fuente·Plazo·Moneda</th><th>TIR</th></tr></thead><tbody>';
-    outs.sort((a,b)=>(a.rating||'').localeCompare(b.rating||'')||(a.anio-b.anio)).forEach(o=>{ h+='<tr><td>'+o.ticker+'</td><td>'+(o.rating||'')+'</td><td>'+(o.anio||'')+'</td><td>'+'—'+'</td><td>'+fmtPct(o.tir)+'</td></tr>'; });
+    let h='<thead><tr><th>Ticker</th><th>Rating</th><th>Año</th><th>Volumen</th><th>Moneda</th><th>TIR</th></tr></thead><tbody>';
+    outs.sort((a,b)=>(a.rating||'').localeCompare(b.rating||'')||(a.anio-b.anio)).forEach(o=>{ h+='<tr><td>'+o.ticker+'</td><td>'+(o.rating||'')+'</td><td>'+(o.anio||'')+'</td><td>'+fmtVol(o.monto)+'</td><td>'+(o.moneda||'—')+'</td><td>'+fmtPct(o.tir)+'</td></tr>'; });
     t.innerHTML=h+'</tbody>'; box.appendChild(t);
   }
 
