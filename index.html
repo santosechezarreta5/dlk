@@ -5328,7 +5328,7 @@ body.ops-mode #view-ops{display:block}
 #view-ops .filt-h{font-weight:700;font-size:.66rem;color:#cfe0f5;margin-bottom:3px;display:flex;align-items:center;gap:5px}
 #view-ops .filt-list{max-height:110px;overflow:auto;display:flex;flex-direction:column;gap:1px;border:1px solid #16233a;border-radius:4px;padding:3px 5px}
 #view-ops .filt-list label{display:flex;align-items:center;gap:5px;font-size:.66rem;color:#cbd5e1;cursor:pointer}
-#view-ops select#ops-breakdown{width:100%;margin-top:2px}
+#view-ops select#ops-breakdown,#view-ops select#ops-maxlines{width:100%;margin-top:2px}
 #view-ops .ops-subtabs{display:flex;gap:6px;margin:6px 0 12px;border-bottom:2px solid #1F3864}
 #view-ops .ops-subtab{font-weight:700;font-size:.8rem;padding:7px 16px;border:1px solid #1e2d42;border-bottom:none;border-radius:7px 7px 0 0;background:#0c1018;color:#94a3b8;cursor:pointer}
 #view-ops .ops-subtab.active{background:#1F3864;color:#fff}
@@ -5479,7 +5479,7 @@ const OPS = (function(){
   const LIST_NUM=new Set(['precio','tna','tir','monto']);
   const LIST_DATE=new Set(['fecha','venc']);
   let rangeMapped=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
-  let breakdownKeys=['rating'], filters={rating:null,sector:null,empresa:null,anio:null};
+  let breakdownKeys=['rating'], maxLines=15, filters={rating:null,sector:null,empresa:null,anio:null};
   const gv=(r,k)=>{ const v=r[k]; return (v==null||v==='')?('(s/'+k+')'):v; };
   let dates=[], maxDate=null;
 
@@ -5571,6 +5571,12 @@ const OPS = (function(){
       lab.appendChild(cb); lab.appendChild(document.createTextNode(' '+lbl)); bdList.appendChild(lab);
     }
     bd.appendChild(bdList); el.appendChild(bd);
+    // Máximo de líneas a mostrar en el gráfico
+    const ml=document.createElement('div'); ml.className='filt'; ml.innerHTML='<div class="filt-h">Máx. líneas</div>';
+    const mlSel=document.createElement('select'); mlSel.id='ops-maxlines';
+    [['5','5'],['10','10'],['15','15'],['20','20'],['30','30'],['50','50'],['9999','Todas']].forEach(([v,l])=>{
+      const o=document.createElement('option'); o.value=v; o.textContent=l; if(+v===maxLines)o.selected=true; mlSel.appendChild(o); });
+    mlSel.onchange=()=>{ maxLines=+mlSel.value; renderSerie(); }; ml.appendChild(mlSel); el.appendChild(ml);
     for(const [key,lbl] of FILT_DIMS){
       const vals=_vals(sub,key);
       if(filters[key]==null) filters[key]=new Set(vals);
@@ -5605,7 +5611,7 @@ const OPS = (function(){
         entries.sort(k==='rating'?(a,b)=>rrank(a.label)-rrank(b.label)
                                  :(a,b)=>(''+a.label).localeCompare(''+b.label,undefined,{numeric:true}));
       } else entries.sort((a,b)=>b.m-a.m);
-      groups=entries.slice(0,15);
+      groups=entries.slice(0,maxLines);
     }
     const datasets=groups.map((g,i)=>({label:g.label,
       data:fechas.map(f=>{const v=wavg(g.rows.filter(r=>r.fecha===f),null,metric);return v==null?null:+v.toFixed(3);}),
