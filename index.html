@@ -5882,6 +5882,7 @@ const OPS = (function(){
     <div class="fci-bar">
       <label>Moneda<div id="fci-moneda"></div></label>
       <label>Tipo de activo<div id="fci-tipo"></div></label>
+      <label id="fci-venc-wrap" style="display:none">Fecha de vencimiento<div id="fci-venc"></div></label>
       <label>Bono / Activo<div id="fci-bono"></div></label>
       <label>Gerente<div id="fci-ger"></div></label>
       <label>Agrupar por<select id="fci-agr"><option value="gerente">Gerente</option><option value="fondo">Fondo</option></select></label>
@@ -5926,7 +5927,27 @@ window.FCI = (function(){
 
   let inited=false, tab='bono';
   let fechas=[], fondos=[], bonos=[], dolar={}, gerentes=[], tipos=[], monedas=[], bmap={};
-  let msTipo=null, msBono=null, msGer=null, msMoneda=null, msFTipo=null;
+  let msTipo=null, msBono=null, msGer=null, msMoneda=null, msFTipo=null, msVenc=null;
+
+  // ── ONs de las calculadoras: match FCI activo (…(TICKER)) ↔ catálogo `bonds` por ticker ──
+  const ON_TIPO='ON / Corporativo';
+  const tkOf   = a => { const m=/\(([^)]+)\)\s*$/.exec(a||''); return m?m[1]:''; };
+  const normTk = t => t ? (t.slice(0,-1)+'O') : t;           // normaliza sufijo de settlement → …O
+  const fmtVenc= v => { const p=String(v||'').slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:v; };
+  function calcVencMap(){   // {ticker|tickerNorm -> venc} desde el catálogo de calculadoras (vigentes)
+    const map={}; const cat=(typeof bonds!=='undefined'&&Array.isArray(bonds))?bonds:[];
+    cat.forEach(b=>{ if(b&&b.ticker&&b.venc){ map[b.ticker]=b.venc; const c=normTk(b.ticker); if(!(c in map))map[c]=b.venc; } });
+    return map;
+  }
+  const vencDe = (activo, vm) => { const t=tkOf(activo); if(!t)return null; return vm[t]||vm[normTk(t)]||null; };
+  const yearOf = v => String(v||'').slice(0,4);
+  function vencOptsFor(ms){  // años de vencimiento distintos de las ONs de calculadora (respeta moneda)
+    const vm=calcVencMap(); if(!Object.keys(vm).length) return [];
+    const set=new Set();
+    bonos.forEach(b=>{ if(b.tipo!==ON_TIPO) return; if(ms&&ms.length&&!ms.includes(b.moneda)) return;
+      const v=vencDe(b.activo,vm); if(v) set.add(yearOf(v)); });
+    return [...set].sort().map(y=>({value:y,label:y}));
+  }
 
   // ── multi-select buscable ──
   function mksel(container, options, {placeholder='(todos)', onChange}={}){
@@ -5957,9 +5978,30 @@ window.FCI = (function(){
     return { get:()=>[...set], set:a=>{set.clear();(a||[]).forEach(x=>set.add(x));rb();},
       setOptions:n=>{ norm=(n||[]).map(o=>typeof o==='string'?{value:o,label:o}:o); const ok=new Set(norm.map(o=>o.value)); [...set].forEach(v=>{if(!ok.has(v))set.delete(v);}); rb(); rl(); } };
   }
-  const bonoOpts = (ts, ms) => bonos
-    .filter(b=>(!ts||!ts.length||ts.includes(b.tipo)) && (!ms||!ms.length||ms.includes(b.moneda)))
-    .map(b=>({value:b.activo,label:`${b.activo} · ${b.n_fondos}`}));
+  function bonoOpts(ts, ms, vencs){
+    const vm=calcVencMap(); const restrictOn=Object.keys(vm).length>0;   // sólo si el catálogo cargó
+    const vset=(vencs&&vencs.length)?new Set(vencs):null;
+    return bonos.filter(b=>{
+      if(ts&&ts.length&&!ts.includes(b.tipo)) return false;
+      if(ms&&ms.length&&!ms.includes(b.moneda)) return false;
+      if(b.tipo===ON_TIPO && restrictOn){
+        const v=vencDe(b.activo,vm);
+        if(v==null) return false;                        // sólo ONs incorporadas en las calculadoras
+        if(vset && !vset.has(yearOf(v))) return false;   // filtro por año de vencimiento
+      }
+      return true;
+    }).map(b=>{
+      const v=(b.tipo===ON_TIPO&&restrictOn)?vencDe(b.activo,vm):null;
+      return {value:b.activo, label:v?`${b.activo} · vto ${fmtVenc(v)} · ${b.n_fondos}`:`${b.activo} · ${b.n_fondos}`};
+    });
+  }
+  function refreshBonoFilters(){   // muestra/oculta Vencimiento según tipo=ON y reconstruye listas
+    const ts=msTipo.get(), ms=msMoneda.get();
+    const showVenc = ts.includes(ON_TIPO) && Object.keys(calcVencMap()).length>0;
+    $('fci-venc-wrap').style.display = showVenc ? '' : 'none';
+    if(showVenc) msVenc.setOptions(vencOptsFor(ms)); else msVenc.set([]);
+    msBono.setOptions(bonoOpts(ts, ms, msVenc.get()));
+  }
 
   // ── tabla ordenable ──
   function sortableTable(target, rows, cols, {key=null, dir=-1}={}){
@@ -5991,16 +6033,18 @@ window.FCI = (function(){
     const opt=f=>`<option>${f}</option>`;
     $('fci-ini').innerHTML=fechas.map(opt).join(''); $('fci-fin').innerHTML=fechas.map(opt).join('');
     $('fci-ini').value=fechas[Math.max(0,fechas.length-2)]; $('fci-fin').value=fechas[fechas.length-1];
-    const reBono = ()=>msBono.setOptions(bonoOpts(msTipo.get(), msMoneda.get()));
-    msMoneda = mksel($('fci-moneda'), monedas, {placeholder:'(todas)', onChange:reBono});
-    msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:reBono});
+    msMoneda = mksel($('fci-moneda'), monedas, {placeholder:'(todas)', onChange:refreshBonoFilters});
+    msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:refreshBonoFilters});
+    msVenc = mksel($('fci-venc'), [], {placeholder:'(todos los años)',
+              onChange:()=>{ msBono.setOptions(bonoOpts(msTipo.get(), msMoneda.get(), msVenc.get())); }});
     msBono = mksel($('fci-bono'), bonoOpts([],[]), {placeholder:'(elegí bono/s)'});
     msGer  = mksel($('fci-ger'),  gerentes,    {placeholder:'(todas las gerentes)'});
     msFTipo= mksel($('fci-f-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:()=>{ if(_lastFondo) renderFondo(_lastFondo); }});
     $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
     rebuildFondoList();
     const def = tipos.includes('Soberano ARS') ? 'Soberano ARS' : tipos[0];
-    if(def){ msTipo.set([def]); msBono.setOptions(bonoOpts([def], [])); }
+    if(def){ msTipo.set([def]); }
+    refreshBonoFilters();
     runBono();
   }
 
@@ -6038,8 +6082,11 @@ window.FCI = (function(){
     const gers=msGer.get();
     let p_activos=activos, p_tipos=[];
     if(!activos.length){
-      if(monedasSel.length){  // moneda activa: expandir por tipo∩moneda en el cliente
-        p_activos = bonos.filter(b=>(!tiposSel.length||tiposSel.includes(b.tipo)) && monedasSel.includes(b.moneda)).map(b=>b.activo);
+      const vencsSel = tiposSel.includes(ON_TIPO) && msVenc ? msVenc.get() : [];
+      // Expandir a la lista explícita en el cliente si hay moneda, ON (restricción calculadora)
+      // o vencimiento; así se usa exactamente el universo mostrado en "Bono / Activo".
+      if(monedasSel.length || tiposSel.includes(ON_TIPO) || vencsSel.length){
+        p_activos = bonoOpts(tiposSel, monedasSel, vencsSel).map(o=>o.value);
       } else {
         p_tipos = tiposSel;
       }
