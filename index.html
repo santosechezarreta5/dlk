@@ -6033,10 +6033,10 @@ window.FCI = (function(){
         const v=btn.dataset.v, s=new Set(msBono.get());
         if(e.target.classList.contains('x')){ bonoChips=bonoChips.filter(x=>x!==v); s.delete(v); }  // quitar del pool
         else { s.has(v)?s.delete(v):s.add(v); }                                                     // toggle
-        msBono.set([...s]); renderBonoChips();
+        msBono.set([...s]); renderBonoChips(); autoRun();
       }; });
     const clr=box.querySelector('.fci-chips-clear');
-    if(clr) clr.onclick=e=>{ e.preventDefault(); bonoChips=[]; msBono.set([]); renderBonoChips(); };
+    if(clr) clr.onclick=e=>{ e.preventDefault(); bonoChips=[]; msBono.set([]); renderBonoChips(); autoRun(); };
   }
 
   // ── tabla ordenable ──
@@ -6069,14 +6069,16 @@ window.FCI = (function(){
     const opt=f=>`<option>${f}</option>`;
     $('fci-ini').innerHTML=fechas.map(opt).join(''); $('fci-fin').innerHTML=fechas.map(opt).join('');
     $('fci-ini').value=fechas[Math.max(0,fechas.length-2)]; $('fci-fin').value=fechas[fechas.length-1];
-    msMoneda = mksel($('fci-moneda'), monedas, {placeholder:'(todas)', onChange:refreshBonoFilters});
-    msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:refreshBonoFilters});
+    msMoneda = mksel($('fci-moneda'), monedas, {placeholder:'(todas)', onChange:()=>{ refreshBonoFilters(); autoRun(); }});
+    msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:()=>{ refreshBonoFilters(); autoRun(); }});
     msVenc = mksel($('fci-venc'), [], {placeholder:'(todos los años)',
-              onChange:()=>{ msBono.setOptions(bonoOpts(msTipo.get(), msMoneda.get(), msVenc.get())); renderBonoChips(); }});
-    msBono = mksel($('fci-bono'), bonoOpts([],[]), {placeholder:'(elegí bono/s)', onChange:renderBonoChips});
-    msGer  = mksel($('fci-ger'),  gerentes,    {placeholder:'(todas las gerentes)'});
+              onChange:()=>{ msBono.setOptions(bonoOpts(msTipo.get(), msMoneda.get(), msVenc.get())); renderBonoChips(); autoRun(); }});
+    msBono = mksel($('fci-bono'), bonoOpts([],[]), {placeholder:'(elegí bono/s)', onChange:()=>{ renderBonoChips(); autoRun(); }});
+    msGer  = mksel($('fci-ger'),  gerentes,    {placeholder:'(todas las gerentes)', onChange:autoRun});
     msFTipo= mksel($('fci-f-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:()=>{ if(_lastFondo) renderFondo(_lastFondo); }});
     $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
+    // Auto-run al cambiar cualquier select de filtro (fechas afectan a la pestaña activa).
+    ['fci-ini','fci-fin','fci-agr','fci-f-ger','fci-f-fondo'].forEach(id=>$(id).addEventListener('change', autoRun));
     rebuildFondoList();
     const def = tipos.includes('Soberano ARS') ? 'Soberano ARS' : tipos[0];
     if(def){ msTipo.set([def]); }
@@ -6100,6 +6102,9 @@ window.FCI = (function(){
   function toggleUsd(v){ usd=v; rerender(); }
   function setChartMode(m){ chartMode=m; rerender(); }
   function rerender(){ if(tab==='bono'&&_lastBono) renderBono(_lastBono); else if(tab==='fondo'&&_lastFondo) renderFondo(_lastFondo); }
+  // Auto-actualización al cambiar filtros (debounce: los multiselects disparan onChange por cada tilde).
+  let _autoT=null;
+  function autoRun(){ clearTimeout(_autoT); _autoT=setTimeout(()=>{ tab==='bono'?runBono():runFondo(); }, 400); }
 
   let _chart=null;
   function chart(canvasId, labels, values, color){ const ctx=$(canvasId); if(!ctx)return; if(_chart)_chart.destroy();
