@@ -5862,6 +5862,16 @@ const OPS = (function(){
   #view-fci .cm:first-child{border-radius:5px 0 0 5px}
   #view-fci .cm:last-child{border-radius:0 5px 5px 0;border-left:0}
   #view-fci .cm.on{background:#1F5C4D;color:#fff;border-color:#1F5C4D}
+  #view-fci .fci-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 12px}
+  #view-fci .fci-chips .lbl{font-size:.6rem;color:#7c93ad;font-weight:600;margin-right:2px}
+  #view-fci .chip{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:.62rem;font-weight:600;
+    padding:4px 9px;border:1px solid #1F5C4D;background:#1F5C4D;color:#fff;border-radius:5px;cursor:pointer;transition:filter .12s}
+  #view-fci .chip.off{background:#0c1018;color:#9fb2c8;border-color:#1e2d42}
+  #view-fci .chip:hover{filter:brightness(1.12)}
+  #view-fci .chip .x{opacity:.75;font-weight:700;font-size:.8rem;line-height:1}
+  #view-fci .chip .x:hover{opacity:1}
+  #view-fci .fci-chips-clear{font-size:.58rem;color:#7c93ad;text-decoration:none;margin-left:4px}
+  #view-fci .fci-chips-clear:hover{color:#c0392b;text-decoration:underline}
 </style>
 
 <div id="view-fci">
@@ -5888,6 +5898,7 @@ const OPS = (function(){
       <label>Agrupar por<select id="fci-agr"><option value="gerente">Gerente</option><option value="fondo">Fondo</option></select></label>
       <button class="fci-go" onclick="FCI.runBono()">Analizar</button>
     </div>
+    <div id="fci-bono-chips" class="fci-chips" style="display:none"></div>
     <div id="fci-bono-out"><div class="empty">Cargando…</div></div>
   </div>
 
@@ -5928,6 +5939,7 @@ window.FCI = (function(){
   let inited=false, tab='bono';
   let fechas=[], fondos=[], bonos=[], dolar={}, gerentes=[], tipos=[], monedas=[], bmap={};
   let msTipo=null, msBono=null, msGer=null, msMoneda=null, msFTipo=null, msVenc=null;
+  let bonoChips=[];   // pool ordenado de bonos con chip (persisten aunque se deseleccionen)
 
   // ── ONs de las calculadoras: match FCI activo (…(TICKER)) ↔ catálogo `bonds` por ticker ──
   const ON_TIPO='ON / Corporativo';
@@ -6001,6 +6013,30 @@ window.FCI = (function(){
     $('fci-venc-wrap').style.display = showVenc ? '' : 'none';
     if(showVenc) msVenc.setOptions(vencOptsFor(ms)); else msVenc.set([]);
     msBono.setOptions(bonoOpts(ts, ms, msVenc.get()));
+    renderBonoChips();
+  }
+  function shortBono(v){ const t=tkOf(v); return t || (v.length>22 ? v.slice(0,22)+'…' : v); }
+  // Chips de bonos seleccionados: aparecen con ≥2 en el pool; click togglea activo/inactivo, × lo quita.
+  function renderBonoChips(){
+    const box=$('fci-bono-chips'); if(!box) return;
+    const valid=new Set(bonoOpts(msTipo.get(), msMoneda.get(), msVenc?msVenc.get():[]).map(o=>o.value));
+    const selected=new Set(msBono.get());
+    selected.forEach(v=>{ if(!bonoChips.includes(v)) bonoChips.push(v); });   // union: agrega recién elegidos
+    bonoChips = bonoChips.filter(v=>valid.has(v));                            // poda los que ya no son opción
+    if(bonoChips.length<2){ box.style.display='none'; box.innerHTML=''; return; }
+    box.style.display='flex';
+    box.innerHTML = '<span class="lbl">Selección:</span>' + bonoChips.map(v=>{
+        const on=selected.has(v);
+        return `<button type="button" class="chip ${on?'':'off'}" data-v="${esc(v)}" title="${esc(v)}">${esc(shortBono(v))}<span class="x">×</span></button>`;
+      }).join('') + '<a href="#" class="fci-chips-clear">limpiar</a>';
+    box.querySelectorAll('.chip').forEach(btn=>{ btn.onclick=e=>{
+        const v=btn.dataset.v, s=new Set(msBono.get());
+        if(e.target.classList.contains('x')){ bonoChips=bonoChips.filter(x=>x!==v); s.delete(v); }  // quitar del pool
+        else { s.has(v)?s.delete(v):s.add(v); }                                                     // toggle
+        msBono.set([...s]); renderBonoChips();
+      }; });
+    const clr=box.querySelector('.fci-chips-clear');
+    if(clr) clr.onclick=e=>{ e.preventDefault(); bonoChips=[]; msBono.set([]); renderBonoChips(); };
   }
 
   // ── tabla ordenable ──
@@ -6036,8 +6072,8 @@ window.FCI = (function(){
     msMoneda = mksel($('fci-moneda'), monedas, {placeholder:'(todas)', onChange:refreshBonoFilters});
     msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:refreshBonoFilters});
     msVenc = mksel($('fci-venc'), [], {placeholder:'(todos los años)',
-              onChange:()=>{ msBono.setOptions(bonoOpts(msTipo.get(), msMoneda.get(), msVenc.get())); }});
-    msBono = mksel($('fci-bono'), bonoOpts([],[]), {placeholder:'(elegí bono/s)'});
+              onChange:()=>{ msBono.setOptions(bonoOpts(msTipo.get(), msMoneda.get(), msVenc.get())); renderBonoChips(); }});
+    msBono = mksel($('fci-bono'), bonoOpts([],[]), {placeholder:'(elegí bono/s)', onChange:renderBonoChips});
     msGer  = mksel($('fci-ger'),  gerentes,    {placeholder:'(todas las gerentes)'});
     msFTipo= mksel($('fci-f-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:()=>{ if(_lastFondo) renderFondo(_lastFondo); }});
     $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
