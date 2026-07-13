@@ -791,6 +791,10 @@ window.SUPABASE_CONFIG = {
             <select class="form-select panel-readonly" id="fi-base-dias" disabled>
               <option value="act365">ACT/365</option><option value="act360">ACT/360</option><option value="30_360">30/360</option><option value="180_360">180/360</option>
             </select></div>
+          <div class="form-group"><label class="form-label">Devengamiento</label>
+            <select class="form-select panel-readonly" id="fi-devengo" disabled title="Ajustado: los días se cuentan hasta la fecha de pago efectiva (día hábil). Teórico: hasta la fecha de cupón teórica, así correr el pago a día hábil no devenga interés extra.">
+              <option value="ajustado">Ajustado a día hábil</option><option value="teorico">Teórico (sin ajuste)</option>
+            </select></div>
         </div>
       </div>
       <div class="calc-section" id="section-amort">
@@ -923,6 +927,8 @@ window.SUPABASE_CONFIG = {
           <select class="form-select" id="mb-periodicidad"><option value="6">6 – Semestral</option><option value="3">3 – Trimestral</option><option value="1">1 – Mensual</option><option value="12">12 – Anual</option><option value="0">Al vencimiento (interés al final)</option></select></div>
         <div class="form-group"><label class="form-label">Base de días</label>
           <select class="form-select" id="mb-base-dias"><option value="act365">ACT/365</option><option value="act360">ACT/360</option><option value="30_360">30/360</option><option value="180_360">180/360</option></select></div>
+        <div class="form-group"><label class="form-label">Devengamiento</label>
+          <select class="form-select" id="mb-devengo" title="Ajustado: devenga hasta la fecha de pago efectiva (día hábil). Teórico: hasta la fecha de cupón teórica."><option value="ajustado">Ajustado a día hábil</option><option value="teorico">Teórico (sin ajuste)</option></select></div>
         <div class="form-group"><label class="form-label">Amortización</label>
           <select class="form-select" id="mb-amort"><option value="bullet">Bullet</option><option value="cuotas">Cuotas</option></select></div>
       </div>
@@ -1276,6 +1282,7 @@ const Catalog = (() => {
       tipo_cupon: r.tipo_cupon || 'fijo',
       periodicidad: r.periodicidad ?? 6,
       base_dias: r.base_dias || 'act365',
+      devengo: r.devengo || 'ajustado',
       amort: r.amort || 'bullet',
       callable: r.callable || 'No',
       moneda: r.moneda || 'DL',
@@ -1300,6 +1307,7 @@ const Catalog = (() => {
       tipo_cupon: b.tipo_cupon || 'fijo',
       periodicidad: b.periodicidad ?? 6,
       base_dias: b.base_dias || 'act365',
+      devengo: b.devengo || 'ajustado',
       amort: b.amort || 'bullet',
       callable: b.callable || 'No',
       moneda: b.moneda || 'DL',
@@ -2020,7 +2028,7 @@ function recalcTIR(b){
     }else{
       amortSched=[{fecha:vd,pct:100}];
     }
-    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,b.base_dias||'act365',amortSched,0);
+    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,b.base_dias||'act365',amortSched,0,b.devengo);
     const cf=applySettlement(cfRaw,sett);
     if(cf.length>0){
       const tir=calcTIR(cf,pPrice);
@@ -2096,7 +2104,7 @@ function calcTIRForPrice(b, precioInput){
     }else{
       amortSched=[{fecha:vd,pct:100}];
     }
-    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,b.base_dias||'act365',amortSched,0);
+    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,b.base_dias||'act365',amortSched,0,b.devengo);
     const cf=applySettlement(cfRaw,sett);
     if(cf.length>0){
       const tir=calcTIR(cf,precio);
@@ -2910,7 +2918,21 @@ function srt(k){SK===k?SD*=-1:(SK=k,SD=1);document.querySelectorAll('th').forEac
 //  - Si una amortización NO coincide con ningún cupón: genera un evento independiente
 //    sin interés (solo amortización)
 //  - En el venc final, paga TODO el capital remanente
-function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched){
+// Fracción de año entre dos fechas según la base de días. Única fuente de verdad:
+// la usan tanto el interés de cada cupón como el cupón corrido, así nunca divergen.
+function yearFrac(d1, d2, base){
+  const dias = Math.round((d2 - d1) / (24*3600*1000));
+  if(base === 'act365') return dias/365;
+  if(base === 'act360') return dias/360;
+  const y1=d1.getFullYear(), m1=d1.getMonth()+1, a1=Math.min(d1.getDate(),30);
+  const y2=d2.getFullYear(), m2=d2.getMonth()+1, a2=Math.min(d2.getDate(),30);
+  return (360*(y2-y1) + 30*(m2-m1) + (a2-a1)) / 360;
+}
+
+// devengo: 'ajustado' (default) → los días se cuentan entre fechas de pago EFECTIVAS
+//          (ajustadas a día hábil); 'teorico' → entre fechas de cupón teóricas, de modo
+//          que correr un pago a día hábil no devenga interés extra.
+function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo){
   const tasa=(cupon||0)/100;
   if(!iiDate||isNaN(iiDate)||!vcDate||isNaN(vcDate)) return [];
   if(!emDate||isNaN(emDate)) emDate = new Date(iiDate);
@@ -2988,17 +3010,15 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched){
     let interes = 0;
     let amort = 0;
 
+    let desde = null, diasP = 0;
+
     if(ev.type === 'coupon'){
+      // Fecha contra la que se devenga: efectiva (ajustada) o teórica, según `devengo`.
+      const fAcc = (devengo === 'teorico') ? ev.raw : ev.fecha;
       // Días devengados desde el cupón anterior hasta este
-      const diasP = Math.round((ev.raw - prevCouponDate) / (24*3600*1000));
-      let db;
-      if(base==='act365') db = diasP/365;
-      else if(base==='act360') db = diasP/360;
-      else {
-        const y1=prevCouponDate.getFullYear(),m1=prevCouponDate.getMonth()+1,d1=Math.min(prevCouponDate.getDate(),30);
-        const y2=ev.raw.getFullYear(),m2=ev.raw.getMonth()+1,d2=Math.min(ev.raw.getDate(),30);
-        db=(360*(y2-y1)+30*(m2-m1)+(d2-d1))/360;
-      }
+      diasP = Math.round((fAcc - prevCouponDate) / (24*3600*1000));
+      desde = new Date(prevCouponDate);
+      const db = yearFrac(prevCouponDate, fAcc, base);
       interes = tasa * db * capVig;
       amort = ev.amortPct;
       // Si es el último evento de cupón Y el capital remanente no se amortiza por completo
@@ -3007,7 +3027,7 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched){
         const remaining = capVig - amort;
         if(remaining > 0.001) amort += remaining;
       }
-      prevCouponDate = ev.raw;
+      prevCouponDate = fAcc;
     } else {
       // amort_only: sólo amortización, sin interés
       amort = ev.amortPct;
@@ -3015,6 +3035,8 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched){
 
     result.push({
       fecha: ev.fecha,
+      desde: desde,               // inicio del período devengado (null si amort_only)
+      diasPeriodo: diasP,
       capital: parseFloat(capVig.toFixed(4)),
       interes: parseFloat(interes.toFixed(4)),
       amort: parseFloat(amort.toFixed(4)),
@@ -3027,11 +3049,11 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched){
   return result;
 }
 
-function generateCashflows(emDate,iiDate,vcDate,cupon,per,base,amortSched,tasaBase){
+function generateCashflows(emDate,iiDate,vcDate,cupon,per,base,amortSched,tasaBase,devengo){
   // Versión legacy: sólo flujos futuros (fecha >= today).
   // Conserva el shape original con `dias` (provisional, se reemplaza en applySettlement).
   const today=new Date();today.setHours(0,0,0,0);
-  const all = buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched);
+  const all = buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo);
   return all
     .filter(x => x.fecha >= today)
     .map(x => ({
@@ -3040,13 +3062,15 @@ function generateCashflows(emDate,iiDate,vcDate,cupon,per,base,amortSched,tasaBa
       interes: x.interes,
       amort: x.amort,
       capital: x.capital,
-      total: x.total
+      total: x.total,
+      desde: x.desde,               // necesario para el cupón corrido exacto
+      diasPeriodo: x.diasPeriodo
     }));
 }
 
-function generateScheduleAll(emDate,iiDate,vcDate,cupon,per,base,amortSched,tasaBase){
+function generateScheduleAll(emDate,iiDate,vcDate,cupon,per,base,amortSched,tasaBase,devengo){
   const today=new Date();today.setHours(0,0,0,0);
-  return buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched)
+  return buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo)
     .map(x => ({...x, isPast: x.fecha.getTime() < today.getTime()}));
 }
 
@@ -3129,7 +3153,19 @@ function tnaToTIR(tna, per, diasPeriodo){
     return (Math.pow(1 + tna / n, n) - 1) * 100;
   }
 }
-function calcCC(cf,cupon,per){if(!cf||!cf.length)return 0;const pf=cf[0],dP=365/(12/per),dT=dP-pf.dias;return dT<=0?0:cupon/100/(12/per)*pf.capital*(dT/dP);}
+// Cupón corrido exacto: interés devengado desde el inicio del período en curso hasta el
+// settlement, con las MISMAS fechas y la MISMA base que el cupón (no un período nominal).
+// Sirve igual para per=0 (al vencimiento): ahí el período es emisión→vencimiento.
+function calcCC(cf,cupon,per,base,sett){
+  if(!cf||!cf.length||!sett) return 0;
+  const pf = cf.find(x=>x.desde);            // primer flujo que devenga = período en curso
+  if(!pf) return 0;
+  const s = new Date(sett); s.setHours(12,0,0,0);
+  if(s <= pf.desde) return 0;                // el período todavía no arrancó
+  let cc = (cupon/100) * yearFrac(pf.desde, s, base||'act365') * (pf.capital||100);
+  if(pf.interes > 0) cc = Math.min(cc, pf.interes);   // nunca más que el cupón del período
+  return cc > 0 ? parseFloat(cc.toFixed(4)) : 0;
+}
 
 /* ── CALC_STATE: estado persistente por ticker ─────────────────
    Guarda todos los inputs + resultados de cada calculadora.
@@ -3176,6 +3212,7 @@ function saveState(tk) {
     tasa_base:     document.getElementById('fi-tasa-base').value,
     periodicidad:  document.getElementById('fi-periodicidad').value,
     base_dias:     document.getElementById('fi-base-dias').value,
+    devengo:       (document.getElementById('fi-devengo')||{}).value || 'ajustado',
     // Amortización
     amort_tipo:    document.getElementById('fi-amort-tipo').value,
     amort_rows:    amortRows,
@@ -3226,6 +3263,7 @@ function restoreState(tk, bond) {
     document.getElementById('fi-tasa-base').value = '';
     document.getElementById('fi-periodicidad').value = bond.periodicidad || 6;
     document.getElementById('fi-base-dias').value = bond.base_dias || 'act365';
+    document.getElementById('fi-devengo').value    = bond.devengo || 'ajustado';
     document.getElementById('fi-amort-tipo').value= bond.amort || 'bullet';
     // Cargar cronograma de amortizaciones guardado en el bond
     document.getElementById('amort-tbody').innerHTML = '';
@@ -3269,6 +3307,7 @@ function restoreState(tk, bond) {
   document.getElementById('fi-tasa-base').value  = s.tasa_base;
   document.getElementById('fi-periodicidad').value = s.periodicidad;
   document.getElementById('fi-base-dias').value  = s.base_dias;
+  document.getElementById('fi-devengo').value    = s.devengo || 'ajustado';
   document.getElementById('fi-amort-tipo').value = s.amort_tipo;
   // Restaurar cronograma: priorizar amort_rows del CALC_STATE,
   // pero si está vacío usar bond.amortSched (importado del Excel)
@@ -3599,6 +3638,7 @@ function calcFromPanel(){
   const cupon=cuponRaw===''||cuponRaw===null?0:parseFloat(cuponRaw);
   const per=parseInt(document.getElementById('fi-periodicidad').value);
   const base=document.getElementById('fi-base-dias').value,tipo=document.getElementById('fi-tipo-cupon').value;
+  const devengo=(document.getElementById('fi-devengo')||{}).value||'ajustado';
   const tBase=tipo!=='fijo'?(parseFloat(document.getElementById('fi-tasa-base').value)||0):0;
   if(!vcS||isNaN(cupon)){alert('Completá al menos el vencimiento.');return;}
   const today=new Date();today.setHours(0,0,0,0);
@@ -3617,7 +3657,7 @@ function calcFromPanel(){
     if(iiD<=emD){ iiD=new Date(emD); iiD.setMonth(iiD.getMonth()+per); }
   }
   const amortS=readAmortSched(vcD);
-  const cfRaw=generateCashflows(emD,iiD,vcD,cupon,per,base,amortS,tBase);
+  const cfRaw=generateCashflows(emD,iiD,vcD,cupon,per,base,amortS,tBase,devengo);
   if(!cfRaw.length){alert('No hay flujos futuros. Verificá las fechas.');return;}
   const cf=applySettlement(cfRaw,sett);
   if(!cf.length){alert('No hay flujos futuros con liquidación T+1.');return;}
@@ -3673,16 +3713,8 @@ function calcFromPanel(){
   }
   const met=calcMetrics(cf,precioUSD,tir,per);
   const tna=tirToTNA(tir,per,diasProxPeriodo);
-  let cc;
-  if(per===0){
-    // al vencimiento: interés devengado = porción del interés total ya transcurrida (emisión→settlement)
-    const coup=cfRaw[cfRaw.length-1];
-    const totalSpan=vcD-emD;
-    const elapsed=Math.max(0,sett-emD);
-    cc=(coup&&totalSpan>0)?parseFloat((coup.interes*Math.min(1,elapsed/totalSpan)).toFixed(4)):0;
-  } else {
-    cc=calcCC(cfRaw,cupon,per);
-  }
+  // Corrido exacto sobre el período en curso del cronograma (cubre también per=0).
+  const cc=calcCC(cf,cupon,per,base,sett);
   const plUSD=parseFloat((precioUSD-cc).toFixed(4));
   const lbl={6:'semestral',3:'trimestral',1:'mensual',12:'anual',0:'al vencimiento'};
   if(!tnaIsManual){
@@ -3720,7 +3752,7 @@ function calcFromPanel(){
   cf.forEach(x => { futMap[x.fecha.toISOString().substring(0,10)] = x; });
 
   // generateScheduleAll devuelve TODOS los pagos sin filtro temporal
-  const allFlows = generateScheduleAll(emD,iiD,vcD,cupon,per,base,amortS,tBase);
+  const allFlows = generateScheduleAll(emD,iiD,vcD,cupon,per,base,amortS,tBase,devengo);
 
   allFlows.forEach(x => {
     // Saltear flujos sin movimiento (cupón=0 sin amort en esa fecha)
@@ -3887,7 +3919,7 @@ function toggleEditMode(){
   document.getElementById('btn-cancel-edit').style.display='inline-block';
   document.getElementById('edit-mode-badge').style.display='inline';
   // Enable selects (they use disabled, not readonly)
-  ['fi-leg','fi-jur','fi-callable','fi-tipo-cupon','fi-periodicidad','fi-base-dias','fi-amort-tipo','fi-tasa-base'].forEach(id=>{
+  ['fi-leg','fi-jur','fi-callable','fi-tipo-cupon','fi-periodicidad','fi-base-dias','fi-devengo','fi-amort-tipo','fi-tasa-base'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.disabled=false;
   });
   // Legislación y jurisdicción: en DL siempre Argentina/Argentina, no editables
@@ -3937,7 +3969,7 @@ function exitEditMode(){
   document.getElementById('btn-save-bond').style.display='none';
   document.getElementById('edit-mode-badge').style.display='none';
   // Re-disable selects
-  ['fi-leg','fi-jur','fi-callable','fi-tipo-cupon','fi-periodicidad','fi-base-dias','fi-amort-tipo'].forEach(id=>{
+  ['fi-leg','fi-jur','fi-callable','fi-tipo-cupon','fi-periodicidad','fi-base-dias','fi-devengo','fi-amort-tipo'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.disabled=true;
   });
   document.getElementById('fi-tasa-base').disabled=true;
@@ -3998,6 +4030,7 @@ async function saveBond(){
     tipo_cupon:'fijo',
     periodicidad:(()=>{const p=parseInt(document.getElementById('mb-periodicidad').value);return isNaN(p)?6:p;})(),
     base_dias:document.getElementById('mb-base-dias').value,
+    devengo:document.getElementById('mb-devengo').value,
     amort:amortTipo,
     amortSched:[],
     fecha_emision:document.getElementById('mb-emision')?.value||'',
@@ -4415,6 +4448,7 @@ async function saveBondChanges(){
   b.cupon         = parseFloat(document.getElementById('fi-cupon').value)||b.cupon;
   b.periodicidad  = (()=>{const p=parseInt(document.getElementById('fi-periodicidad').value);return isNaN(p)?b.periodicidad:p;})();
   b.base_dias     = document.getElementById('fi-base-dias').value;
+  b.devengo       = document.getElementById('fi-devengo').value;
   b.amort         = document.getElementById('fi-amort-tipo').value;
   // Guardar cronograma de cuotas desde el DOM (excluyendo filas auto)
   if(b.amort==='cuotas'){
@@ -4462,7 +4496,7 @@ async function saveBondChanges(){
 function watchPanelInputs(){
   const ids=['fi-emisor','fi-emision','fi-inicio-int','fi-venc','fi-leg','fi-jur',
              'fi-callable','fi-tipo-cupon','fi-cupon','fi-tasa-base','fi-periodicidad',
-             'fi-base-dias','fi-amort-tipo'];
+             'fi-base-dias','fi-devengo','fi-amort-tipo'];
   ids.forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.addEventListener('change',()=>{markDirty();});
@@ -6265,7 +6299,7 @@ function getAllFlows(){
         fecha: new Date((typeof a.fecha==='string'?a.fecha.substring(0,10):a.fecha)+'T12:00:00'),
         pct: a.pct
       })),
-      b.tasa_base||0
+      b.tasa_base||0, b.devengo
     );
 
     const vencAdj = adjustDate(vcD).getTime();
