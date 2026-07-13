@@ -4773,6 +4773,7 @@ const AFIELDS=[
   {v:'emisor',   l:'Emisor'},
   {v:'sector',   l:'Sector'},
   {v:'moneda',   l:'Tipo bono (DL/HD)'},
+  {v:'book',     l:'Moneda'},          // book en el que opera: MEP | ARS | CABLE
   {v:'leg',      l:'Legislación'},
   {v:'jur',      l:'Jurisdicción'},
   {v:'rating',   l:'Rating (crédito)'},
@@ -4789,6 +4790,8 @@ const AFIELDS=[
 const ANUM = new Set(['venc_year','bid','ask','bidTna','askTna','tir','tna','dur']);
 const AOPS_N = ['<','<=','>','>=','=','!='];
 const AOPS_S = ['=','!=','contiene'];
+const AOPS_EQ = ['=','!='];            // el book sólo admite igual / distinto
+const BOOKS = ['MEP','ARS','CABLE'];   // monedas de operación (los DL usan USD-eq)
 
 // Estado en memoria
 // FX global state — actualizado por fetchFX()
@@ -5029,10 +5032,11 @@ function buildCondUI(){
 }
 
 // Campos que usan desplegable con opciones derivadas de bonds
-const ADROPDOWN = new Set(['ticker','emisor','sector','moneda','leg','jur','rating','callable']);
+const ADROPDOWN = new Set(['ticker','emisor','sector','moneda','leg','jur','rating','callable','book']);
 
 // Obtener opciones únicas ordenadas para un campo
 function aFieldOpts(field){
+  if(field==='book') return BOOKS;   // el book no es una propiedad del bono
   const vals = [...new Set(bonds.map(b=>b[field]).filter(v=>v!=null&&v!==''))].sort();
   return vals;
 }
@@ -5048,7 +5052,7 @@ function buildRulesUI(ci, container, rules){
     }
     const isNum    = ANUM.has(r.field);
     const isDrop   = ADROPDOWN.has(r.field);
-    const ops      = isNum ? AOPS_N : AOPS_S;
+    const ops      = isNum ? AOPS_N : (r.field==='book' ? AOPS_EQ : AOPS_S);
     const row      = document.createElement('div');
     row.className  = 'rule-row';
 
@@ -5105,6 +5109,9 @@ function aRVal(ci,ri,v){ alertConds[ci].rules[ri].value=v; saveAC(); }
 const ACTX_FIELDS = new Set(['bid','ask','bidTna','askTna']);
 function aGetVal(b, field, ctx){
   if(field==='venc_year') return b.venc?parseInt(b.venc.substring(0,4)):null;
+  // 'book' = moneda en la que se está evaluando (MEP/ARS/CABLE). Vive en el ctx, no en el bono:
+  // b.moneda es otra cosa (el tipo, DL/HD), por eso el campo tiene id propio.
+  if(field==='book') return ctx ? (ctx.moneda ?? null) : null;
   // ctx solo sobreescribe precios/tasas para evaluar en otra moneda
   if(ctx && ACTX_FIELDS.has(field) && field in ctx) return ctx[field]??null;
   return b[field]??null;
