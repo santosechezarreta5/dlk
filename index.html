@@ -1519,6 +1519,7 @@ async function loadFeriadosIntoMemory(){
     const fechas = await Catalog.loadFeriados();
     if(fechas && fechas.length){
       HOLIDAYS = fechas.map(f => new Date(f+'T12:00:00')).sort((a,b)=>a-b);
+      rebuildHolidaySet();
       console.log('[feriados] cargados desde Supabase:', HOLIDAYS.length);
     } else {
       console.log('[feriados] tabla vacía o sin Supabase — usando seed embebido');
@@ -1605,9 +1606,98 @@ function normPrice(px){ const p=parseFloat(px); return isNaN(p)||p<=0?null:p; }
 // `feriados` de Supabase (loadFeriadosIntoMemory la sobreescribe al iniciar).
 // Si no hay Supabase o la tabla está vacía, se usa este seed (argentina.gob.ar).
 let HOLIDAYS=['2025-01-01','2025-03-03','2025-03-04','2025-03-24','2025-04-02','2025-04-18','2025-05-01','2025-05-25','2025-06-16','2025-06-20','2025-07-09','2025-08-18','2025-10-12','2025-11-21','2025-12-08','2025-12-25','2026-01-01','2026-02-16','2026-02-17','2026-03-23','2026-03-24','2026-04-02','2026-04-03','2026-05-01','2026-05-25','2026-06-15','2026-06-20','2026-07-09','2026-07-10','2026-08-17','2026-10-12','2026-11-23','2026-12-07','2026-12-08','2026-12-25','2027-01-01','2027-03-24','2027-04-02','2027-05-01','2027-05-25','2027-06-20','2027-07-09','2027-08-16','2027-10-11','2027-11-22','2027-12-08','2027-12-25'].map(d=>new Date(d+'T12:00:00'));
+// (el Set derivado se construye más abajo, después de declarar HOLIDAY_SET/_CF_EPOCH)
 
-function isHoliday(dt){if(!dt||isNaN(dt))return false;const s=dt.toISOString().substring(0,10);return HOLIDAYS.some(h=>h.toISOString().substring(0,10)===s);}
+// ── Contadores de performance (sólo con ?perf en la URL; en producción PERF=null) ────
+const PERF = new URLSearchParams(location.search).has('perf')
+  ? { buildSchedule:0, calcTIR:0, cfHit:0, cfMiss:0, memoHit:0, memoMiss:0,
+      reset(){ this.buildSchedule=this.calcTIR=this.cfHit=this.cfMiss=this.memoHit=this.memoMiss=0; } }
+  : null;
+window.__PERF = PERF;
+
+// ── Feriados: lookup O(1) ────────────────────────────────────────────────────────────
+// Antes isHoliday() hacía toISOString() sobre los 47 feriados EN CADA LLAMADA, y adjustDate
+// la llama en un while, y buildSchedule llama a adjustDate una vez por cupón: ~5,7 MILLONES
+// de toISOString por ciclo de refresco. Ahora es un Set de claves 'YYYY-MM-DD'.
+// La clave se arma con getFullYear/getMonth/getDate (hora LOCAL). Antes se usaba
+// toISOString(), que convierte a UTC: con fechas a las 12:00 locales y TZ negativa da el
+// mismo día, pero la clave local es la correcta por definición.
+function dkey(dt){
+  const m = dt.getMonth()+1, d = dt.getDate();
+  return dt.getFullYear() + '-' + (m<10?'0':'') + m + '-' + (d<10?'0':'') + d;
+}
+let HOLIDAY_SET = new Set();
+function rebuildHolidaySet(){
+  HOLIDAY_SET = new Set(HOLIDAYS.map(dkey));
+  _CF_EPOCH++;                      // los cronogramas cacheados dependen de los feriados
+}
+function isHoliday(dt){
+  if(!dt||isNaN(dt)) return false;
+  return HOLIDAY_SET.has(dkey(dt));
+}
 function adjustDate(dt){let a=(dt instanceof Date)?new Date(dt):new Date(String(dt).substring(0,10)+'T12:00:00');if(isNaN(a))return new Date();while(a.getDay()===0||a.getDay()===6||isHoliday(a))a.setDate(a.getDate()+1);return a;}
+
+// ── Caché de cronograma por bono (independiente del precio) ──────────────────────────
+// El cronograma depende SÓLO de los params del bono + el día (settlement T+1) + los feriados.
+// Se cachea por objeto-bono (WeakMap): si el catálogo se recarga o se importa/borra un bono,
+// los objetos son nuevos y el caché se suelta solo. Las ediciones in-place las cubre la firma.
+// Adentro viven además los memos de TIR por precio (ver calcTIRForPrice / recalcTIR).
+let _CF_EPOCH = 0;                  // ++ cuando cambian los feriados
+const _cfCache = new WeakMap();     // bond object -> entry
+
+function bondCFSig(b){
+  const am = (b.amort==='cuotas' && Array.isArray(b.amortSched) && b.amortSched.length)
+    ? b.amortSched.map(a=>a.fecha+':'+a.pct).join('|') : '';
+  return [b.venc, b.fecha_emision||'', b.fecha_inicio_int||'', b.cupon, b.periodicidad,
+          b.base_dias||'', b.devengo||'', b.amort||'', am,
+          _CF_EPOCH, dkey(new Date())].join('~');
+}
+
+function buildCFEntry(b, sig){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const sett=nextBusinessDay(today);                    // T+1
+  const vd=new Date(b.venc+'T12:00:00');
+  const per=b.periodicidad??6;
+  const e={ sig, sett, vd, per,
+            yrs: Math.max(0.01,(vd-sett)/(365*24*3600*1000)),
+            expired: vd<sett,                           // ≡ el `if(vd<sett) return;` de antes
+            cf:null, diasPeriodo:null,
+            memoPx:new Map(),                           // calcTIRForPrice: precioUSD -> {tir,tna}
+            memoTir:new Map() };                        // recalcTIR:       precioUSD -> {tir,tna,dur}
+  if(e.expired || isNaN(vd)) return e;
+  if(b.cupon>0 && (b.fecha_inicio_int || per===0)){
+    const emD=b.fecha_emision?new Date(b.fecha_emision+'T12:00:00'):new Date(today);
+    const iiD=b.fecha_inicio_int?new Date(b.fecha_inicio_int+'T12:00:00'):new Date(vd);
+    const amortSched=(b.amort==='cuotas'&&Array.isArray(b.amortSched)&&b.amortSched.length)
+      ? b.amortSched.map(a=>({fecha:new Date(a.fecha+'T12:00:00'),pct:a.pct}))
+      : [{fecha:vd,pct:100}];
+    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,b.base_dias||'act365',amortSched,0,b.devengo);
+    const cf=applySettlement(cfRaw,sett);
+    if(cf.length>0){
+      e.cf=cf;                                          // sólo lectura: nadie muta estos objetos
+      e.diasPeriodo = cfRaw.length>=2
+        ? Math.round((cfRaw[cfRaw.length-1].fecha-cfRaw[cfRaw.length-2].fecha)/(24*3600*1000))
+        : Math.round(per/12*365);
+    }
+  }
+  return e;
+}
+
+function cfEntry(b){
+  if(!b || !b.venc) return null;
+  const sig=bondCFSig(b);
+  let e=_cfCache.get(b);
+  if(e && e.sig===sig){ if(PERF) PERF.cfHit++; return e; }
+  if(PERF) PERF.cfMiss++;
+  e=buildCFEntry(b,sig);
+  _cfCache.set(b,e);
+  return e;
+}
+
+// Set de feriados del seed. Va acá y no junto al literal de HOLIDAYS porque
+// rebuildHolidaySet() toca HOLIDAY_SET y _CF_EPOCH, que son `let` declarados arriba:
+// llamarlo antes daba "Cannot access 'HOLIDAY_SET' before initialization" (TDZ).
+rebuildHolidaySet();
 
 async function fetchAll(){
   setS('wait','Actualizando…');
@@ -2022,36 +2112,27 @@ function recalcTIR(b){
   // DL: el precio que se usa para calcular TIR es el USD-equivalente
   const pPrice = b.precio_usd_eq;
   if(!pPrice||pPrice<=0||!b.venc)return;
-  const today=new Date();today.setHours(0,0,0,0);
-  const sett=nextBusinessDay(today); // T+1
-  const vd=new Date(b.venc+'T12:00:00');
-  if(vd<sett) return; // bono ya vencido
-  const per=b.periodicidad??6;
-  const yrs=Math.max(0.01,(vd-sett)/(365*24*3600*1000));
+  const e=cfEntry(b);
+  if(!e || e.expired) return;                  // ≡ el viejo `if(vd<sett) return;`
+  // Memo: si este bono ya se calculó con este mismo precio, no se recalcula nada.
+  if(e.memoTir.has(pPrice)){
+    if(PERF) PERF.memoHit++;
+    const m=e.memoTir.get(pPrice); b.tir=m.tir; b.tna=m.tna; b.dur=m.dur; return;
+  }
+  if(PERF) PERF.memoMiss++;
+  const sett=e.sett, vd=e.vd, per=e.per, yrs=e.yrs;
 
   if(b.cupon>0 && (b.fecha_inicio_int || per===0)){
-    const emD=b.fecha_emision?new Date(b.fecha_emision+'T12:00:00'):new Date(today);
-    // per=0 (al vencimiento): si no hay inicio_int, usar el vencimiento como único cupón
-    const iiD=b.fecha_inicio_int?new Date(b.fecha_inicio_int+'T12:00:00'):new Date(vd);
-    let amortSched;
-    if(b.amort==='cuotas'&&Array.isArray(b.amortSched)&&b.amortSched.length){
-      amortSched=b.amortSched.map(a=>({fecha:new Date(a.fecha+'T12:00:00'),pct:a.pct}));
-    }else{
-      amortSched=[{fecha:vd,pct:100}];
-    }
-    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,b.base_dias||'act365',amortSched,0,b.devengo);
-    const cf=applySettlement(cfRaw,sett);
-    if(cf.length>0){
+    const cf=e.cf;                             // cronograma cacheado (no depende del precio)
+    if(cf && cf.length>0){
       const tir=calcTIR(cf,pPrice);
       if(tir!==null){
         b.tir=parseFloat(tir.toFixed(2));
-        const diasPeriodo=cfRaw.length>=2
-          ? Math.round((cfRaw[cfRaw.length-1].fecha-cfRaw[cfRaw.length-2].fecha)/(24*3600*1000))
-          : Math.round(per/12*365);
-        b.tna=tirToTNA(tir,per,diasPeriodo);
+        b.tna=tirToTNA(tir,per,e.diasPeriodo);
         const r=tir/100;let sM=0;
         cf.forEach(x=>{const t=x.dias/365,vp=x.total/Math.pow(1+r,t);sM+=t*vp;});
         b.dur=parseFloat((sM/pPrice).toFixed(2));
+        _memoSet(e.memoTir,pPrice,{tir:b.tir,tna:b.tna,dur:b.dur});
         return;
       }
     }
@@ -2070,7 +2151,7 @@ function recalcTIR(b){
       if(r<-0.9)r=-0.9;if(r>50)r=50;if(Math.abs(delta)<1e-8)break;
     }
     b.tir=parseFloat((r*100).toFixed(2));
-    b.tna=tirToTNA(b.tir,per);
+    b.tna=tirToTNA(b.tir,per);   // OJO: usa la TIR REDONDEADA (calcTIRForPrice usa la cruda)
     b.dur=parseFloat((yrs*0.85).toFixed(2));
   }else{
     // ZC puro: precio descontado a vencimiento
@@ -2078,7 +2159,11 @@ function recalcTIR(b){
     b.tna=b.tir; // ZC: TNA = TIR
     b.dur=parseFloat((yrs*0.92).toFixed(2));
   }
+  _memoSet(e.memoTir,pPrice,{tir:b.tir,tna:b.tna,dur:b.dur});
 }
+
+// Guarda en el memo con una cota de memoria (sesiones largas con muchos precios distintos).
+function _memoSet(m,k,v){ if(m.size>128) m.clear(); m.set(k,v); }
 
 function seedDemo(){const rng=(a,b,d=2)=>parseFloat((Math.random()*(b-a)+a).toFixed(d));bonds.forEach(b=>{b.loaded=true;b.precio=rng(70,103);b.vp=rng(-2.5,2.5);b.vol=rng(0.5,20);recalcTIR(b);});document.getElementById('s1').textContent='0 (demo)';}
 
@@ -2098,32 +2183,23 @@ function calcTIRForPrice(b, precioInput){
   }
   if(precio<=0) return null;
 
-  const today=new Date();today.setHours(0,0,0,0);
-  const sett=nextBusinessDay(today);
-  const vd=new Date(b.venc+'T12:00:00');
-  if(vd<sett) return null;
-  const per=b.periodicidad??6;
-  const yrs=Math.max(0.01,(vd-sett)/(365*24*3600*1000));
+  const e=cfEntry(b);
+  if(!e || e.expired) return null;             // ≡ el viejo `if(vd<sett) return null;`
+  // Memo por el precio YA CONVERTIDO a USD: si cambia el A3500 (o el FX), el precio USD
+  // derivado cambia y la clave también → se recalcula solo. No hace falta invalidar nada.
+  // El objeto devuelto se comparte entre callers: NO MUTAR el retorno.
+  if(e.memoPx.has(precio)){ if(PERF) PERF.memoHit++; return e.memoPx.get(precio); }
+  if(PERF) PERF.memoMiss++;
+  const sett=e.sett, vd=e.vd, per=e.per, yrs=e.yrs;
 
   if(b.cupon>0 && (b.fecha_inicio_int || per===0)){
-    const emD=b.fecha_emision?new Date(b.fecha_emision+'T12:00:00'):new Date(today);
-    // per=0 (al vencimiento): si no hay inicio_int, usar el vencimiento como único cupón
-    const iiD=b.fecha_inicio_int?new Date(b.fecha_inicio_int+'T12:00:00'):new Date(vd);
-    let amortSched;
-    if(b.amort==='cuotas'&&Array.isArray(b.amortSched)&&b.amortSched.length){
-      amortSched=b.amortSched.map(a=>({fecha:new Date(a.fecha+'T12:00:00'),pct:a.pct}));
-    }else{
-      amortSched=[{fecha:vd,pct:100}];
-    }
-    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,b.base_dias||'act365',amortSched,0,b.devengo);
-    const cf=applySettlement(cfRaw,sett);
-    if(cf.length>0){
+    const cf=e.cf;                             // cronograma cacheado (no depende del precio)
+    if(cf && cf.length>0){
       const tir=calcTIR(cf,precio);
       if(tir!==null){
-        const diasPeriodo=cfRaw.length>=2
-          ? Math.round((cfRaw[cfRaw.length-1].fecha-cfRaw[cfRaw.length-2].fecha)/(24*3600*1000))
-          : Math.round(per/12*365);
-        return {tir:parseFloat(tir.toFixed(2)), tna:tirToTNA(tir,per,diasPeriodo)};
+        const out={tir:parseFloat(tir.toFixed(2)), tna:tirToTNA(tir,per,e.diasPeriodo)};
+        _memoSet(e.memoPx,precio,out);
+        return out;
       }
     }
   }
@@ -2140,10 +2216,15 @@ function calcTIRForPrice(b, precioInput){
       if(fp===0)break;const delta=f/fp;r-=delta;
       if(r<-0.9)r=-0.9;if(r>50)r=50;if(Math.abs(delta)<1e-8)break;
     }
-    return {tir:parseFloat((r*100).toFixed(2)), tna:tirToTNA(r*100,per)};
+    // OJO: TNA sobre la TIR CRUDA (recalcTIR la usa redondeada) -> memos separados a propósito.
+    const out={tir:parseFloat((r*100).toFixed(2)), tna:tirToTNA(r*100,per)};
+    _memoSet(e.memoPx,precio,out);
+    return out;
   } else {
     const tir=parseFloat(((Math.pow(100/precio,365/Math.max(1,(vd-sett)/(24*3600*1000)))-1)*100).toFixed(2));
-    return {tir, tna:tir};
+    const out={tir, tna:tir};
+    _memoSet(e.memoPx,precio,out);
+    return out;
   }
 }
 function num(v){return(v!=null&&!isNaN(parseFloat(v)))?parseFloat(v):null;}
@@ -2979,6 +3060,7 @@ function yearFrac(d1, d2, base){
 //          (ajustadas a día hábil); 'teorico' → entre fechas de cupón teóricas, de modo
 //          que correr un pago a día hábil no devenga interés extra.
 function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo){
+  if(PERF) PERF.buildSchedule++;
   const tasa=(cupon||0)/100;
   if(!iiDate||isNaN(iiDate)||!vcDate||isNaN(vcDate)) return [];
   if(!emDate||isNaN(emDate)) emDate = new Date(iiDate);
@@ -3143,6 +3225,7 @@ function applySettlement(cf, settlement){
 }
 
 function calcTIR(cf,precio,tol=1e-8,maxIt=200){
+  if(PERF) PERF.calcTIR++;
   if(!cf||!cf.length)return null;
   let r=0.08;
   for(let i=0;i<maxIt;i++){
@@ -3884,7 +3967,7 @@ function renderHolidays(){
 async function addHoliday(){
   const v=document.getElementById('inp-holiday').value;
   if(!v)return;
-  if(HOLIDAYS.some(h=>h.toISOString().substring(0,10)===v)){ document.getElementById('inp-holiday').value=''; return; }
+  if(HOLIDAY_SET.has(v)){ document.getElementById('inp-holiday').value=''; return; }
   if(Catalog.isRemote){
     if(!Catalog.isLoggedIn()){ alert('Iniciá sesión como admin para editar feriados.'); return; }
     const r = await Catalog.addFeriadoRemote(v);
@@ -3892,6 +3975,7 @@ async function addHoliday(){
   }
   HOLIDAYS.push(new Date(v+'T12:00:00'));
   HOLIDAYS.sort((a,b)=>a-b);
+  rebuildHolidaySet();
   renderHolidays();
   document.getElementById('inp-holiday').value='';
 }
@@ -3905,6 +3989,7 @@ async function removeHoliday(i){
     if(!r.ok){ alert('No se pudo eliminar el feriado: '+(r.error||'')); return; }
   }
   HOLIDAYS.splice(i,1);
+  rebuildHolidaySet();
   renderHolidays();
 }
 
@@ -5198,6 +5283,22 @@ function aEvalRule(b, r){
     return bs.includes(rs);
   }
 }
+// Contextos de moneda de TODOS los bonos, UNA sola vez por evaluación.
+// Antes buildMonedaCtx(b) se llamaba 4 veces por bono por condición (una por moneda) y cada
+// llamada construía los 3 books completos para que el .find() se quedara con 1: se tiraba el
+// 83%. Ahora se arma un Map<bono, {MEP, ARS, CABLE, 'USD-eq'}> y el costo queda INDEPENDIENTE
+// de cuántas condiciones de alerta haya.
+function buildAllMonedaCtx(){
+  const m = new Map();
+  bonds.forEach(b=>{
+    if(!b.loaded) return;                                         // mismo guard que el filter
+    const o = {};
+    buildMonedaCtx(b).forEach(c=>{ if(!(c.moneda in o)) o[c.moneda]=c; });   // ≡ ctxs.find()
+    m.set(b, o);
+  });
+  return m;
+}
+
 function evaluateAlerts(){
   // Resetear historial si cambió el día
   if(_hist.date !== todayStr()){ _hist={date:todayStr(),entries:[]}; saveHistory(_hist); alertFired.clear(); }
@@ -5205,7 +5306,11 @@ function evaluateAlerts(){
   // Collect current live hits across all conditions for the ticker panel
   const liveTicker = {}; // ticker -> {ticker, side, precio, tna, condName, time}
 
-  alertConds.filter(cond=>cond.enabled&&cond.rules.length).forEach(cond=>{
+  const conds = alertConds.filter(cond=>cond.enabled&&cond.rules.length);
+  // Sin condiciones habilitadas no se construye ningún contexto (igual que antes: costo cero).
+  const CTX = conds.length ? buildAllMonedaCtx() : null;
+
+  conds.forEach(cond=>{
     const valid=cond.rules.filter(r=>r.value!==''&&r.value!==null&&r.value!==undefined);
     if(!valid.length) return;
 
@@ -5220,10 +5325,8 @@ function evaluateAlerts(){
     const MONEDAS = ['MEP','ARS','CABLE','USD-eq'];
     MONEDAS.forEach(moneda=>{
       const hits = bonds.filter(b=>{
-        if(!b.loaded) return false;
-        const ctxs = buildMonedaCtx(b);
-        const ctx  = ctxs.find(x=>x.moneda===moneda);
-        if(!ctx) return false;
+        const byM = CTX.get(b);  if(!byM) return false;   // ≡ !b.loaded
+        const ctx = byM[moneda]; if(!ctx) return false;   // ≡ ctxs.find() === undefined
         return valid.every(r=>aEvalRuleCtx(b,r,ctx));
       });
       if(!hits.length) return;
@@ -5231,8 +5334,7 @@ function evaluateAlerts(){
       hits.forEach(b=>{
         const key_ticker = b.ticker+'|'+moneda;
         if(!liveTicker[key_ticker]){
-          const ctxs = buildMonedaCtx(b);
-          const ctx  = ctxs.find(x=>x.moneda===moneda)||{};
+          const ctx = CTX.get(b)[moneda] || {};           // mismo objeto, sin recomputar
           liveTicker[key_ticker]={
             ticker:   b.ticker,
             tipoBono: b.moneda==='DL' ? 'DL' : 'HD',
