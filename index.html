@@ -439,21 +439,16 @@ window.SUPABASE_CONFIG = {
   </div>
 </div>
 
-<div id="live-alerts-panel" style="display:none;position:fixed;top:54px;right:16px;z-index:300;min-width:320px;max-width:380px;background:#0c1018;border:1px solid #1e2d42;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.6);">
-  <div style="padding:7px 14px;border-bottom:1px solid #1e2d42;display:flex;align-items:center;gap:8px;">
+<!-- Panel "EN ALERTA AHORA": columnas ordenables, minimizable y redimensionable (resize:both). -->
+<div id="live-alerts-panel" style="display:none;position:fixed;top:54px;right:16px;z-index:300;width:380px;min-width:300px;min-height:34px;max-height:85vh;background:#0c1018;border:1px solid #1e2d42;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.6);flex-direction:column;overflow:hidden;resize:both;">
+  <div style="padding:7px 14px;border-bottom:1px solid #1e2d42;display:flex;align-items:center;gap:8px;flex:0 0 auto;">
     <span style="color:#fbbf24;font-size:.6rem;font-weight:700;letter-spacing:.08em;">EN ALERTA AHORA</span>
     <span id="lap-count" style="background:#fbbf24;color:#07090f;font-size:.55rem;font-weight:700;padding:1px 6px;border-radius:10px;"></span>
+    <button id="lap-min" onclick="lapToggleMin()" title="Minimizar"
+      style="margin-left:auto;background:none;border:1px solid #1e2d42;color:#64748b;border-radius:4px;cursor:pointer;font-size:.62rem;line-height:1;padding:3px 8px;font-family:inherit;">–</button>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 36px 42px 52px 60px 55px 44px;border-bottom:1px solid #0f1623;">
-    <div style="padding:4px 12px;font-size:.55rem;color:#475569;font-weight:600;">TICKER</div>
-    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">TIPO</div>
-    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">MON</div>
-    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">LADO</div>
-    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">PRECIO</div>
-    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">TNA %</div>
-    <div style="padding:4px 4px;font-size:.55rem;color:#475569;font-weight:600;">HORA</div>
-  </div>
-  <div id="lap-rows" style="display:grid;grid-template-columns:1fr 36px 42px 52px 60px 55px 44px;max-height:320px;overflow-y:auto;"></div>
+  <div id="lap-head" style="display:grid;grid-template-columns:1fr 36px 42px 52px 60px 55px;border-bottom:1px solid #0f1623;flex:0 0 auto;"></div>
+  <div id="lap-rows" style="display:grid;grid-template-columns:1fr 36px 42px 52px 60px 55px;overflow-y:auto;flex:1 1 auto;align-content:start;min-height:0;"></div>
 </div>
 <main id="main-content">
   <div class="hero">
@@ -3442,7 +3437,7 @@ function closePanel() {
   if (ACTIVE_TK) saveState(ACTIVE_TK);
   if (document.getElementById('calc-panel').classList.contains('edit-mode')) exitEditMode();
   ACTIVE_TK = null; manualPrecio = false; manualTIR = false;
-  var ap=document.getElementById('live-alerts-panel'); if(ap){ var lr=document.getElementById('lap-rows'); if(lr&&lr.children.length>4) ap.style.display='block'; }
+  var ap=document.getElementById('live-alerts-panel'); if(ap){ var lr=document.getElementById('lap-rows'); if(lr&&lr.children.length>4) ap.style.display='flex'; }
   document.getElementById('calc-panel').classList.remove('open');
   document.getElementById('main-content').classList.remove('shifted');
   render();
@@ -5298,19 +5293,63 @@ function toggleAlertTicker(){
   var bar=document.getElementById('alert-ticker-bar');
   if(bar) bar.style.display=bar.style.display==='none'?'block':'none';
 }
-function updateLiveTickerPanel(liveTicker){
-  var panel=document.getElementById('live-alerts-panel');
-  var rows_el=document.getElementById('lap-rows');
-  var count_el=document.getElementById('lap-count');
-  if(!panel||!rows_el) return;
-  var rows=Object.values(liveTicker||{}).sort(function(a,b){return a.ticker.localeCompare(b.ticker);});
-  if(!rows.length){ panel.style.display='none'; return; }
-  // No mostrar si la calculadora está abierta
-  if(typeof ACTIVE_TK !== 'undefined' && ACTIVE_TK) return;
-  panel.style.display='block';
-  if(count_el) count_el.textContent=rows.length;
+// ── Panel "EN ALERTA AHORA" ───────────────────────────────────────────────────
+// Columnas ordenables (click en el encabezado), minimizable y de tamaño ajustable
+// (resize:both en el contenedor). El orden y el estado minimizado sobreviven a los
+// refrescos: las filas se guardan en _lapRows y se repintan sin re-evaluar alertas.
+const LAP_COLS = [
+  {k:'ticker',   l:'TICKER', num:false, pad:'12px'},
+  {k:'tipoBono', l:'TIPO',   num:false, pad:'4px'},
+  {k:'moneda',   l:'MON',    num:false, pad:'4px'},
+  {k:'side',     l:'LADO',   num:false, pad:'4px'},
+  {k:'precio',   l:'PRECIO', num:true,  pad:'4px'},
+  {k:'tna',      l:'TNA %',  num:true,  pad:'4px'},
+];
+let lapSort = {k:'ticker', dir:1};
+let lapMin  = false;
+let _lapRows = [];
+
+function lapSortBy(k){
+  if(lapSort.k===k) lapSort.dir*=-1; else lapSort={k:k, dir:1};
+  renderLapRows();
+}
+function lapToggleMin(){
+  lapMin=!lapMin;
+  const p=document.getElementById('live-alerts-panel');
+  const h=document.getElementById('lap-head');
+  const r=document.getElementById('lap-rows');
+  const b=document.getElementById('lap-min');
+  if(h) h.style.display = lapMin ? 'none' : 'grid';
+  if(r) r.style.display = lapMin ? 'none' : 'grid';
+  if(b){ b.textContent = lapMin ? '▢' : '–'; b.title = lapMin ? 'Restaurar' : 'Minimizar'; }
+  if(p){ p.style.resize = lapMin ? 'none' : 'both'; if(lapMin) p.style.height='auto'; }
+}
+function renderLapHead(){
+  const h=document.getElementById('lap-head'); if(!h) return;
+  h.innerHTML = LAP_COLS.map(function(c){
+    const on  = lapSort.k===c.k;
+    const ind = on ? (lapSort.dir>0 ? ' ▴' : ' ▾') : '';
+    return '<div onclick="lapSortBy(\''+c.k+'\')" title="Ordenar por '+c.l+'" '
+      + 'style="padding:4px '+c.pad+';font-size:.55rem;font-weight:600;cursor:pointer;user-select:none;'
+      + 'white-space:nowrap;color:'+(on?'#fbbf24':'#475569')+';">'+c.l+ind+'</div>';
+  }).join('');
+}
+function renderLapRows(){
+  const rows_el=document.getElementById('lap-rows'); if(!rows_el) return;
+  renderLapHead();
+  const col = LAP_COLS.find(function(c){return c.k===lapSort.k;}) || LAP_COLS[0];
+  const dir = lapSort.dir;
+  const data = _lapRows.slice().sort(function(a,b){
+    let x=a[col.k], y=b[col.k];
+    if(col.num){
+      x=(x==null||isNaN(parseFloat(x)))?-Infinity:parseFloat(x);
+      y=(y==null||isNaN(parseFloat(y)))?-Infinity:parseFloat(y);
+      return dir*(x-y);
+    }
+    return dir*String(x==null?'':x).localeCompare(String(y==null?'':y));
+  });
   rows_el.innerHTML='';
-  rows.forEach(function(d){
+  data.forEach(function(d){
     var sc=d.side==='bid'?'#34d399':'#f87171';
     var sl=d.side==='bid'?'BID':'OFFER';
     var px=d.precio!=null?parseFloat(d.precio).toFixed(2):'--';
@@ -5325,8 +5364,20 @@ function updateLiveTickerPanel(liveTicker){
     rows_el.appendChild(mk('<span style="color:'+sc+';font-weight:600;">'+sl+'</span>'));
     rows_el.appendChild(mk('<span style="color:#2dd4bf;font-weight:500;">'+px+'</span>'));
     rows_el.appendChild(mk('<span style="color:#fbbf24;font-weight:500;font-size:.6rem;">'+tnaStr+'</span>'));
-    rows_el.appendChild(mk('<span style="color:#64748b;font-size:.6rem;">'+d.time+'</span>'));
   });
+}
+function updateLiveTickerPanel(liveTicker){
+  var panel=document.getElementById('live-alerts-panel');
+  var rows_el=document.getElementById('lap-rows');
+  var count_el=document.getElementById('lap-count');
+  if(!panel||!rows_el) return;
+  _lapRows=Object.values(liveTicker||{});
+  if(!_lapRows.length){ panel.style.display='none'; return; }
+  // No mostrar si la calculadora está abierta
+  if(typeof ACTIVE_TK !== 'undefined' && ACTIVE_TK) return;
+  panel.style.display='flex';
+  if(count_el) count_el.textContent=_lapRows.length;
+  renderLapRows();
 }
 function renderAlertTicker(){
   // Re-evaluate alerts to refresh the live panel
