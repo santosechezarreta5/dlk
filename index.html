@@ -1693,9 +1693,14 @@ async function fetchAll(){
         const rv=itD?pn(itD.v):null; b.vol=(rv!=null&&rv>0)?parseFloat((rv/1e6).toFixed(2)):null;
         b.open=null;
         if(b.precio_usd_eq!=null&&b.precio_usd_eq>0){
-          recalcTIR(b);
-          if(b.bid_usd){const bc=calcTIRForPrice(b,b.bid_usd);b.bidTna=bc?bc.tna:null;}
-          if(b.ask_usd){const ac=calcTIRForPrice(b,b.ask_usd);b.askTna=ac?ac.tna:null;}
+          recalcTIR(b);   // TIR/TNA/duration de la tabla: siguen sobre el precio MEP
+        }
+        // Las TNA de las puntas dependen de la vista y de la jurisdicción de pago.
+        {
+          const view=(hdCurrencyView==='ars'||hdCurrencyView==='cable')?hdCurrencyView:'mep';
+          const pb=precioEnDolarJur(b,'bid',view), pa=precioEnDolarJur(b,'ask',view);
+          const bc=pb?calcTIRForPrice(b,pb):null, ac=pa?calcTIRForPrice(b,pa):null;
+          b.bidTna=bc?bc.tna:null; b.askTna=ac?ac.tna:null;
         }
       }
     });
@@ -2002,6 +2007,8 @@ async function fetchFX(){
     if($('fx-ts'))        $('fx-ts').textContent =
       new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Buenos_Aires'});
     if(typeof updateDLEquiv==='function') updateDLEquiv();
+    // Las TNA de las puntas se calculan convirtiendo por MEP/cable → dependen del FX.
+    if(typeof recalcPuntasHD==='function') recalcPuntasHD();
   }catch(e){ console.error('[fetchFX] Error:', e); }
 }
 
@@ -2394,8 +2401,44 @@ function setTypeTab(type){
   }
 }
 
+// ── Precio de una punta en el DÓLAR QUE PAGA EL BONO (según jurisdicción de pago) ──────
+// jur 'Argentina' → dólar MEP · jur 'Estados Unidos' (NY) → dólar cable (CCL).
+// Se convierte SIEMPRE punta contra punta (bid con bid, offer con offer), igual que el canje.
+// Así la tasa corresponde al precio que se está mostrando, expresado en el dólar que el
+// bono efectivamente cobra. Devuelve null si falta el precio de esa vista o el FX necesario.
+function precioEnDolarJur(b, side, view){
+  const isBid = side === 'bid';
+  const px = view==='ars'   ? (isBid ? b.bid_ars   : b.ask_ars)
+           : view==='cable' ? (isBid ? b.bid_cable : b.ask_cable)
+           :                  (isBid ? b.bid_usd   : b.ask_usd);
+  if(!px || px <= 0) return null;
+  const mep   = isBid ? FX.mepBid   : FX.mepAsk;
+  const cable = isBid ? FX.cableBid : FX.cableAsk;
+  const pagaCable = (b.jur === 'Estados Unidos');     // paga en NY → su dólar es el cable
+  if(view === 'ars'){                                 // pesos → dólar del bono
+    const fx = pagaCable ? cable : mep;
+    return (fx > 0) ? px/fx : null;
+  }
+  if(view === 'mep')    return pagaCable ? ((mep>0&&cable>0) ? px*mep/cable : null) : px;
+  /* view === 'cable' */return pagaCable ? px : ((mep>0&&cable>0) ? px*cable/mep : null);
+}
+
+// Recalcula las TNA de las puntas de todos los HD con la vista actual, para que el orden
+// de la tabla y las alertas usen los mismos números que se muestran en pantalla.
+function recalcPuntasHD(){
+  if(typeof bonds==='undefined' || !Array.isArray(bonds)) return;
+  const view = (hdCurrencyView==='ars'||hdCurrencyView==='cable') ? hdCurrencyView : 'mep';
+  bonds.forEach(b=>{
+    if(b.moneda==='DL') return;                       // los DL no usan esta vista
+    const pb=precioEnDolarJur(b,'bid',view), pa=precioEnDolarJur(b,'ask',view);
+    const bc=pb?calcTIRForPrice(b,pb):null, ac=pa?calcTIRForPrice(b,pa):null;
+    b.bidTna=bc?bc.tna:null; b.askTna=ac?ac.tna:null;
+  });
+}
+
 function setHdCurrencyView(view){
   hdCurrencyView=view;
+  recalcPuntasHD();   // la tasa depende de la vista → recalcular antes de ordenar/renderizar
   const views=['mep','ars','cable'];
   views.forEach(v=>{
     const btn=document.getElementById('hdtab-'+v);
@@ -2460,10 +2503,12 @@ function render(){
     if(!isHDBond){
       tabBid=b.bid; tabAsk=b.ask; showBid=b.bid; showAsk=b.ask;
     } else {
-      tabBid=b.bid_usd; tabAsk=b.ask_usd;
-      if(hdCurrencyView==='ars'){ showBid=b.bid_ars; showAsk=b.ask_ars; }
-      else if(hdCurrencyView==='cable'){ showBid=b.bid_cable; showAsk=b.ask_cable; }
+      const view = (hdCurrencyView==='ars'||hdCurrencyView==='cable') ? hdCurrencyView : 'mep';
+      if(view==='ars'){ showBid=b.bid_ars; showAsk=b.ask_ars; }
+      else if(view==='cable'){ showBid=b.bid_cable; showAsk=b.ask_cable; }
       else { showBid=b.bid_usd; showAsk=b.ask_usd; }
+      // La tasa se calcula sobre el precio DE LA VISTA, llevado al dólar que paga el bono.
+      tabBid=precioEnDolarJur(b,'bid',view); tabAsk=precioEnDolarJur(b,'ask',view);
     }
 
     const bidCalc = (tabBid&&tabBid>0) ? calcTIRForPrice(b, tabBid)  : null;
