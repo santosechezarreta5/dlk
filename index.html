@@ -5129,14 +5129,35 @@ function aEvalRuleCtx(b, r, ctx){
   }
 }
 // Construye contextos bid/ask/bidTna/askTna para cada moneda
+// Contextos por moneda para evaluar las alertas. La condición se evalúa POR MONEDA: cada
+// contexto trae el precio de ESE book y la TNA calculada CON ESE precio. Así una condición
+// puede cumplirse en USD y no en pesos (o al revés), que es lo que corresponde.
 function buildMonedaCtx(b){
   const ctxs = [];
-  // USD-eq (siempre disponible - es b.bid/b.ask, ya convertidos en fetchAll)
-  ctxs.push({ moneda:'USD-eq', bid:b.bid, ask:b.ask, bidTna:b.bidTna, askTna:b.askTna });
-  // ARS (precio raw en pesos del DL)
+
+  // ── DL: cotiza en un solo book (pesos) y se convierte por A3500. La tasa es la misma
+  // en USD-eq y en ARS —es el mismo precio expresado de dos formas—, así que se comparte.
+  if(b.moneda === 'DL'){
+    ctxs.push({ moneda:'USD-eq', bid:b.bid, ask:b.ask, bidTna:b.bidTna, askTna:b.askTna });
+    if(b.bid_ars || b.ask_ars){
+      ctxs.push({ moneda:'ARS', bid:b.bid_ars, ask:b.ask_ars, bidTna:b.bidTna, askTna:b.askTna });
+    }
+    return ctxs;
+  }
+
+  // ── HD: books independientes (MEP y pesos) → cada uno tiene SU propia tasa.
+  const tnaDe = px => { const c = (px > 0) ? calcTIRForPrice(b, px) : null; return c ? c.tna : null; };
+  ctxs.push({
+    moneda:'USD-eq', bid:b.bid_usd, ask:b.ask_usd,
+    bidTna: tnaDe(precioEnDolarJur(b,'bid','mep')),   // precio MEP, directo
+    askTna: tnaDe(precioEnDolarJur(b,'ask','mep'))
+  });
   if(b.bid_ars || b.ask_ars){
-    // La TIR/TNA en ARS no es comparable directamente; usamos las mismas USD-eq
-    ctxs.push({ moneda:'ARS', bid:b.bid_ars, ask:b.ask_ars, bidTna:b.bidTna, askTna:b.askTna });
+    ctxs.push({
+      moneda:'ARS', bid:b.bid_ars, ask:b.ask_ars,
+      bidTna: tnaDe(precioEnDolarJur(b,'bid','ars')), // pesos → USD por MEP/CCL según jurisdicción
+      askTna: tnaDe(precioEnDolarJur(b,'ask','ars'))
+    });
   }
   return ctxs;
 }
