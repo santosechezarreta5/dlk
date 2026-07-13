@@ -439,8 +439,10 @@ window.SUPABASE_CONFIG = {
   </div>
 </div>
 
-<!-- Panel "EN ALERTA AHORA": columnas ordenables, minimizable y redimensionable (resize:both). -->
-<div id="live-alerts-panel" style="display:none;position:fixed;top:54px;right:16px;z-index:300;width:380px;min-width:300px;min-height:34px;max-height:85vh;background:#0c1018;border:1px solid #1e2d42;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.6);flex-direction:column;overflow:hidden;resize:both;">
+<!-- Panel "EN ALERTA AHORA": columnas ordenables, minimizable y de alto ajustable.
+     El ancho es fijo; el alto se arrastra desde el agarre de la esquina inferior IZQUIERDA
+     (el resize nativo de CSS sólo ofrece grip abajo-derecha, por eso va uno propio). -->
+<div id="live-alerts-panel" style="display:none;position:fixed;top:54px;right:16px;z-index:300;width:380px;min-height:34px;max-height:85vh;background:#0c1018;border:1px solid #1e2d42;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.6);flex-direction:column;overflow:hidden;">
   <div style="padding:7px 14px;border-bottom:1px solid #1e2d42;display:flex;align-items:center;gap:8px;flex:0 0 auto;">
     <span style="color:#fbbf24;font-size:.6rem;font-weight:700;letter-spacing:.08em;">EN ALERTA AHORA</span>
     <span id="lap-count" style="background:#fbbf24;color:#07090f;font-size:.55rem;font-weight:700;padding:1px 6px;border-radius:10px;"></span>
@@ -449,6 +451,13 @@ window.SUPABASE_CONFIG = {
   </div>
   <div id="lap-head" style="display:grid;grid-template-columns:1fr 36px 42px 52px 60px 55px;border-bottom:1px solid #0f1623;flex:0 0 auto;"></div>
   <div id="lap-rows" style="display:grid;grid-template-columns:1fr 36px 42px 52px 60px 55px;overflow-y:auto;flex:1 1 auto;align-content:start;min-height:0;"></div>
+  <div id="lap-foot" style="flex:0 0 auto;height:15px;border-top:1px solid #0f1623;position:relative;">
+    <div id="lap-grip" onpointerdown="lapStartResize(event)" title="Arrastrá para cambiar el alto"
+      style="position:absolute;left:0;bottom:0;width:30px;height:15px;cursor:ns-resize;">
+      <div style="position:absolute;left:7px;bottom:8px;width:13px;border-top:2px solid #3a4a60;"></div>
+      <div style="position:absolute;left:7px;bottom:3px;width:13px;border-top:2px solid #3a4a60;"></div>
+    </div>
+  </div>
 </div>
 <main id="main-content">
   <div class="hero">
@@ -5318,11 +5327,36 @@ function lapToggleMin(){
   const p=document.getElementById('live-alerts-panel');
   const h=document.getElementById('lap-head');
   const r=document.getElementById('lap-rows');
+  const f=document.getElementById('lap-foot');
   const b=document.getElementById('lap-min');
   if(h) h.style.display = lapMin ? 'none' : 'grid';
   if(r) r.style.display = lapMin ? 'none' : 'grid';
+  if(f) f.style.display = lapMin ? 'none' : 'block';   // el agarre no aplica minimizado
   if(b){ b.textContent = lapMin ? '▢' : '–'; b.title = lapMin ? 'Restaurar' : 'Minimizar'; }
-  if(p){ p.style.resize = lapMin ? 'none' : 'both'; if(lapMin) p.style.height='auto'; }
+  if(p) p.style.height = lapMin ? 'auto' : (_lapH ? _lapH+'px' : 'auto');  // restaura el alto elegido
+}
+
+// Alto ajustable arrastrando el agarre de la esquina inferior izquierda (sólo vertical:
+// el ancho queda fijo). Se guarda en _lapH para restaurarlo al salir de minimizado.
+let _lapH = null;
+function lapStartResize(e){
+  e.preventDefault();
+  const p=document.getElementById('live-alerts-panel'); if(!p) return;
+  const y0=e.clientY, h0=p.offsetHeight;
+  const top=p.getBoundingClientRect().top;
+  const hMax=Math.min(window.innerHeight-top-12, window.innerHeight*0.85);
+  function onMove(ev){
+    const h=Math.max(90, Math.min(h0+(ev.clientY-y0), hMax));
+    _lapH=h; p.style.height=h+'px';
+  }
+  function onUp(){
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
+    document.body.style.userSelect='';
+  }
+  document.body.style.userSelect='none';   // que el drag no seleccione texto
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
 }
 function renderLapHead(){
   const h=document.getElementById('lap-head'); if(!h) return;
