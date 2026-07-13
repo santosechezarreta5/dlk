@@ -2401,26 +2401,23 @@ function setTypeTab(type){
   }
 }
 
-// ── Precio de una punta en el DÓLAR QUE PAGA EL BONO (según jurisdicción de pago) ──────
-// jur 'Argentina' → dólar MEP · jur 'Estados Unidos' (NY) → dólar cable (CCL).
-// Se convierte SIEMPRE punta contra punta (bid con bid, offer con offer), igual que el canje.
-// Así la tasa corresponde al precio que se está mostrando, expresado en el dólar que el
-// bono efectivamente cobra. Devuelve null si falta el precio de esa vista o el FX necesario.
+// ── Precio de una punta, en USD, para calcular la tasa de la vista mostrada ────────────
+// Si la vista ya está en USD (MEP o cable), el precio entra DIRECTO: es la tasa de ese book.
+// Si la vista está en PESOS, se convierte al dólar que el bono efectivamente cobra según su
+// jurisdicción de pago —jur 'Argentina' → MEP; jur 'Estados Unidos' (NY) → cable (CCL)—
+// punta contra punta (bid con el bid del TC, offer con el offer). Sin cruzar por el canje.
+// Devuelve null si falta el precio de esa vista o el FX necesario.
 function precioEnDolarJur(b, side, view){
   const isBid = side === 'bid';
   const px = view==='ars'   ? (isBid ? b.bid_ars   : b.ask_ars)
            : view==='cable' ? (isBid ? b.bid_cable : b.ask_cable)
            :                  (isBid ? b.bid_usd   : b.ask_usd);
   if(!px || px <= 0) return null;
-  const mep   = isBid ? FX.mepBid   : FX.mepAsk;
-  const cable = isBid ? FX.cableBid : FX.cableAsk;
+  if(view !== 'ars') return px;                       // MEP y cable ya están en USD → directo
   const pagaCable = (b.jur === 'Estados Unidos');     // paga en NY → su dólar es el cable
-  if(view === 'ars'){                                 // pesos → dólar del bono
-    const fx = pagaCable ? cable : mep;
-    return (fx > 0) ? px/fx : null;
-  }
-  if(view === 'mep')    return pagaCable ? ((mep>0&&cable>0) ? px*mep/cable : null) : px;
-  /* view === 'cable' */return pagaCable ? px : ((mep>0&&cable>0) ? px*cable/mep : null);
+  const fx = pagaCable ? (isBid ? FX.cableBid : FX.cableAsk)
+                       : (isBid ? FX.mepBid   : FX.mepAsk);
+  return (fx > 0) ? px/fx : null;                     // pesos → dólar del bono
 }
 
 // Recalcula las TNA de las puntas de todos los HD con la vista actual, para que el orden
