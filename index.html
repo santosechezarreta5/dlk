@@ -5145,10 +5145,10 @@ function buildMonedaCtx(b){
     return ctxs;
   }
 
-  // ── HD: books independientes (MEP y pesos) → cada uno tiene SU propia tasa.
+  // ── HD: tres books independientes (MEP, pesos, cable) → cada uno tiene SU propia tasa.
   const tnaDe = px => { const c = (px > 0) ? calcTIRForPrice(b, px) : null; return c ? c.tna : null; };
   ctxs.push({
-    moneda:'USD-eq', bid:b.bid_usd, ask:b.ask_usd,
+    moneda:'MEP', bid:b.bid_usd, ask:b.ask_usd,
     bidTna: tnaDe(precioEnDolarJur(b,'bid','mep')),   // precio MEP, directo
     askTna: tnaDe(precioEnDolarJur(b,'ask','mep'))
   });
@@ -5157,6 +5157,13 @@ function buildMonedaCtx(b){
       moneda:'ARS', bid:b.bid_ars, ask:b.ask_ars,
       bidTna: tnaDe(precioEnDolarJur(b,'bid','ars')), // pesos → USD por MEP/CCL según jurisdicción
       askTna: tnaDe(precioEnDolarJur(b,'ask','ars'))
+    });
+  }
+  if(b.bid_cable || b.ask_cable){
+    ctxs.push({
+      moneda:'CABLE', bid:b.bid_cable, ask:b.ask_cable,
+      bidTna: tnaDe(precioEnDolarJur(b,'bid','cable')), // precio cable, directo
+      askTna: tnaDe(precioEnDolarJur(b,'ask','cable'))
     });
   }
   return ctxs;
@@ -5197,7 +5204,9 @@ function evaluateAlerts(){
     const now    = new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Argentina/Buenos_Aires'});
 
     // Evaluar en las 3 monedas
-    const MONEDAS = ['USD-eq','ARS'];
+    // HD cotiza en MEP / ARS / CABLE (books independientes). DL sólo tiene su book en
+    // pesos y el USD-eq derivado por A3500. Cada bono matchea sólo las suyas.
+    const MONEDAS = ['MEP','ARS','CABLE','USD-eq'];
     MONEDAS.forEach(moneda=>{
       const hits = bonds.filter(b=>{
         if(!b.loaded) return false;
