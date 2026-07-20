@@ -5727,6 +5727,10 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
         <button class="btn-mini" onclick="OPS.listPageGo(1)">▶</button>
       </span>
       <button class="btn-mini" onclick="OPS.clearListFilters()">Limpiar filtros</button>
+      <span class="col-cfg-wrap ops-col-wrap">
+        <button class="col-cfg-btn" style="margin-bottom:0" onclick="OPS.toggleListColMenu()" title="Elegir columnas visibles">⚙ Columnas</button>
+        <div class="col-cfg-menu" id="ops-col-cfg-menu"></div>
+      </span>
       <button class="btn-png" onclick="OPS.exportListCSV()" title="Exportar a CSV (todo lo filtrado)">⤓ CSV</button>
     </div>
     <div class="ops-list-wrap"><table class="ops-list" id="ops-list-table"></table></div>
@@ -5794,6 +5798,28 @@ const OPS = (function(){
     ['moneda','Moneda'],['precio','Precio'],['tna','TNA'],['tir','TIR'],['monto','Monto'],['fuente','Fuente']];
   const LIST_NUM=new Set(['precio','tna','tir','monto']);
   const LIST_DATE=new Set(['fecha','venc']);
+  // ── Columnas visibles de la lista (el usuario elige cuáles ver; persiste en localStorage) ──
+  let listColVis = (()=>{ try{ return JSON.parse(localStorage.getItem('bonoscorp_ops_cols')||'{}'); }catch(e){ return {}; } })();
+  const listVisCols = ()=> LIST_COLS.filter(([k])=> listColVis[k]!==false);   // default: visible
+  function saveListColVis(){ try{ localStorage.setItem('bonoscorp_ops_cols', JSON.stringify(listColVis)); }catch(e){} }
+  function buildListColMenu(){
+    const m=document.getElementById('ops-col-cfg-menu'); if(!m) return;
+    m.innerHTML='';
+    LIST_COLS.forEach(([k,lbl])=>{
+      const el=document.createElement('label'); el.className='col-toggle';
+      el.innerHTML='<input type="checkbox" '+(listColVis[k]!==false?'checked':'')+'> '+lbl;
+      el.querySelector('input').addEventListener('change', function(){
+        // No dejar la tabla sin columnas: si es la última visible, se mantiene.
+        if(!this.checked && listVisCols().length<=1){ this.checked=true; return; }
+        listColVis[k]=this.checked; saveListColVis(); renderList();
+      });
+      m.appendChild(el);
+    });
+  }
+  // Cerrar el menú al clickear afuera
+  document.addEventListener('click', e=>{
+    if(!e.target.closest('.ops-col-wrap')) document.getElementById('ops-col-cfg-menu')?.classList.remove('open');
+  });
   let rangeMapped=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
   let breakdownKeys=['rating'], maxLines=15, filters={rating:null,sector:null,empresa:null,anio:null};
   const gv=(r,k)=>{ const v=r[k]; return (v==null||v==='')?('(s/'+k+')'):v; };
@@ -6034,18 +6060,20 @@ const OPS = (function(){
     const cnt=document.getElementById('ops-list-count'); if(cnt) cnt.textContent=total+' operaciones';
     const pg=document.getElementById('ops-list-page');
     if(pg) pg.textContent = total ? ('Pág. '+(listPage+1)+'/'+pages+' · '+(start+1)+'-'+Math.min(start+size,total)) : '—';
+    const cols=listVisCols();
     let h='';
-    for(const o of pageRows){ h+='<tr>'; for(const [col] of LIST_COLS){ h+='<td'+(LIST_NUM.has(col)?' class="num"':'')+'>'+_esc(_listDisp(o,col))+'</td>'; } h+='</tr>'; }
-    if(!total) h='<tr><td colspan="'+LIST_COLS.length+'" style="text-align:center;color:#94a3b8;padding:10px">(sin operaciones)</td></tr>';
+    for(const o of pageRows){ h+='<tr>'; for(const [col] of cols){ h+='<td'+(LIST_NUM.has(col)?' class="num"':'')+'>'+_esc(_listDisp(o,col))+'</td>'; } h+='</tr>'; }
+    if(!total) h='<tr><td colspan="'+cols.length+'" style="text-align:center;color:#94a3b8;padding:10px">(sin operaciones)</td></tr>';
     tb.innerHTML=h;
   }
   function renderList(){
     const t=document.getElementById('ops-list-table'); if(!t) return;
     listPage=0;
+    const cols=listVisCols();
     let h='<thead><tr>';
-    for(const [col,lbl] of LIST_COLS){ const ind=listSort.col===col?(listSort.dir>0?'▲':'▼'):''; h+="<th onclick=\"OPS.sortList('"+col+"')\">"+lbl+'<span class="sortind">'+ind+'</span></th>'; }
+    for(const [col,lbl] of cols){ const ind=listSort.col===col?(listSort.dir>0?'▲':'▼'):''; h+="<th onclick=\"OPS.sortList('"+col+"')\">"+lbl+'<span class="sortind">'+ind+'</span></th>'; }
     h+='</tr><tr class="filt">';
-    for(const [col] of LIST_COLS){
+    for(const [col] of cols){
       const ph=(LIST_NUM.has(col)||LIST_DATE.has(col)) ? '&gt; &lt; =  ej: &gt;7' : 'filtrar…';
       h+='<th><input type="text" value="'+(listFilters[col]||'').replace(/"/g,'&quot;')+"\" oninput=\"OPS.setListFilter('"+col+"',this.value)\" placeholder=\""+ph+"\" title=\"Operadores: &gt; &lt; &gt;= &lt;= = · rango a..b (fechas: AAAA-MM-DD o DD/MM/AAAA)\"></th>"; }
     h+='</tr></thead><tbody></tbody>';
@@ -6120,10 +6148,12 @@ const OPS = (function(){
     listPageGo(d){ listPage+=d; const w=document.querySelector('#ops-tab-list .ops-list-wrap'); if(w) w.scrollTop=0; renderListBody(); },
     clearListFilters(){ listFilters={}; listSettle='all'; const s=document.getElementById('ops-list-settle'); if(s)s.value='all'; renderList(); },
     sortList(col){ if(listSort.col===col) listSort.dir*=-1; else { listSort.col=col; listSort.dir=1; } renderList(); },
+    toggleListColMenu(){ const m=document.getElementById('ops-col-cfg-menu'); if(!m)return; if(m.classList.toggle('open')) buildListColMenu(); },
     exportListCSV(){
-      const rows=listRows(); const esc=v=>{ v=(v==null?'':String(v)); return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
-      let csv=LIST_COLS.map(c=>esc(c[1])).join(';')+'\n';
-      for(const o of rows) csv+=LIST_COLS.map(([col])=>esc(o[col])).join(';')+'\n';
+      const rows=listRows(); const cols=listVisCols();  // exporta las columnas visibles (lo que se ve)
+      const esc=v=>{ v=(v==null?'':String(v)); return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+      let csv=cols.map(c=>esc(c[1])).join(';')+'\n';
+      for(const o of rows) csv+=cols.map(([col])=>esc(o[col])).join(';')+'\n';
       const f=document.getElementById('ops-date'), fecha=f?f.value:'';
       _downloadDataURL('data:text/csv;charset=utf-8,'+encodeURIComponent('﻿'+csv),'operaciones_'+fecha+'.csv');
     },
