@@ -5343,6 +5343,7 @@ function evaluateAlerts(){
             tna:      side==='bid' ? ctx.bidTna : ctx.askTna,
             tir:      b.tir,
             moneda,
+            anio:     b.venc ? parseInt(String(b.venc).slice(0,4),10) : null,   // año de vencimiento
             condName: cond.name,
             time:     now,
           };
@@ -5485,12 +5486,12 @@ function renderLapRows(){
     return dir*String(x==null?'':x).localeCompare(String(y==null?'':y));
   });
   rows_el.innerHTML='';
-  data.forEach(function(d){
+  var st='padding:5px 12px;border-bottom:1px solid #0c1420;font-size:.65rem;';
+  function mk(h){var el=document.createElement('div');el.style.cssText=st;el.innerHTML=h;return el;}
+  function drawRow(d){
     var sc=d.side==='bid'?'#34d399':'#f87171';
     var sl=d.side==='bid'?'BID':'OFFER';
     var px=d.precio!=null?parseFloat(d.precio).toFixed(2):'--';
-    var st='padding:5px 12px;border-bottom:1px solid #0c1420;font-size:.65rem;';
-    function mk(h){var el=document.createElement('div');el.style.cssText=st;el.innerHTML=h;return el;}
     const mc={'USD-eq':'#60a5fa','MEP':'#60a5fa','ARS':'#fbbf24','CABLE':'#a78bfa'}[d.moneda]||'#64748b';
     const tc=d.tipoBono==='DL'?'#2dd4bf':'#a78bfa';
     const tnaStr=d.tna!=null?parseFloat(d.tna).toFixed(2)+'%':'—';
@@ -5500,6 +5501,21 @@ function renderLapRows(){
     rows_el.appendChild(mk('<span style="color:'+sc+';font-weight:600;">'+sl+'</span>'));
     rows_el.appendChild(mk('<span style="color:#2dd4bf;font-weight:500;">'+px+'</span>'));
     rows_el.appendChild(mk('<span style="color:#fbbf24;font-weight:500;font-size:.6rem;">'+tnaStr+'</span>'));
+  }
+  // Subdivisión por AÑO DE VENCIMIENTO: encabezado de sección por año (ascendente; los
+  // sin fecha, al final). Dentro de cada año se respeta el orden de columna elegido: como
+  // `data` ya viene ordenado, filtrar por año conserva ese orden (filter es estable).
+  var years=[...new Set(data.map(function(d){return d.anio;}))]
+    .sort(function(a,b){ if(a==null)return 1; if(b==null)return -1; return a-b; });
+  years.forEach(function(y){
+    var grp=data.filter(function(d){return d.anio===y;});
+    var hdr=document.createElement('div');
+    hdr.style.cssText='grid-column:1/-1;padding:4px 12px 3px;font-size:.55rem;font-weight:700;'
+      +'letter-spacing:.08em;color:#fbbf24;background:#0a0e15;border-top:1px solid #1e2d42;'
+      +'border-bottom:1px solid #0f1623;';
+    hdr.textContent=(y!=null?('Vto '+y):'Sin vencimiento')+'  ·  '+grp.length;
+    rows_el.appendChild(hdr);
+    grp.forEach(drawRow);
   });
 }
 function updateLiveTickerPanel(liveTicker){
