@@ -6224,8 +6224,27 @@ window.FCI = (function(){
   const H = {apikey:cfg.anonKey||'', Authorization:'Bearer '+(cfg.anonKey||''), 'Content-Type':'application/json'};
   const $ = id => document.getElementById(id);
   const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  async function rpc(fn,args){ try{ const r=await fetch(REST+'/rpc/'+fn,{method:'POST',headers:H,body:JSON.stringify(args||{})}); return r.ok?await r.json():[]; }catch(e){ console.error('[FCI]',e); return []; } }
-  async function sel(p){ try{ const r=await fetch(REST+p,{headers:H}); return r.ok?await r.json():[]; }catch(e){ return []; } }
+  // PostgREST corta las respuestas en 1000 filas (db-max-rows de Supabase). Nuestras carteras
+  // tienen ~2.450 activos y ~1.145 fondos, así que sin paginar se perdían ~1.450 bonos y ~145
+  // fondos: por eso "faltaban fondos" en los desplegables y en los análisis. Se pide de a
+  // páginas con limit/offset hasta que una vuelva incompleta.
+  const PAGE = 1000;
+  async function pagedFetch(url, opts){
+    let out = [], off = 0;
+    for(let guard=0; guard<60; guard++){           // tope de seguridad: 60k filas
+      const sep = url.includes('?') ? '&' : '?';
+      const r = await fetch(url + sep + 'limit=' + PAGE + '&offset=' + off, opts);
+      if(!r.ok) break;
+      const chunk = await r.json();
+      if(!Array.isArray(chunk)) return chunk;      // respuesta escalar: devolver tal cual
+      out = out.concat(chunk);
+      if(chunk.length < PAGE) break;               // última página
+      off += PAGE;
+    }
+    return out;
+  }
+  async function rpc(fn,args){ try{ return await pagedFetch(REST+'/rpc/'+fn,{method:'POST',headers:H,body:JSON.stringify(args||{})}); }catch(e){ console.error('[FCI]',e); return []; } }
+  async function sel(p){ try{ return await pagedFetch(REST+p,{headers:H}); }catch(e){ return []; } }
 
   const NF = new Intl.NumberFormat('es-AR',{maximumFractionDigits:1});
   function compact(v,pref){ if(v==null||isNaN(v))return'—'; const a=Math.abs(v); let o;
