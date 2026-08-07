@@ -5800,8 +5800,8 @@ const OPS = (function(){
   let listPage=0, listPageSize=100;
   const LIST_COLS=[['fecha','Fecha'],['ticker','Ticker'],['tipo','Tipo de bono'],['emisor','Emisor'],['rating','Rating'],
     ['sector','Sector'],['leg','Legislación'],['jur','Jurisdicción'],['venc','Fecha Vto.'],['settlement','Settlement'],
-    ['moneda','Moneda'],['precio','Precio'],['tna','TNA'],['tir','TIR'],['monto','Monto'],['fuente','Fuente']];
-  const LIST_NUM=new Set(['precio','tna','tir','monto']);
+    ['moneda','Moneda'],['precio','Precio'],['tna','TNA'],['tir','TIR'],['monto','Monto'],['vn','VN'],['fuente','Fuente']];
+  const LIST_NUM=new Set(['precio','tna','tir','monto','vn']);
   const LIST_DATE=new Set(['fecha','venc']);
   // ── Columnas visibles de la lista (el usuario elige cuáles ver; persiste en localStorage) ──
   let listColVis = (()=>{ try{ return JSON.parse(localStorage.getItem('bonoscorp_ops_cols')||'{}'); }catch(e){ return {}; } })();
@@ -6003,7 +6003,7 @@ const OPS = (function(){
     if(col==='fecha'||col==='venc') return String(v).split('-').reverse().join('/');
     if(col==='precio') return Number(v).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
     if(col==='tna'||col==='tir') return Number(v).toFixed(2)+'%';
-    if(col==='monto') return Number(v).toLocaleString('es-AR',{maximumFractionDigits:0});
+    if(col==='monto'||col==='vn') return Number(v).toLocaleString('es-AR',{maximumFractionDigits:0});
     return ''+v;
   }
   // Parseo de número (acepta 7,5 · 1.000.000 · 7.5)
@@ -6102,6 +6102,15 @@ const OPS = (function(){
     dayRaw=rows;
     const fxDate=t||f;
     const fx=(fxDate?(await q('/fx_history?fecha=eq.'+fxDate))[0]:null)||{};
+    // VN operado = Monto / Precio × 100. El monto viene pesificado (ARS); para especies
+    // USD MEP/CABLE se pasa a USD con su TC del día antes de dividir por el precio (en USD).
+    { const _mep=+fx.mep||0, _ccl=+fx.ccl||0;
+      dayRaw.forEach(r=>{ const p=+r.precio, m=+r.monto; let vn=null;
+        if(p>0 && m){ const mo=r.moneda;
+          if(mo==='ARS') vn=m/p*100;
+          else if(mo==='USD MEP') vn=_mep>0? m/p/_mep*100 : null;
+          else if(mo==='USD CABLE') vn=_ccl>0? m/p/_ccl*100 : null; }
+        r.vn=vn; }); }
     document.getElementById('ops-fx').innerHTML=
       '<div class="c"><div class="l">TC al</div><div class="v" style="font-size:.7rem">'+(fxDate?fxDate.split('-').reverse().join('/'):'—')+'</div></div>'
       +[['USD A3500',fx.a3500],['USD MEP',fx.mep],['USD CABLE',fx.ccl]]
