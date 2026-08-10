@@ -6645,6 +6645,8 @@ body.byma-mode #view-byma{display:block}
 #view-byma select.byma-mon{font:inherit;font-size:.7rem;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:4px;padding:4px 6px}
 #view-byma .byma-venc{color:#cbd5e1}
 #view-byma .byma-px{color:#7ee0b8}
+#view-byma .byma-vwap{color:#e6c34d}
+#view-byma .byma-vwap.conv{opacity:.72;font-style:italic}
 #view-byma .byma-tir{color:#93c5fd}
 #view-byma button.byma-x{background:transparent;border:none;color:#7f8ea3;cursor:pointer;font-size:.8rem;padding:2px 7px;border-radius:4px;line-height:1}
 #view-byma button.byma-x:hover{color:#e05a5a;background:rgba(224,90,90,.12)}
@@ -6665,6 +6667,7 @@ body.byma-mode #view-byma{display:block}
         <th class="sortable" onclick="BYMAOPS.sort('moneda')">Moneda<span class="si" data-c="moneda"></span></th>
         <th class="sortable" onclick="BYMAOPS.sort('tna')">TNA<span class="si" data-c="tna"></span></th>
         <th class="sortable" onclick="BYMAOPS.sort('precio')">Precio<span class="si" data-c="precio"></span></th>
+        <th class="sortable" onclick="BYMAOPS.sort('vwap')" title="Precio promedio ponderado por monto operado — últimas 2 semanas (market_ops)">Prom. pond. 2s<span class="si" data-c="vwap"></span></th>
         <th class="sortable" onclick="BYMAOPS.sort('tir')">TIR<span class="si" data-c="tir"></span></th>
         <th></th>
       </tr></thead>
@@ -6729,6 +6732,71 @@ window.BYMAOPS = (function(){
     return null;
   }
 
+  // ── VWAP operado (precio promedio ponderado por monto) de las ultimas 2 semanas ──
+  // Fuente: market_ops (Supabase). Ponderado por monto (pesificado ARS), outlier=false.
+  // Los DL operan solo en ARS -> VWAP en ARS y se expresa en la moneda de la fila con TC de hoy.
+  // Los HD operan en los 3 segmentos -> se usa el VWAP del segmento de la fila (exacto); si ese
+  // segmento no tuvo ops, se convierte desde el segmento dominante con TC de hoy.
+  const _vwProm=new Map();   // canon -> Promise<entry>
+  const _vwDone=new Map();   // canon -> entry {agg,dias}  (acceso sincronico para render/sort)
+  function canonOf(tk){ return tk ? tk.slice(0,-1)+'O' : ''; }
+  function cutoff2w(){ const d=new Date(); d.setDate(d.getDate()-14);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  function getVwapData(canon){
+    if(_vwProm.has(canon)) return _vwProm.get(canon);
+    const cfg=window.SUPABASE_CONFIG||{}, H=(typeof _sbHeaders==='function'?_sbHeaders():null);
+    const p=(async()=>{
+      let entry={agg:{},dias:0};
+      if(cfg.url&&H){ try{
+        const url=cfg.url+'/rest/v1/market_ops?ticker=eq.'+encodeURIComponent(canon)
+          +'&outlier=eq.false&fecha=gte.'+cutoff2w()
+          +'&select=fecha,moneda,precio,monto&order=fecha.desc&limit=2000';
+        const r=await fetch(url,{headers:H}); const j=r.ok?await r.json():[];
+        const agg={}, dset=new Set();
+        j.forEach(x=>{ const mo=x.moneda, p=+x.precio, w=+x.monto; if(!(p>0)) return; dset.add(x.fecha);
+          const a=agg[mo]||(agg[mo]={sp:0,sw:0,spm:0,cnt:0});
+          if(w>0){ a.sp+=p*w; a.sw+=w; } a.spm+=p; a.cnt++; });
+        entry={agg, dias:dset.size};
+      }catch(e){ entry={agg:{},dias:0,err:true}; } }
+      _vwDone.set(canon, entry); return entry;
+    })();
+    _vwProm.set(canon, p); return p;
+  }
+  function _segVwap(s){ return s ? (s.sw>0 ? s.sp/s.sw : (s.cnt ? s.spm/s.cnt : null)) : null; }
+  // Devuelve {v, native, cnt, from} en la moneda pedida, o null.
+  function vwapForMoneda(b, mon, agg, t){
+    if(!agg) return null;
+    const direct=_segVwap(agg[mon]);
+    if(direct!=null) return {v:direct, native:true, cnt:agg[mon].cnt};
+    // segmento dominante (mayor monto operado) -> convertir con TC de hoy
+    let dom=null, domMon=null, best=-1;
+    for(const k in agg){ const w=agg[k].sw||agg[k].cnt||0; if(w>best){ best=w; dom=agg[k]; domMon=k; } }
+    const dv=_segVwap(dom); if(dv==null) return null;
+    const ars = domMon==='ARS' ? dv : domMon==='USD MEP' ? (t.mep?dv*t.mep:null) : (t.cable?dv*t.cable:null);
+    if(ars==null) return null;
+    const out = mon==='ARS' ? ars : mon==='USD MEP' ? (t.mep?ars/t.mep:null) : (t.cable?ars/t.cable:null);
+    return out==null?null:{v:out, native:false, cnt:dom.cnt, from:domMon};
+  }
+  function renderVwapCell(r,tr,e){
+    const cell=tr._refs.vw, b=findBond(r.ticker); if(!cell) return;
+    if(!b){ cell.textContent='—'; cell.title=''; cell.classList.remove('conv'); return; }
+    const res = (e&&e.agg) ? vwapForMoneda(b, r.moneda||'ARS', e.agg, tcs()) : null;
+    if(!res){ cell.textContent='—'; cell.classList.remove('conv');
+      cell.title = (e&&e.dias===0)?'sin operaciones en las últimas 2 semanas':''; return; }
+    cell.textContent = fmtPx(res.v, r.moneda||'ARS');
+    cell.title = (res.cnt||0)+' ops · '+(e.dias||0)+' día(s) operados'+(res.native?'':' · convertido desde '+res.from+' con TC de hoy');
+    cell.classList.toggle('conv', !res.native);
+  }
+  function fillVwap(r,tr){
+    const cell=tr._refs.vw; if(!cell) return; const b=findBond(r.ticker);
+    if(!b){ cell.textContent='—'; cell.title=''; cell.classList.remove('conv'); return; }
+    const canon=canonOf(r.ticker);
+    if(_vwDone.has(canon)){ renderVwapCell(r,tr,_vwDone.get(canon)); return; }   // hit sincrono, sin parpadeo
+    cell.textContent='…'; cell.title='cargando…'; cell.classList.remove('conv');
+    getVwapData(canon).then(e=>{ if(tr._data===r && canonOf(r.ticker)===canon) renderVwapCell(r,tr,e); });
+  }
+  function refreshVwapAll(){ const tb=$('byma-tbody'); if(!tb) return; [...tb.children].forEach(tr=>{ if(tr._data&&tr._refs) fillVwap(tr._data,tr); }); }
+
   function recompute(r,tr){
     const R=tr._refs, b=findBond(r.ticker);
     if(!b || r.tna==null || isNaN(r.tna)){ R.px.textContent='—'; R.tir.textContent='—'; return; }
@@ -6749,7 +6817,7 @@ window.BYMAOPS = (function(){
     const tk=document.createElement('input'); tk.className='byma-tk'; tk.setAttribute('list','byma-tickers'); tk.value=r.ticker||''; tk.placeholder='Ticker';
     tk.addEventListener('change',()=>{ r.ticker=(tk.value||'').trim().toUpperCase(); tk.value=r.ticker;
       const b=findBond(r.ticker); if(b && !r.moneda){ r.moneda=defaultMoneda(b); mon.value=r.moneda; }
-      refreshVenc(r,tr); recompute(r,tr); save(); });
+      refreshVenc(r,tr); recompute(r,tr); fillVwap(r,tr); save(); });
     td.appendChild(tk); tr.appendChild(td);
 
     td=document.createElement('td'); td.className='byma-venc'; tr.appendChild(td); const venc=td;
@@ -6758,7 +6826,7 @@ window.BYMAOPS = (function(){
     const mon=document.createElement('select'); mon.className='byma-mon';
     ['ARS','USD MEP','USD CABLE'].forEach(m=>{ const o=document.createElement('option'); o.value=o.textContent=m; mon.appendChild(o); });
     mon.value=r.moneda||'ARS';
-    mon.addEventListener('change',()=>{ r.moneda=mon.value; recompute(r,tr); save(); });
+    mon.addEventListener('change',()=>{ r.moneda=mon.value; recompute(r,tr); fillVwap(r,tr); save(); });
     td.appendChild(mon); tr.appendChild(td);
 
     td=document.createElement('td');
@@ -6767,6 +6835,7 @@ window.BYMAOPS = (function(){
     td.appendChild(tna); tr.appendChild(td);
 
     td=document.createElement('td'); td.className='byma-px num'; tr.appendChild(td); const px=td;
+    td=document.createElement('td'); td.className='byma-vwap num'; tr.appendChild(td); const vw=td;
     td=document.createElement('td'); td.className='byma-tir num'; tr.appendChild(td); const tir=td;
 
     td=document.createElement('td');
@@ -6774,8 +6843,8 @@ window.BYMAOPS = (function(){
     x.addEventListener('click',()=>{ const i=rows.indexOf(r); if(i>=0) rows.splice(i,1); tr.remove(); save(); if(!rows.length) addRow(); });
     td.appendChild(x); tr.appendChild(td);
 
-    tr._refs={tk,venc,mon,tna,px,tir};
-    refreshVenc(r,tr); recompute(r,tr);
+    tr._refs={tk,venc,mon,tna,px,vw,tir};
+    refreshVenc(r,tr); recompute(r,tr); fillVwap(r,tr);
     return tr;
   }
 
@@ -6788,6 +6857,8 @@ window.BYMAOPS = (function(){
     if(col==='moneda') return r.moneda||null;
     if(col==='tna')    return (r.tna!=null && !isNaN(r.tna)) ? r.tna : null;
     if(col==='precio') return precioMoneda(b, r.tna, r.moneda||'ARS');
+    if(col==='vwap'){ const e=_vwDone.get(canonOf(r.ticker)); if(!e) return null;
+      const res=vwapForMoneda(b, r.moneda||'ARS', e.agg, tcs()); return res?res.v:null; }
     if(col==='tir')    return tirResultante(b, r.tna);
     return null;
   }
@@ -6824,8 +6895,8 @@ window.BYMAOPS = (function(){
   function recomputeAll(){ const tb=$('byma-tbody'); if(!tb) return; [...tb.children].forEach(tr=>{ if(tr._data&&tr._refs) recompute(tr._data,tr); }); }
 
   function init(){ if(inited) return; inited=true; load(); buildDatalist(); renderAll(); }
-  function show(){ init(); buildDatalist(); updateFXBar(); recomputeAll(); }
-  function onFX(){ if(!inited) return; updateFXBar(); recomputeAll(); }
+  function show(){ init(); buildDatalist(); updateFXBar(); recomputeAll(); refreshVwapAll(); }
+  function onFX(){ if(!inited) return; updateFXBar(); recomputeAll(); refreshVwapAll(); }
 
   return { show, onFX, addRow, clearAll, sort };
 })();
