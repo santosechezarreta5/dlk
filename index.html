@@ -2108,6 +2108,8 @@ async function fetchFX(){
     if(typeof updateDLEquiv==='function') updateDLEquiv();
     // Las TNA de las puntas se calculan convirtiendo por MEP/cable → dependen del FX.
     if(typeof recalcPuntasHD==='function') recalcPuntasHD();
+    // La solapa Operaciones BYMA calcula precios a partir de los TC → refrescar al cambiar el FX.
+    if(window.BYMAOPS && window.BYMAOPS.onFX) window.BYMAOPS.onFX();
   }catch(e){ console.error('[fetchFX] Error:', e); }
 }
 
@@ -5682,6 +5684,7 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
   <div class="dh"><span>Menú</span><span class="x" onclick="OPS.toggleMenu(false)">✕</span></div>
   <button class="ditem active" data-v="calc" onclick="OPS.selectView('calc')">🧮 Calculadoras</button>
   <button class="ditem" data-v="ops" onclick="OPS.selectView('ops')">📊 Operaciones Mercado</button>
+  <button class="ditem" data-v="byma" onclick="OPS.selectView('byma')">🧾 Operaciones BYMA</button>
   <button class="ditem" data-v="fci" onclick="OPS.selectView('fci')">📈 Movimientos de FCI</button>
 </aside>
 
@@ -6133,8 +6136,10 @@ const OPS = (function(){
     switchView(v){
       document.body.classList.toggle('ops-mode', v==='ops');
       document.body.classList.toggle('fci-mode', v==='fci');
+      document.body.classList.toggle('byma-mode', v==='byma');
       if(v==='ops' && !inited){ inited=true; loadDates(); }
       if(v==='fci' && window.FCI){ window.FCI.init(); }
+      if(v==='byma' && window.BYMAOPS){ window.BYMAOPS.show(); }
     },
     toggleMenu(force){
       const open = (force===undefined) ? !document.body.classList.contains('drawer-open') : !!force;
@@ -6610,6 +6615,183 @@ window.FCI = (function(){
   function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
 
   return { init, setTab, toggleUsd, setChartMode, rebuildFondoList, runBono, runFondo };
+})();
+</script>
+
+<!-- ═══════════════ VISTA OPERACIONES BYMA (precio por TNA) ═══════════════ -->
+<style>
+body.byma-mode #main-content, body.byma-mode #calc-panel{display:none !important}
+#view-byma{display:none;padding:16px 22px;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif}
+body.byma-mode #view-byma{display:block}
+#view-byma .byma-h{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:#e2e8f0;margin:6px 0 10px}
+#view-byma .byma-note{color:#94a3b8;font-size:.68rem;margin:2px 0 12px;max-width:840px;line-height:1.5}
+#view-byma .byma-fxbar{display:inline-flex;border:1px solid #1e2d42;border-radius:6px;overflow:hidden;margin-bottom:12px}
+#view-byma .byma-fxbar .c{padding:5px 15px;border-right:1px solid #1e2d42;text-align:center;background:#0c1018}
+#view-byma .byma-fxbar .c:last-child{border-right:none}
+#view-byma .byma-fxbar .l{font-size:.5rem;color:#5b6b80;text-transform:uppercase;letter-spacing:.05em}
+#view-byma .byma-fxbar .v{font-size:.85rem;font-weight:700;color:#cfe0f5}
+#view-byma .byma-tbl-wrap{overflow-x:auto;border:1px solid #1e2d42;border-radius:6px;max-width:920px}
+#view-byma table.byma-tbl{border-collapse:separate;border-spacing:0;font-size:.72rem;width:100%;background:#0c1018;color:#e2e8f0}
+#view-byma table.byma-tbl th{background:#142235;color:#cfe0f5;font-weight:600;text-align:left;padding:7px 11px;border-bottom:1px solid #1e2d42;white-space:nowrap}
+#view-byma table.byma-tbl td{padding:5px 11px;border-bottom:1px solid #16233a;white-space:nowrap}
+#view-byma table.byma-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+#view-byma table.byma-tbl tbody tr:hover td{background:rgba(255,255,255,.03)}
+#view-byma input.byma-tk{width:92px;text-transform:uppercase;font:inherit;font-size:.72rem;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:4px;padding:4px 6px}
+#view-byma input.byma-tk.bad{border-color:#c0392b;color:#f1a1a1}
+#view-byma input.byma-tna{width:76px;font:inherit;font-size:.72rem;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:4px;padding:4px 6px;text-align:right}
+#view-byma select.byma-mon{font:inherit;font-size:.7rem;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:4px;padding:4px 6px}
+#view-byma .byma-venc{color:#cbd5e1}
+#view-byma .byma-px{color:#7ee0b8}
+#view-byma .byma-tir{color:#93c5fd}
+#view-byma button.byma-x{background:transparent;border:none;color:#7f8ea3;cursor:pointer;font-size:.8rem;padding:2px 7px;border-radius:4px;line-height:1}
+#view-byma button.byma-x:hover{color:#e05a5a;background:rgba(224,90,90,.12)}
+#view-byma .byma-actions{margin:12px 0;display:flex;gap:10px}
+#view-byma .byma-add,#view-byma .byma-clear{font:inherit;font-size:.72rem;font-weight:600;padding:7px 15px;border-radius:6px;cursor:pointer;border:1px solid #2E75B6;background:#1F3864;color:#fff}
+#view-byma .byma-clear{background:#11243f;border-color:#1e2d42;color:#cfe0f5}
+</style>
+
+<div id="view-byma">
+  <div class="byma-h">🧾 Operaciones BYMA · Precio por TNA objetivo</div>
+  <div class="byma-fxbar" id="byma-fx"></div>
+  <div class="byma-note">Agregá los tickers, elegí la moneda de cotización y cargá la TNA objetivo: el precio se calcula con el cronograma real del bono (mismo cálculo que la calculadora). El vencimiento se autocompleta desde el catálogo. Los DL se pesifican por A3500; USD MEP/CABLE dividen ese precio por el TC correspondiente.</div>
+  <div class="byma-tbl-wrap">
+    <table class="byma-tbl">
+      <thead><tr>
+        <th>Ticker</th><th>Vencimiento</th><th>Moneda</th><th>TNA</th><th>Precio</th><th>TIR</th><th></th>
+      </tr></thead>
+      <tbody id="byma-tbody"></tbody>
+    </table>
+  </div>
+  <div class="byma-actions">
+    <button class="byma-add" onclick="BYMAOPS.addRow(true)">+ Agregar fila</button>
+    <button class="byma-clear" onclick="BYMAOPS.clearAll()">Limpiar todo</button>
+  </div>
+  <datalist id="byma-tickers"></datalist>
+</div>
+
+<script>
+window.BYMAOPS = (function(){
+  const LS='byma_ops_rows_v1';
+  let rows=[], inited=false;
+
+  const $=id=>document.getElementById(id);
+  function findBond(tk){ return (typeof bonds!=='undefined' && Array.isArray(bonds)) ? bonds.find(b=>b.ticker===tk) : null; }
+  function mid(a,b){ return (a&&b)?(a+b)/2:(a||b||null); }
+  function tcs(){ return { a3500: mid(FX.a3500Bid,FX.a3500Ask), mep: mid(FX.mepBid,FX.mepAsk), cable: mid(FX.cableBid,FX.cableAsk) }; }
+  function fmtDate(s){ if(!s) return '—'; const p=(''+s).split('-'); return p.length===3? p[2]+'/'+p[1]+'/'+p[0] : s; }
+  function defaultMoneda(b){ return b.moneda==='DL' ? 'ARS' : (b.jur==='Estados Unidos' ? 'USD CABLE' : 'USD MEP'); }
+  function fmtPx(v,mon){ if(v==null||!isFinite(v)) return '—'; const dec = mon==='ARS'?0:2;
+    return v.toLocaleString('es-AR',{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
+
+  // Precio técnico por 100 (dólar propio del bono) para una TNA dada. Invierte las 3 ramas de
+  // recalcTIR/calcTIRForPrice (cronograma / cupón>0 aprox / ZC) → coincide con la tabla y el reporte.
+  function precioTecnicoUSD(b, tnaPct){
+    const e=cfEntry(b); if(!e || e.expired) return null;
+    const per=e.per, tna=tnaPct/100;
+    if(e.cf && e.cf.length>0){                                   // cronograma real
+      const p=calcPrecioFromTIR(e.cf, tnaToTIR(tna, per, e.diasPeriodo));
+      return isFinite(p)?p:null;
+    }
+    if(b.cupon>0){                                               // cupón>0 sin cronograma (aprox)
+      const tir=tnaToTIR(tna, per)/100;                          // sin diasPeriodo (igual que la rama forward)
+      const n=Math.max(1,Math.round(e.yrs*(12/per))), cPer=b.cupon/100/(12/per);
+      let px=0; for(let i=1;i<=n;i++){ const t=i/(12/per), c=i<n?cPer*100:cPer*100+100; px+=c/Math.pow(1+tir,t); }
+      return isFinite(px)?px:null;
+    }
+    const dias=Math.max(1,(e.vd-e.sett)/(24*3600*1000));         // ZC puro: TNA = TIR
+    const p=100/Math.pow(1+tna, dias/365);
+    return isFinite(p)?p:null;
+  }
+  function tirResultante(b, tnaPct){
+    const e=cfEntry(b); if(!e) return null; const per=e.per;
+    if(e.cf && e.cf.length>0) return tnaToTIR(tnaPct/100, per, e.diasPeriodo);
+    if(b.cupon>0) return tnaToTIR(tnaPct/100, per);
+    return tnaPct;                                               // ZC: TNA = TIR
+  }
+  function precioMoneda(b, tnaPct, mon){
+    const P=precioTecnicoUSD(b, tnaPct); if(P==null) return null;
+    const t=tcs();
+    const tcOwn = (b.moneda==='DL') ? t.a3500 : (b.jur==='Estados Unidos'? t.cable : t.mep);
+    if(!tcOwn) return null;
+    const ars=P*tcOwn;                                           // precio pesificado (BYMA)
+    if(mon==='ARS') return ars;
+    if(mon==='USD MEP')   return t.mep?   ars/t.mep   : null;
+    if(mon==='USD CABLE') return t.cable? ars/t.cable : null;
+    return null;
+  }
+
+  function recompute(r,tr){
+    const R=tr._refs, b=findBond(r.ticker);
+    if(!b || r.tna==null || isNaN(r.tna)){ R.px.textContent='—'; R.tir.textContent='—'; return; }
+    const px=precioMoneda(b, r.tna, r.moneda||'ARS'), tir=tirResultante(b, r.tna);
+    R.px.textContent  = fmtPx(px, r.moneda||'ARS');
+    R.tir.textContent = (tir==null||isNaN(tir))?'—':tir.toFixed(2)+'%';
+  }
+  function refreshVenc(r,tr){
+    const R=tr._refs, b=findBond(r.ticker);
+    R.venc.textContent = b? fmtDate(b.venc) : '—';
+    R.tk.classList.toggle('bad', !!r.ticker && !b);
+    if(b && !r.moneda){ r.moneda=defaultMoneda(b); R.mon.value=r.moneda; }
+  }
+
+  function buildRow(r){
+    const tr=document.createElement('tr'); tr._data=r;
+    let td=document.createElement('td');
+    const tk=document.createElement('input'); tk.className='byma-tk'; tk.setAttribute('list','byma-tickers'); tk.value=r.ticker||''; tk.placeholder='Ticker';
+    tk.addEventListener('change',()=>{ r.ticker=(tk.value||'').trim().toUpperCase(); tk.value=r.ticker;
+      const b=findBond(r.ticker); if(b && !r.moneda){ r.moneda=defaultMoneda(b); mon.value=r.moneda; }
+      refreshVenc(r,tr); recompute(r,tr); save(); });
+    td.appendChild(tk); tr.appendChild(td);
+
+    td=document.createElement('td'); td.className='byma-venc'; tr.appendChild(td); const venc=td;
+
+    td=document.createElement('td');
+    const mon=document.createElement('select'); mon.className='byma-mon';
+    ['ARS','USD MEP','USD CABLE'].forEach(m=>{ const o=document.createElement('option'); o.value=o.textContent=m; mon.appendChild(o); });
+    mon.value=r.moneda||'ARS';
+    mon.addEventListener('change',()=>{ r.moneda=mon.value; recompute(r,tr); save(); });
+    td.appendChild(mon); tr.appendChild(td);
+
+    td=document.createElement('td');
+    const tna=document.createElement('input'); tna.className='byma-tna'; tna.type='number'; tna.step='0.01'; tna.placeholder='%'; tna.value=(r.tna!=null?r.tna:'');
+    tna.addEventListener('input',()=>{ const v=parseFloat(tna.value); r.tna=isNaN(v)?null:v; recompute(r,tr); save(); });
+    td.appendChild(tna); tr.appendChild(td);
+
+    td=document.createElement('td'); td.className='byma-px num'; tr.appendChild(td); const px=td;
+    td=document.createElement('td'); td.className='byma-tir num'; tr.appendChild(td); const tir=td;
+
+    td=document.createElement('td');
+    const x=document.createElement('button'); x.className='byma-x'; x.textContent='✕'; x.title='Quitar fila';
+    x.addEventListener('click',()=>{ const i=rows.indexOf(r); if(i>=0) rows.splice(i,1); tr.remove(); save(); if(!rows.length) addRow(); });
+    td.appendChild(x); tr.appendChild(td);
+
+    tr._refs={tk,venc,mon,tna,px,tir};
+    refreshVenc(r,tr); recompute(r,tr);
+    return tr;
+  }
+
+  function renderAll(){ const tb=$('byma-tbody'); if(!tb) return; tb.innerHTML=''; rows.forEach(r=> tb.appendChild(buildRow(r))); }
+  function addRow(focus){ const r={ticker:'',moneda:'',tna:null}; rows.push(r); const tr=buildRow(r); $('byma-tbody').appendChild(tr); save(); if(focus) tr._refs.tk.focus(); }
+  function clearAll(){ rows=[]; save(); renderAll(); addRow(); }
+
+  function load(){ try{ const s=JSON.parse(localStorage.getItem(LS)); if(Array.isArray(s)&&s.length) rows=s.map(o=>({ticker:o.ticker||'',moneda:o.moneda||'',tna:(o.tna!=null?o.tna:null)})); }catch(_){}
+    if(!rows.length) rows=[{ticker:'',moneda:'',tna:null}]; }
+  function save(){ try{ localStorage.setItem(LS, JSON.stringify(rows)); }catch(_){} }
+
+  function buildDatalist(){ const dl=$('byma-tickers'); if(!dl||typeof bonds==='undefined'||!Array.isArray(bonds)) return;
+    dl.innerHTML=''; bonds.slice().sort((a,b)=>a.ticker<b.ticker?-1:1).forEach(b=>{ const o=document.createElement('option'); o.value=b.ticker; o.textContent=(b.emisor||'')+' · '+fmtDate(b.venc); dl.appendChild(o); }); }
+
+  function updateFXBar(){ const el=$('byma-fx'); if(!el) return; const t=tcs();
+    const c=(l,v)=>`<div class="c"><div class="l">${l}</div><div class="v">${(v!=null)?'$ '+v.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</div></div>`;
+    el.innerHTML=c('A3500',t.a3500)+c('MEP',t.mep)+c('CABLE',t.cable); }
+
+  function recomputeAll(){ const tb=$('byma-tbody'); if(!tb) return; [...tb.children].forEach(tr=>{ if(tr._data&&tr._refs) recompute(tr._data,tr); }); }
+
+  function init(){ if(inited) return; inited=true; load(); buildDatalist(); renderAll(); }
+  function show(){ init(); buildDatalist(); updateFXBar(); recomputeAll(); }
+  function onFX(){ if(!inited) return; updateFXBar(); recomputeAll(); }
+
+  return { show, onFX, addRow, clearAll };
 })();
 </script>
 </body>
