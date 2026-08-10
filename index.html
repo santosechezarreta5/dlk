@@ -6633,6 +6633,9 @@ body.byma-mode #view-byma{display:block}
 #view-byma .byma-tbl-wrap{overflow-x:auto;border:1px solid #1e2d42;border-radius:6px;max-width:920px}
 #view-byma table.byma-tbl{border-collapse:separate;border-spacing:0;font-size:.72rem;width:100%;background:#0c1018;color:#e2e8f0}
 #view-byma table.byma-tbl th{background:#142235;color:#cfe0f5;font-weight:600;text-align:left;padding:7px 11px;border-bottom:1px solid #1e2d42;white-space:nowrap}
+#view-byma table.byma-tbl th.sortable{cursor:pointer;user-select:none}
+#view-byma table.byma-tbl th.sortable:hover{background:#1a2c44}
+#view-byma table.byma-tbl th .si{color:#60a5fa;font-size:.62rem}
 #view-byma table.byma-tbl td{padding:5px 11px;border-bottom:1px solid #16233a;white-space:nowrap}
 #view-byma table.byma-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
 #view-byma table.byma-tbl tbody tr:hover td{background:rgba(255,255,255,.03)}
@@ -6657,7 +6660,13 @@ body.byma-mode #view-byma{display:block}
   <div class="byma-tbl-wrap">
     <table class="byma-tbl">
       <thead><tr>
-        <th>Ticker</th><th>Vencimiento</th><th>Moneda</th><th>TNA</th><th>Precio</th><th>TIR</th><th></th>
+        <th class="sortable" onclick="BYMAOPS.sort('ticker')">Ticker<span class="si" data-c="ticker"></span></th>
+        <th class="sortable" onclick="BYMAOPS.sort('venc')">Vencimiento<span class="si" data-c="venc"></span></th>
+        <th class="sortable" onclick="BYMAOPS.sort('moneda')">Moneda<span class="si" data-c="moneda"></span></th>
+        <th class="sortable" onclick="BYMAOPS.sort('tna')">TNA<span class="si" data-c="tna"></span></th>
+        <th class="sortable" onclick="BYMAOPS.sort('precio')">Precio<span class="si" data-c="precio"></span></th>
+        <th class="sortable" onclick="BYMAOPS.sort('tir')">TIR<span class="si" data-c="tir"></span></th>
+        <th></th>
       </tr></thead>
       <tbody id="byma-tbody"></tbody>
     </table>
@@ -6672,7 +6681,7 @@ body.byma-mode #view-byma{display:block}
 <script>
 window.BYMAOPS = (function(){
   const LS='byma_ops_rows_v1';
-  let rows=[], inited=false;
+  let rows=[], inited=false, sortCol=null, sortDir=1;
 
   const $=id=>document.getElementById(id);
   function findBond(tk){ return (typeof bonds!=='undefined' && Array.isArray(bonds)) ? bonds.find(b=>b.ticker===tk) : null; }
@@ -6770,7 +6779,34 @@ window.BYMAOPS = (function(){
     return tr;
   }
 
-  function renderAll(){ const tb=$('byma-tbody'); if(!tb) return; tb.innerHTML=''; rows.forEach(r=> tb.appendChild(buildRow(r))); }
+  // ── Ordenamiento por columna (asc/desc alternando). Filas sin ticker/valor van al final.
+  function sortVal(r, col){
+    const b=findBond(r.ticker);
+    if(col==='ticker') return r.ticker||null;
+    if(!b) return null;
+    if(col==='venc')   return b.venc||null;                       // 'YYYY-MM-DD' ordena cronologico
+    if(col==='moneda') return r.moneda||null;
+    if(col==='tna')    return (r.tna!=null && !isNaN(r.tna)) ? r.tna : null;
+    if(col==='precio') return precioMoneda(b, r.tna, r.moneda||'ARS');
+    if(col==='tir')    return tirResultante(b, r.tna);
+    return null;
+  }
+  function isEmptyVal(v){ return v==null || v==='' || (typeof v==='number' && isNaN(v)); }
+  function cmp(a,b){
+    const va=sortVal(a,sortCol), vb=sortVal(b,sortCol);
+    const ea=isEmptyVal(va), eb=isEmptyVal(vb);
+    if(ea&&eb) return 0; if(ea) return 1; if(eb) return -1;       // vacios siempre ultimos
+    const r=(typeof va==='number'&&typeof vb==='number') ? (va-vb) : (''+va).localeCompare(''+vb,'es');
+    return r*sortDir;
+  }
+  function updateHead(){ document.querySelectorAll('#view-byma .byma-tbl .si').forEach(s=>{
+    s.textContent = (s.dataset.c===sortCol) ? (sortDir>0?' ▲':' ▼') : ''; }); }
+  function sort(col){
+    if(sortCol===col) sortDir*=-1; else { sortCol=col; sortDir=1; }
+    rows.sort(cmp); save(); renderAll();
+  }
+
+  function renderAll(){ const tb=$('byma-tbody'); if(!tb) return; tb.innerHTML=''; rows.forEach(r=> tb.appendChild(buildRow(r))); updateHead(); }
   function addRow(focus){ const r={ticker:'',moneda:'',tna:null}; rows.push(r); const tr=buildRow(r); $('byma-tbody').appendChild(tr); save(); if(focus) tr._refs.tk.focus(); }
   function clearAll(){ rows=[]; save(); renderAll(); addRow(); }
 
@@ -6791,7 +6827,7 @@ window.BYMAOPS = (function(){
   function show(){ init(); buildDatalist(); updateFXBar(); recomputeAll(); }
   function onFX(){ if(!inited) return; updateFXBar(); recomputeAll(); }
 
-  return { show, onFX, addRow, clearAll };
+  return { show, onFX, addRow, clearAll, sort };
 })();
 </script>
 </body>
