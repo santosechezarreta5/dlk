@@ -5712,6 +5712,10 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
   </div>
 
   <div id="ops-tab-main">
+    <div class="ops-toolbar" style="margin:0 0 12px">
+      <span style="font-size:.6rem;color:#94a3b8;letter-spacing:.05em">FUENTE</span>
+      <span id="ops-fuente-btns" style="display:inline-flex;gap:5px;flex-wrap:wrap"></span>
+    </div>
     <div class="ops-h">Serie de tiempo de la tasa</div>
     <div class="ops-toolbar">
       <label style="font-size:.7rem">Cuadro:&nbsp;<select id="ops-serie-sec" onchange="OPS.setSerieSec(this.value)"></select></label>
@@ -5796,7 +5800,7 @@ const OPS = (function(){
   function secId(o){ for(const s of SEC_DEFS) if(s.match(o)) return s.id; return 'hd_otras'; }
   function secDef(id){ return SEC_DEFS.find(s=>s.id===id); }
 
-  function mapRow(o){ return {sec:secId(o), anio:o.anio_vto, rating:o.rating||'', sector:o.sector||'', empresa:o.emisor||'', ticker:o.ticker, monto:+o.monto||0, moneda:o.moneda||'', tir:o.tir==null?null:+o.tir, tna:o.tna==null?null:+o.tna, outlier:!!o.outlier, fecha:o.fecha}; }
+  function mapRow(o){ return {sec:secId(o), anio:o.anio_vto, rating:o.rating||'', sector:o.sector||'', empresa:o.emisor||'', ticker:o.ticker, monto:+o.monto||0, moneda:o.moneda||'', tir:o.tir==null?null:+o.tir, tna:o.tna==null?null:+o.tna, outlier:!!o.outlier, fuente:o.fuente||'', fecha:o.fecha}; }
 
   const fmtPct=v=>v==null||isNaN(v)?'':v.toFixed(2)+'%';
   function wavg(rows,anio,metric){ metric=metric||'tir'; let n=0,d=0; for(const r of rows){ if(r.outlier)continue; if(anio!=null&&r.anio!==anio)continue; const x=r[metric]; if(x==null||isNaN(x))continue; if(r.monto>0){n+=x*r.monto;d+=r.monto;} } return d>0?n/d:null; }
@@ -5840,13 +5844,29 @@ const OPS = (function(){
   let rangeMapped=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
   let breakdownKeys=['rating'], maxLines=15, filters={rating:null,sector:null,empresa:null,anio:null};
   const gv=(r,k)=>{ const v=r[k]; return (v==null||v==='')?('(s/'+k+')'):v; };
+  // ── Filtro por Fuente (BYMA Mercado / BYMA Bilateral / MAE) — aplica a Resumen y Serie ──
+  const FUENTES=['BYMA Mercado','BYMA Bilateral','MAE'];
+  let fuenteSel=new Set();                                   // vacío = todas
+  const fuenteOk = r => fuenteSel.size===0 || fuenteSel.has(r.fuente);
+  function buildFuenteBtns(){
+    const c=document.getElementById('ops-fuente-btns'); if(!c) return;
+    const mk=(id,lbl,on)=>'<button class="btn-mini'+(on?' on':'')+'" data-f="'+id+'">'+lbl+'</button>';
+    c.innerHTML=mk('__all__','Todas', fuenteSel.size===0)+FUENTES.map(f=>mk(f,f,fuenteSel.has(f))).join('');
+    c.querySelectorAll('button').forEach(b=> b.onclick=()=>toggleFuente(b.dataset.f));
+  }
+  function toggleFuente(f){
+    if(f==='__all__') fuenteSel.clear();
+    else { fuenteSel.has(f)?fuenteSel.delete(f):fuenteSel.add(f); }
+    buildFuenteBtns(); dayTrees={}; renderResumen(); buildFilters(); renderSerie();
+  }
   let dates=[], maxDate=null;
 
   // ── resumen del día ──
   function tabOf(s){ return secDef(s).theme==='dlk'?'DLK':'HD'; }
   function renderResumen(){
     const cont=document.getElementById('ops-resumen'); cont.innerHTML='';
-    const present=[...new Set(dayMapped.map(r=>r.sec))];
+    const dm=dayMapped.filter(fuenteOk);
+    const present=[...new Set(dm.map(r=>r.sec))];
     const secs=SEC_DEFS.filter(s=>present.includes(s.id));
     // tabs
     const tabsEl=document.getElementById('ops-resumen-tabs'); tabsEl.innerHTML='';
@@ -5855,7 +5875,7 @@ const OPS = (function(){
     for(const k of tabKeys){ const b=document.createElement('button'); b.className='ops-tab'+(k==='DLK'?' dlk':'')+(k===curTab?' active':''); b.textContent='ONs '+k; b.onclick=()=>{curTab=k;renderResumen();}; tabsEl.appendChild(b); }
     for(const s of secs){
       if(tabOf(s.id)!==curTab) continue;
-      const rows=dayMapped.filter(r=>r.sec===s.id);
+      const rows=dm.filter(r=>r.sec===s.id);
       const box=document.createElement('div'); box.className='sec'; const col=COLORS[s.id]; for(const k in col)box.style.setProperty('--'+k,col[k]); cont.appendChild(box);
       const collapsed=!!collapse[s.id];
       const h3=document.createElement('h3'); h3.innerHTML='<span class="secind">'+(collapsed?'▸':'▾')+'</span>'+s.title; h3.onclick=()=>{collapse[s.id]=!collapse[s.id];renderResumen();}; box.appendChild(h3);
@@ -5920,7 +5940,7 @@ const OPS = (function(){
   }
   function buildFilters(){
     const el=document.getElementById('ops-serie-ctrl'); el.innerHTML='';
-    const sub=rangeMapped.filter(r=>r.sec===serieSec);
+    const sub=rangeMapped.filter(r=>r.sec===serieSec && fuenteOk(r));
     const bd=document.createElement('div'); bd.className='filt';
     bd.innerHTML='<div class="filt-h">Desglosar por (combinable)</div>';
     const bdList=document.createElement('div'); bdList.className='filt-list';
@@ -5954,7 +5974,7 @@ const OPS = (function(){
     }
   }
   function filteredRows(){
-    return rangeMapped.filter(r=> r.sec===serieSec && FILT_DIMS.every(([k])=> !filters[k] || filters[k].has(gv(r,k))));
+    return rangeMapped.filter(r=> r.sec===serieSec && fuenteOk(r) && FILT_DIMS.every(([k])=> !filters[k] || filters[k].has(gv(r,k))));
   }
   function renderSerie(){
     const rows=filteredRows();
@@ -6006,6 +6026,7 @@ const OPS = (function(){
     if(fi&&to){ fi.min=to.min=minDate||''; fi.max=to.max=maxDate||''; fi.value=dateFrom||''; to.value=dateTo||''; }
     if(maxDate){ await loadDayRange(); }
     await loadRange();
+    buildFuenteBtns();
   }
   // ── Lista de operaciones del día ──
   const _esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -6132,7 +6153,7 @@ const OPS = (function(){
   }
   async function loadRange(){
     filters={rating:null,sector:null,empresa:null,anio:null};
-    let path='/market_ops?select=fecha,ticker,emisor,tipo,leg,jur,rating,sector,anio_vto,monto,tir,tna,outlier&order=fecha.asc';
+    let path='/market_ops?select=fecha,ticker,emisor,tipo,leg,jur,rating,sector,anio_vto,monto,tir,tna,outlier,fuente&order=fecha.asc';
     if(dateFrom) path+='&fecha=gte.'+dateFrom;
     if(dateTo) path+='&fecha=lte.'+dateTo;
     const rows=await qAll(path); rangeMapped=rows.map(mapRow);
