@@ -6298,8 +6298,13 @@ window.FCI = (function(){
     let out = [], off = 0;
     for(let guard=0; guard<60; guard++){           // tope de seguridad: 60k filas
       const sep = url.includes('?') ? '&' : '?';
-      const r = await fetch(url + sep + 'limit=' + PAGE + '&offset=' + off, opts);
-      if(!r.ok) break;
+      let r = null;
+      for(let att=0; att<3; att++){                 // reintenta la página ante fallo transitorio (red/timeout)
+        try{ const rr = await fetch(url + sep + 'limit=' + PAGE + '&offset=' + off, opts); if(rr.ok){ r=rr; break; } }
+        catch(e){}
+        await new Promise(res=>setTimeout(res, 350*(att+1)));
+      }
+      if(!r) throw new Error('pagedFetch sin respuesta tras reintentos: '+url);  // que el caller decida (no partial silencioso)
       const chunk = await r.json();
       if(!Array.isArray(chunk)) return chunk;      // respuesta escalar: devolver tal cual
       out = out.concat(chunk);
@@ -6310,6 +6315,15 @@ window.FCI = (function(){
   }
   async function rpc(fn,args){ try{ return await pagedFetch(REST+'/rpc/'+fn,{method:'POST',headers:H,body:JSON.stringify(args||{})}); }catch(e){ console.error('[FCI]',e); return []; } }
   async function sel(p){ try{ return await pagedFetch(REST+p,{headers:H}); }catch(e){ return []; } }
+  // RPC crítica: reintenta si vuelve vacía (un vacío en fechas/fondos/bonos siempre es un fallo, no un dato real).
+  async function rpcCore(fn){
+    for(let i=0;i<3;i++){
+      const r=await rpc(fn,{});
+      if(Array.isArray(r)?r.length:r) return r;
+      await new Promise(res=>setTimeout(res, 500*(i+1)));
+    }
+    return await rpc(fn,{});
+  }
 
   const NF = new Intl.NumberFormat('es-AR',{maximumFractionDigits:1});
   function compact(v,pref){ if(v==null||isNaN(v))return'—'; const a=Math.abs(v); let o;
@@ -6440,17 +6454,31 @@ window.FCI = (function(){
     draw();
   }
 
-  async function init(){
-    if(inited) return; inited=true;
-    fechas = (await rpc('fci_fechas',{})).map(x=>String(x).slice(0,10));
-    fondos = await rpc('fci_fondos',{});
-    bonos  = await rpc('fci_bonos',{});
-    (await sel('/fci_dolar?select=fecha,venta')).forEach(d=>dolar[String(d.fecha).slice(0,10)]=d.venta);
-    bonos.forEach(b=>bmap[b.activo]={tipo:b.tipo,moneda:b.moneda});
+  let _fciBound=false;
+  async function init(){ if(inited) return; inited=true; await loadData(); }
+  function retryLoad(){ loadData(); }   // reintenta la carga sin re-inicializar (usado por el botón "Reintentar")
+
+  async function loadData(){
+    $('fci-f-ger').innerHTML='<option value="">(cargando…)</option>'; $('fci-f-fondo').innerHTML='';
+    fechas = (await rpcCore('fci_fechas')).map(x=>String(x).slice(0,10));
+    fondos = await rpcCore('fci_fondos');
+    bonos  = await rpcCore('fci_bonos');
+    dolar={}; (await sel('/fci_dolar?select=fecha,venta')).forEach(d=>dolar[String(d.fecha).slice(0,10)]=d.venta);
+    bmap={}; bonos.forEach(b=>bmap[b.activo]={tipo:b.tipo,moneda:b.moneda});
     gerentes = [...new Set(fondos.map(f=>f.gerente).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     tipos    = [...new Set(bonos.map(b=>b.tipo).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     monedas  = [...new Set(bonos.map(b=>b.moneda).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-    if(!fechas.length){ $('fci-bono-out').innerHTML='<div class="empty">Sin datos de FCI en Supabase todavía. Corré el sync (python -m src.supabase_sync) y el SQL fci_supabase.sql.</div>'; return; }
+    if(!fechas.length || !fondos.length){   // fallo de carga (red/Supabase): avisar y ofrecer reintento
+      const msg='<div class="empty">No se pudieron cargar los datos de FCI (error de red o Supabase). '
+        +'<button class="fci-go" style="margin-left:8px" onclick="FCI.retryLoad()">Reintentar</button></div>';
+      $('fci-bono-out').innerHTML=msg; $('fci-fondo-out').innerHTML=msg;
+      $('fci-f-ger').innerHTML='<option value="">(error — reintentá)</option>'; $('fci-f-fondo').innerHTML='';
+      return;
+    }
+    buildUI();
+  }
+
+  function buildUI(){
     $('fci-usd').checked = usd;
     const opt=f=>`<option>${f}</option>`;
     $('fci-ini').innerHTML=fechas.map(opt).join(''); $('fci-fin').innerHTML=fechas.map(opt).join('');
@@ -6465,8 +6493,8 @@ window.FCI = (function(){
     msFTipo= mksel($('fci-f-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:refreshFondoFilters});
     msFVenc= mksel($('fci-f-venc'), [], {placeholder:'(todos los años)', onChange:()=>{ if(_lastFondo) renderFondo(_lastFondo); }});
     $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
-    // Auto-run al cambiar cualquier select de filtro (fechas afectan a la pestaña activa).
-    ['fci-ini','fci-fin','fci-agr','fci-f-ger','fci-f-fondo'].forEach(id=>$(id).addEventListener('change', autoRun));
+    // Auto-run al cambiar cualquier select de filtro (una sola vez para no duplicar listeners en reintentos).
+    if(!_fciBound){ ['fci-ini','fci-fin','fci-agr','fci-f-ger','fci-f-fondo'].forEach(id=>$(id).addEventListener('change', autoRun)); _fciBound=true; }
     rebuildFondoList();
     const def = tipos.includes('Soberano ARS') ? 'Soberano ARS' : tipos[0];
     if(def){ msTipo.set([def]); }
@@ -6614,7 +6642,7 @@ window.FCI = (function(){
   }
   function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
 
-  return { init, setTab, toggleUsd, setChartMode, rebuildFondoList, runBono, runFondo };
+  return { init, setTab, toggleUsd, setChartMode, rebuildFondoList, runBono, runFondo, retryLoad };
 })();
 </script>
 
