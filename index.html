@@ -1666,13 +1666,22 @@ function buildCFEntry(b, sig){
             memoTir:new Map() };                        // recalcTIR:       precioUSD -> {tir,tna,dur}
   if(e.expired || isNaN(vd)) return e;
   const hasAmortSched=(b.amort==='cuotas'&&Array.isArray(b.amortSched)&&b.amortSched.length);
-  // El cronograma se arma también para bonos CUPÓN 0 QUE AMORTIZAN. Antes sólo entraban los
-  // de cupón>0, y los cupón-0 amortizantes caían en la rama ZC naive (100/precio) de abajo
-  // → TIR disparatadas (GN37O 363%, LUC4O 136.626%). calcFromPanel (la calculadora) siempre
-  // usó el cronograma; esto alinea la tabla y el reporte con la calculadora.
-  if(hasAmortSched || (b.cupon>0 && (b.fecha_inicio_int || per===0))){
+  // El cronograma se arma para TODO bono con cupón (o que amortiza). Antes se exigía además
+  // fecha_inicio_int; sin ella, los bonos con cupón caían en la aproximación de abajo y daban
+  // una TNA distinta a la calculadora (ej. TTCEO 4.58% en la tabla vs 5.00% en la calculadora).
+  // También entran los cupón-0 que amortizan (si no, iban a la rama ZC naive → GN37O 363%).
+  if(hasAmortSched || b.cupon>0){
     const emD=b.fecha_emision?new Date(b.fecha_emision+'T12:00:00'):new Date(today);
-    const iiD=b.fecha_inicio_int?new Date(b.fecha_inicio_int+'T12:00:00'):new Date(vd);
+    // Primer pago de interés: si no está cargado, se deriva desde el vencimiento hacia atrás por
+    // periodicidad (misma lógica que calcFromPanel), en vez de asumir un único cupón al final.
+    let iiD;
+    if(b.fecha_inicio_int){ iiD=new Date(b.fecha_inicio_int+'T12:00:00'); }
+    else if(per===0){ iiD=new Date(vd); }
+    else {
+      iiD=new Date(vd);
+      while(iiD>emD){ const prev=new Date(iiD); prev.setMonth(prev.getMonth()-per); if(prev<=emD) break; iiD=prev; }
+      if(iiD<=emD){ iiD=new Date(emD); iiD.setMonth(iiD.getMonth()+per); }
+    }
     const amortSched=hasAmortSched
       ? b.amortSched.map(a=>({fecha:new Date(a.fecha+'T12:00:00'),pct:a.pct}))
       : [{fecha:vd,pct:100}];
