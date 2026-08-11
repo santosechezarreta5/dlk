@@ -6653,12 +6653,60 @@ body.byma-mode #view-byma{display:block}
 #view-byma .byma-actions{margin:12px 0;display:flex;gap:10px}
 #view-byma .byma-add,#view-byma .byma-clear{font:inherit;font-size:.72rem;font-weight:600;padding:7px 15px;border-radius:6px;cursor:pointer;border:1px solid #2E75B6;background:#1F3864;color:#fff}
 #view-byma .byma-clear{background:#11243f;border-color:#1e2d42;color:#cfe0f5}
+/* Buscador de bonos (colapsable) */
+#view-byma .byma-search{margin:0 0 16px;border:1px solid #1e2d42;border-radius:8px;background:#0a0f18;max-width:1100px}
+#view-byma .byma-srch-head{display:flex;align-items:center;gap:9px;padding:9px 13px;cursor:pointer;user-select:none}
+#view-byma .byma-srch-head:hover{background:#0f1725;border-radius:8px}
+#view-byma .byma-srch-title{font-weight:700;font-size:.8rem;color:#cfe0f5}
+#view-byma .byma-srch-caret{color:#60a5fa;font-size:.7rem;display:inline-block;transition:transform .15s}
+#view-byma .byma-search.open .byma-srch-caret{transform:rotate(90deg)}
+#view-byma .byma-srch-count{margin-left:auto;font-size:.66rem;color:#94a3b8}
+#view-byma .byma-srch-body{display:none;padding:2px 13px 13px}
+#view-byma .byma-search.open .byma-srch-body{display:block}
+#view-byma .byma-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:4px 0 11px}
+#view-byma .byma-filters label{display:flex;flex-direction:column;gap:3px;font-size:.56rem;color:#7f92ab;text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+#view-byma .byma-filters select{font:inherit;font-size:.72rem;font-weight:400;text-transform:none;letter-spacing:0;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:5px;padding:5px 8px;min-width:118px}
+#view-byma .byma-clearf{font:inherit;font-size:.7rem;font-weight:600;padding:6px 12px;border-radius:5px;cursor:pointer;border:1px solid #1e2d42;background:#11243f;color:#cfe0f5}
+#view-byma .byma-srch-tblwrap{max-height:300px;overflow-y:auto;border:1px solid #1e2d42;border-radius:6px}
+#view-byma table.byma-srch-tbl{border-collapse:separate;border-spacing:0;font-size:.68rem;width:100%;background:#0c1018;color:#e2e8f0}
+#view-byma table.byma-srch-tbl th{position:sticky;top:0;background:#142235;color:#cfe0f5;font-weight:600;text-align:left;padding:6px 9px;border-bottom:1px solid #1e2d42;white-space:nowrap;z-index:1}
+#view-byma table.byma-srch-tbl td{padding:4px 9px;border-bottom:1px solid #16233a;white-space:nowrap}
+#view-byma table.byma-srch-tbl td:nth-child(3){max-width:170px;overflow:hidden;text-overflow:ellipsis}
+#view-byma table.byma-srch-tbl tbody tr:hover td{background:rgba(255,255,255,.04)}
+#view-byma .byma-addbtn{font:inherit;font-size:.72rem;font-weight:700;line-height:1;padding:2px 8px;border-radius:4px;cursor:pointer;border:1px solid #2E75B6;background:#1F3864;color:#fff}
+#view-byma .byma-addbtn:hover{background:#2E75B6}
+#view-byma .byma-srch-empty{color:#94a3b8;font-style:italic;padding:10px}
 </style>
 
 <div id="view-byma">
   <div class="byma-h">🧾 Operaciones BYMA · Precio por TNA objetivo</div>
   <div class="byma-fxbar" id="byma-fx"></div>
   <div class="byma-note">Agregá los tickers, elegí la moneda de cotización y cargá la TNA objetivo: el precio se calcula con el cronograma real del bono (mismo cálculo que la calculadora). El vencimiento se autocompleta desde el catálogo. Los DL se pesifican por A3500; USD MEP/CABLE dividen ese precio por el TC correspondiente.</div>
+
+  <div class="byma-search" id="byma-search">
+    <div class="byma-srch-head" onclick="BYMAOPS.toggleSearch()">
+      <span class="byma-srch-caret">▸</span>
+      <span class="byma-srch-title">🔎 Buscador de bonos</span>
+      <span class="byma-srch-count" id="bs-count"></span>
+    </div>
+    <div class="byma-srch-body">
+      <div class="byma-filters">
+        <label>Año Vto<select id="bs-anio" onchange="BYMAOPS.applyFilters()"></select></label>
+        <label>Rating<select id="bs-rating" onchange="BYMAOPS.applyFilters()"></select></label>
+        <label>Sector<select id="bs-sector" onchange="BYMAOPS.applyFilters()"></select></label>
+        <label>Legislación<select id="bs-leg" onchange="BYMAOPS.applyFilters()"></select></label>
+        <label>Jurisdicción<select id="bs-jur" onchange="BYMAOPS.applyFilters()"></select></label>
+        <button class="byma-clearf" onclick="BYMAOPS.clearFilters()">Limpiar filtros</button>
+      </div>
+      <div class="byma-srch-tblwrap">
+        <table class="byma-srch-tbl">
+          <thead><tr><th></th><th>Ticker</th><th>Emisor</th><th>Vto</th><th>Rating</th><th>Sector</th><th>Leg</th><th>Jur</th><th>Mon</th></tr></thead>
+          <tbody id="bs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <div class="byma-tbl-wrap">
     <table class="byma-tbl">
       <thead><tr>
@@ -6730,6 +6778,70 @@ window.BYMAOPS = (function(){
     if(mon==='USD MEP')   return t.mep?   ars/t.mep   : null;
     if(mon==='USD CABLE') return t.cable? ars/t.cable : null;
     return null;
+  }
+
+  // ── Buscador de bonos (filtros por Año Vto / Rating / Sector / Legislacion / Jurisdiccion) ──
+  const LS_SF='byma_search_filters_v1', LS_SO='byma_search_open';
+  let sf={anio:'',rating:'',sector:'',leg:'',jur:''};
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function distinct(fn){ return [...new Set((bonds||[]).map(fn).filter(v=>v!=null&&v!==''))]; }
+  function fillSel(id, opts){ const s=$(id); if(!s) return; const cur=sf[id.replace('bs-','')]||'';
+    s.innerHTML='<option value="">Todos</option>'+opts.map(o=>'<option value="'+esc(o)+'">'+esc(o)+'</option>').join('');
+    s.value=cur; }
+  function buildFilterOptions(){
+    if(typeof bonds==='undefined'||!Array.isArray(bonds)) return;
+    fillSel('bs-anio',   distinct(b=>b.venc?String(b.venc).slice(0,4):null).sort());
+    const ratP=new Set(distinct(b=>b.rating));
+    const rat=(typeof RATING_OPTIONS!=='undefined'?RATING_OPTIONS:[]).filter(r=>ratP.has(r));
+    ratP.forEach(r=>{ if(!rat.includes(r)) rat.push(r); });
+    fillSel('bs-rating', rat);
+    fillSel('bs-sector', distinct(b=>b.sector).sort((a,b)=>a.localeCompare(b,'es')));
+    fillSel('bs-leg',    distinct(b=>b.leg).sort((a,b)=>a.localeCompare(b,'es')));
+    fillSel('bs-jur',    distinct(b=>b.jur).sort((a,b)=>a.localeCompare(b,'es')));
+  }
+  function matchFilters(b){
+    if(sf.anio   && String(b.venc||'').slice(0,4)!==sf.anio)   return false;
+    if(sf.rating && (b.rating||'')!==sf.rating)                return false;
+    if(sf.sector && (b.sector||'')!==sf.sector)                return false;
+    if(sf.leg    && (b.leg||'')!==sf.leg)                      return false;
+    if(sf.jur    && (b.jur||'')!==sf.jur)                      return false;
+    return true;
+  }
+  function renderSearchResults(list){
+    const tb=$('bs-tbody'), cnt=$('bs-count'); if(!tb) return;
+    if(cnt) cnt.textContent=list.length+' bono'+(list.length===1?'':'s');
+    if(!list.length){ tb.innerHTML='<tr><td colspan="9" class="byma-srch-empty">Sin bonos que cumplan los filtros.</td></tr>'; return; }
+    tb.innerHTML='';
+    list.forEach(b=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td><button class="byma-addbtn" title="Agregar a la tabla de cálculo">+</button></td>'
+        +'<td>'+esc(b.ticker)+'</td><td title="'+esc(b.emisor||'')+'">'+esc(b.emisor||'')+'</td><td>'+fmtDate(b.venc)+'</td>'
+        +'<td>'+esc(b.rating||'—')+'</td><td>'+esc(b.sector||'—')+'</td>'
+        +'<td>'+esc(b.leg||'—')+'</td><td>'+esc(b.jur||'—')+'</td><td>'+esc(b.moneda||'')+'</td>';
+      tr.querySelector('button').addEventListener('click',()=>addFromSearch(b.ticker));
+      tb.appendChild(tr);
+    });
+  }
+  function applyFilters(){
+    ['anio','rating','sector','leg','jur'].forEach(k=>{ const s=$('bs-'+k); if(s) sf[k]=s.value; });
+    const list=(bonds||[]).filter(matchFilters)
+      .sort((a,b)=>(a.venc||'').localeCompare(b.venc||'')||a.ticker.localeCompare(b.ticker));
+    renderSearchResults(list);
+    try{ localStorage.setItem(LS_SF, JSON.stringify(sf)); }catch(_){}
+  }
+  function clearFilters(){ ['bs-anio','bs-rating','bs-sector','bs-leg','bs-jur'].forEach(id=>{ const s=$(id); if(s) s.value=''; }); applyFilters(); }
+  function toggleSearch(force){ const el=$('byma-search'); if(!el) return;
+    const open = (force===undefined) ? !el.classList.contains('open') : !!force;
+    el.classList.toggle('open', open);
+    try{ localStorage.setItem(LS_SO, open?'1':'0'); }catch(_){} }
+  function addFromSearch(ticker){ const b=findBond(ticker); if(!b) return;
+    const r={ticker:ticker, moneda:defaultMoneda(b), tna:null};
+    rows.push(r); const tr=buildRow(r); $('byma-tbody').appendChild(tr); save();
+    tr._refs.tna.focus(); tr.scrollIntoView({block:'nearest'}); }
+  function showSearch(){
+    try{ const s=JSON.parse(localStorage.getItem(LS_SF)); if(s) Object.assign(sf,s); }catch(_){}
+    buildFilterOptions(); applyFilters();
+    toggleSearch((localStorage.getItem(LS_SO)||'1')==='1');   // por defecto abierto la 1ra vez
   }
 
   // ── VWAP operado (precio promedio ponderado por monto) de las ultimas 2 semanas ──
@@ -6895,10 +7007,10 @@ window.BYMAOPS = (function(){
   function recomputeAll(){ const tb=$('byma-tbody'); if(!tb) return; [...tb.children].forEach(tr=>{ if(tr._data&&tr._refs) recompute(tr._data,tr); }); }
 
   function init(){ if(inited) return; inited=true; load(); buildDatalist(); renderAll(); }
-  function show(){ init(); buildDatalist(); updateFXBar(); recomputeAll(); refreshVwapAll(); }
+  function show(){ init(); buildDatalist(); showSearch(); updateFXBar(); recomputeAll(); refreshVwapAll(); }
   function onFX(){ if(!inited) return; updateFXBar(); recomputeAll(); refreshVwapAll(); }
 
-  return { show, onFX, addRow, clearAll, sort };
+  return { show, onFX, addRow, clearAll, sort, toggleSearch, applyFilters, clearFilters };
 })();
 </script>
 </body>
