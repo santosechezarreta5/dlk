@@ -879,12 +879,13 @@ window.SUPABASE_CONFIG = {
           <div class="result-item"><div class="result-label">Convexidad</div><div class="result-value" id="res-cvx">—</div><div class="result-sub"></div></div>
           <div class="result-item"><div class="result-label">Yield to Worst</div><div class="result-value c-amber" id="res-ytc">—</div><div class="result-sub" id="res-ytc-sub"></div></div>
         </div>
-        <div id="call-yields-block" style="display:none;margin-top:14px">
+        <div id="call-yields-block" style="display:none;margin-top:14px;overflow-x:auto">
           <div style="font-size:.6rem;color:var(--muted2);font-weight:600;margin-bottom:5px;letter-spacing:.03em">RENDIMIENTOS SEGÚN ESCENARIO</div>
           <table class="amort-table" style="font-size:.62rem">
             <thead><tr><th>Escenario</th><th>Fecha</th><th>Precio</th><th>TNA</th><th>TIR</th></tr></thead>
             <tbody id="call-yields-tbody"></tbody>
           </table>
+          <div id="call-yields-note" style="display:none;font-size:.52rem;color:var(--muted2);margin-top:5px;line-height:1.3"></div>
         </div>
       </div>
       <div class="calc-section" id="cf-section" style="display:none">
@@ -1725,15 +1726,15 @@ function buildCFEntry(b, sig){
         : Math.round(per/12*365);
     }
   }
-  // Cronogramas de call (YTC): uno por condición futura de callSched (rescate al precio de call).
+  // Cronogramas de call (YTC): uno por condición vigente de callSched (rescate al precio de call).
+  // La ventana de una condición sigue "abierta" aunque su fecha de inicio ya haya pasado: en ese caso
+  // el rescate más temprano posible es el próximo cupón (ver activeCallScenarios).
   if(Array.isArray(b.callSched) && b.callSched.length){
-    b.callSched.forEach(c=>{
-      const cd=new Date(String(c.desde).substring(0,10)+'T12:00:00');
-      const pr=+c.precio;
-      if(isNaN(cd) || !(pr>0)) return;
-      if(cd<sett || cd>vd) return;                       // ya pasó o posterior al vto → no aplica
-      const r=buildCallCF(emD,iiD,cd,b.cupon,per,baseD,amortSchedD,b.devengo,pr,sett);
-      if(r && r.cf && r.cf.length) e.callCFs.push({desde:c.desde, precio:pr, callDate:cd, cf:r.cf, diasPeriodo:r.diasPeriodo});
+    const couponDates = buildSchedule(emD,iiD,vd,b.cupon,per,baseD,amortSchedD,b.devengo).map(x=>x.fecha);
+    activeCallScenarios(b.callSched, couponDates, sett, vd).forEach(sc=>{
+      const r=buildCallCF(emD,iiD,sc.callDate,b.cupon,per,baseD,amortSchedD,b.devengo,sc.precio,sett);
+      if(r && r.cf && r.cf.length) e.callCFs.push({desde:sc.desde, precio:sc.precio, callDate:sc.callDate,
+                                                   callDateStr:sc.callDateStr, cf:r.cf, diasPeriodo:r.diasPeriodo});
     });
   }
   return e;
@@ -2230,7 +2231,7 @@ function _setYTW(b, e, pPrice, memo){
     e.callCFs.forEach(cc=>{
       const t=calcTIR(cc.cf, pPrice); if(t==null) return;
       const t2=parseFloat(t.toFixed(2));
-      if(t2 < wt){ wt=t2; wn=tirToTNA(t, e.per, cc.diasPeriodo); kind='call'; desde=cc.desde; precio=cc.precio; }
+      if(t2 < wt){ wt=t2; wn=tirToTNA(t, e.per, cc.diasPeriodo); kind='call'; desde=cc.callDateStr||cc.desde; precio=cc.precio; }
     });
   }
   b.ytwTir=wt; b.ytwTna=wn; b.ytwKind=kind; b.ytwDesde=desde; b.ytwPrecio=precio; b.ytw=wn;
@@ -3283,6 +3284,40 @@ function generateScheduleAll(emDate,iiDate,vcDate,cupon,per,base,amortSched,tasa
     .map(x => ({...x, isPast: x.fecha.getTime() < today.getTime()}));
 }
 
+// ── Escenarios de call vigentes ────────────────────────────────────────────────
+// Para cada condición de `callSched` (ordenadas por fecha) devuelve la fecha de rescate más temprana
+// posible de hoy en adelante:
+//   · ventana futura (desde > settlement) → la fecha declarada `desde`.
+//   · ventana YA abierta (desde <= settlement) → el próximo cupón posterior al settlement dentro de esa
+//     ventana (los emisores rescatan en fechas de pago; ancla evita horizontes de ~0 días). Si no queda
+//     ningún cupón antes del vto, la condición se omite (no habría call previo al vencimiento).
+// Descarta condiciones cuya ventana ya fue superada por una condición posterior (settlement ≥ fin de ventana).
+function activeCallScenarios(callSched, couponDates, sett, vd){
+  if(!Array.isArray(callSched) || !callSched.length) return [];
+  const cs = callSched
+    .map(c=>({ d:new Date(String(c.desde).substring(0,10)+'T12:00:00'), precio:+c.precio, raw:String(c.desde).substring(0,10) }))
+    .filter(c=>!isNaN(c.d) && c.precio>0)
+    .sort((a,b)=>a.d-b.d);
+  const fut = (couponDates||[]).filter(f=>(f instanceof Date) && f>sett && f<vd).sort((a,b)=>a-b);
+  const out=[];
+  for(let i=0;i<cs.length;i++){
+    const cur=cs[i];
+    const winEnd = (i+1<cs.length) ? cs[i+1].d : vd;      // fin de la ventana de esta condición
+    if(sett >= winEnd) continue;                          // ventana ya superada por una condición posterior
+    let callDate;
+    if(cur.d > sett){
+      callDate = cur.d;                                   // ventana futura: la fecha declarada
+    } else {
+      callDate = fut.find(f=>f<winEnd);                   // ventana abierta: próximo cupón dentro de la ventana
+      if(!callDate) continue;                             // sin cupón antes del vto → sin call previo
+    }
+    if(!callDate || callDate>=vd) continue;
+    out.push({ desde:cur.raw, precio:cur.precio, callDate:new Date(callDate),
+               callDateStr:callDate.toISOString().slice(0,10), open:cur.d<=sett });
+  }
+  return out;
+}
+
 // ── Cashflow para Yield to Call ────────────────────────────────────────────────
 // Asume que el emisor rescata el bono en `callDate` al precio de call `callPrice` (%VN).
 // Reusa buildSchedule con vcDate = callDate (cupones hasta el call + stub de interés corrido a esa
@@ -3899,33 +3934,42 @@ function renderCallYields(callRows, callable, ctx){
   if(!ytcCell) return;
   const fmtD=d=>{ if(!d) return '—'; const s=(d instanceof Date)?d.toISOString().slice(0,10):String(d).slice(0,10);
     const p=s.split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:s; };
-  // Escenarios: YTM (a vencimiento) + una YTC por condición futura de call.
-  const scen=[{kind:'YTM',label:'A vencimiento (YTM)',fecha:ctx.vcD,precio:null,tir:ctx.ytmTir,tna:ctx.ytmTna}];
-  (callRows||[]).forEach(c=>{
-    const cd=new Date(String(c.desde).slice(0,10)+'T12:00:00');
-    if(isNaN(cd)||cd<ctx.sett||cd>ctx.vcD) return;
-    const r=buildCallCF(ctx.emD,ctx.iiD,cd,ctx.cupon,ctx.per,ctx.base,ctx.amortS,ctx.devengo,+c.precio,ctx.sett);
+  // Escenarios: YTM (a vencimiento) + una YTC por condición vigente de call.
+  const scen=[{kind:'YTM',label:'A vencimiento',fecha:ctx.vcD,precio:null,tir:ctx.ytmTir,tna:ctx.ytmTna,open:false}];
+  const couponDates = buildSchedule(ctx.emD,ctx.iiD,ctx.vcD,ctx.cupon,ctx.per,ctx.base,ctx.amortS,ctx.devengo).map(x=>x.fecha);
+  activeCallScenarios(callRows||[], couponDates, ctx.sett, ctx.vcD).forEach(sc=>{
+    const r=buildCallCF(ctx.emD,ctx.iiD,sc.callDate,ctx.cupon,ctx.per,ctx.base,ctx.amortS,ctx.devengo,sc.precio,ctx.sett);
     if(!r||!r.cf||!r.cf.length) return;
     const t=calcTIR(r.cf,ctx.precioUSD); if(t==null) return;
-    scen.push({kind:'YTC',label:'Call',fecha:cd,precio:+c.precio,tir:t,tna:tirToTNA(t,ctx.per,r.diasPeriodo)});
+    scen.push({kind:'YTC',label:'Call',fecha:sc.callDate,precio:sc.precio,tir:t,tna:tirToTNA(t,ctx.per,r.diasPeriodo),open:sc.open});
   });
   // Yield to Worst = escenario de menor TIR (peor para el inversor).
   let worst=scen[0]; scen.forEach(s=>{ if(s.tir!=null && (worst.tir==null||s.tir<worst.tir)) worst=s; });
   ytcCell.textContent = (worst.tna!=null)?worst.tna.toFixed(2)+'%':'—';
-  if(ytcSub) ytcSub.textContent = worst.kind==='YTM' ? 'a vencimiento' : ('call '+fmtD(worst.fecha)+' @ '+worst.precio);
+  if(ytcSub) ytcSub.textContent = worst.kind==='YTM' ? 'a vencimiento' : ('call '+fmtD(worst.fecha)+' @ '+(worst.precio!=null?worst.precio.toFixed(2):'100'));
   // Desglose sólo si hay al menos una YTC válida.
   if(!tb || scen.length<=1){ if(block) block.style.display='none'; if(tb) tb.innerHTML=''; return; }
   tb.innerHTML='';
+  let anyOpen=false;
   scen.forEach(s=>{
     const isW=(s===worst), tr=document.createElement('tr');
-    if(isW) tr.style.cssText='background:rgba(251,191,36,.10);font-weight:600';
-    tr.innerHTML=`<td>${s.label}${isW?' <span style="color:var(--amber)">◀ worst</span>':''}</td>`
-      +`<td>${fmtD(s.fecha)}</td>`
+    if(isW) tr.style.cssText='background:rgba(251,191,36,.10)';
+    const badge = isW ? '<span style="color:var(--amber);font-weight:700;font-size:.5rem;letter-spacing:.05em;border:1px solid var(--amber);border-radius:3px;padding:1px 4px;line-height:1">PEOR</span>' : '';
+    const star  = (s.kind==='YTC'&&s.open) ? '<span style="color:var(--muted2)"> *</span>' : '';
+    if(s.kind==='YTC'&&s.open) anyOpen=true;
+    tr.innerHTML=`<td style="padding-right:14px"><div style="display:flex;align-items:center;gap:6px;white-space:nowrap">`
+      +`<span style="${isW?'font-weight:600':''}">${s.label}</span>${badge}</div></td>`
+      +`<td style="white-space:nowrap">${fmtD(s.fecha)}${star}</td>`
       +`<td>${s.precio!=null?s.precio.toFixed(2):'100.00'}</td>`
       +`<td class="c-blue">${s.tna!=null?s.tna.toFixed(2)+'%':'—'}</td>`
       +`<td class="c-teal">${s.tir!=null?s.tir.toFixed(2)+'%':'—'}</td>`;
     tb.appendChild(tr);
   });
+  const noteEl=document.getElementById('call-yields-note');
+  if(noteEl){
+    if(anyOpen){ noteEl.textContent='* La ventana de call ya está abierta: se toma el próximo cupón como fecha de rescate más temprana posible.'; noteEl.style.display='block'; }
+    else { noteEl.style.display='none'; }
+  }
   if(block) block.style.display='block';
 }
 
