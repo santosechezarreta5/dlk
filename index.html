@@ -766,7 +766,7 @@ window.SUPABASE_CONFIG = {
           <div class="form-group"><label class="form-label">Inicio pago int.</label><input class="form-input panel-readonly" id="fi-inicio-int" type="date" readonly></div>
           <div class="form-group"><label class="form-label">Vencimiento</label><input class="form-input panel-readonly" id="fi-venc" type="date" readonly></div>
           <div class="form-group"><label class="form-label">Callable</label>
-            <select class="form-select panel-readonly" id="fi-callable" disabled><option value="No">No</option><option value="Si">Sí</option></select></div>
+            <select class="form-select panel-readonly" id="fi-callable" disabled onchange="toggleCallSection()"><option value="No">No</option><option value="Si">Sí</option></select></div>
           <div class="form-group"><label class="form-label">Legislación</label>
             <select class="form-select panel-readonly" id="fi-leg" disabled><option>Argentina</option><option>Nueva York</option><option>Inglaterra</option></select></div>
           <div class="form-group"><label class="form-label">Jurisdicción de pago</label>
@@ -853,6 +853,20 @@ window.SUPABASE_CONFIG = {
           <div id="amort-sum-readonly" style="font-size:.55rem;color:var(--muted2);margin-top:4px">Suma: 0%</div>
         </div>
       </div>
+      <div class="calc-section" id="section-call" style="display:none">
+        <div class="cst">Condiciones del Call</div>
+        <div style="font-size:.55rem;color:var(--muted2);margin-bottom:8px;line-height:1.5">
+          Desde qué fecha el emisor puede rescatar y a qué precio (%VN). Podés cargar varias condiciones; cada una rige hasta la siguiente (o el vencimiento). Se usan para Yield to Call / Worst.
+        </div>
+        <table class="amort-table">
+          <thead><tr><th>Callable desde</th><th>Precio (%VN)</th><th></th></tr></thead>
+          <tbody id="call-tbody"></tbody>
+        </table>
+        <div id="call-add-row" style="display:none;margin-top:5px;align-items:center;gap:7px">
+          <button class="btn-sm add" onclick="addCallRow()">+ Agregar condición</button>
+        </div>
+        <div id="call-empty-readonly" style="font-size:.55rem;color:var(--muted2);margin-top:4px">Sin condiciones cargadas.</div>
+      </div>
       <div class="calc-section" id="results-section" style="display:none">
         <div class="cst">Resultados</div>
         <div class="results-grid">
@@ -863,7 +877,14 @@ window.SUPABASE_CONFIG = {
           <div class="result-item"><div class="result-label">Cupón corrido</div><div class="result-value c-sky" id="res-cc">—</div><div class="result-sub" id="res-cc-sub"></div></div>
           <div class="result-item"><div class="result-label">Duration Mod.</div><div class="result-value c-ind" id="res-dm">—</div><div class="result-sub" id="res-dm-sub"></div></div>
           <div class="result-item"><div class="result-label">Convexidad</div><div class="result-value" id="res-cvx">—</div><div class="result-sub"></div></div>
-          <div class="result-item"><div class="result-label">Yield to Call</div><div class="result-value c-amber" id="res-ytc">—</div><div class="result-sub"></div></div>
+          <div class="result-item"><div class="result-label">Yield to Worst</div><div class="result-value c-amber" id="res-ytc">—</div><div class="result-sub" id="res-ytc-sub"></div></div>
+        </div>
+        <div id="call-yields-block" style="display:none;margin-top:14px">
+          <div style="font-size:.6rem;color:var(--muted2);font-weight:600;margin-bottom:5px;letter-spacing:.03em">RENDIMIENTOS SEGÚN ESCENARIO</div>
+          <table class="amort-table" style="font-size:.62rem">
+            <thead><tr><th>Escenario</th><th>Fecha</th><th>Precio</th><th>TNA</th><th>TIR</th></tr></thead>
+            <tbody id="call-yields-tbody"></tbody>
+          </table>
         </div>
       </div>
       <div class="calc-section" id="cf-section" style="display:none">
@@ -1260,6 +1281,7 @@ const Catalog = (() => {
   const isRemote = !!(cfg.url && cfg.anonKey && window.supabase);
   let client = null;
   let session = null;
+  let _hasCallSched = false;   // ¿existe la columna call_sched en la tabla? (se detecta en loadAll)
   const listeners = { auth:[], change:[] };
 
   if(isRemote){
@@ -1292,6 +1314,7 @@ const Catalog = (() => {
       moneda: r.moneda || 'DL',
       valor_residual: parseFloat(r.valor_residual)||1,
       amortSched: Array.isArray(r.amort_sched) ? r.amort_sched : [],
+      callSched: Array.isArray(r.call_sched) ? r.call_sched : [],
       isin: r.isin || ''
     };
   }
@@ -1320,6 +1343,11 @@ const Catalog = (() => {
       isin: b.isin || null
     };
   }
+  function bondToRowFull(b){
+    const row = bondToRow(b);
+    if(_hasCallSched) row.call_sched = b.callSched || [];   // sólo si la columna existe (deploy no-bloqueante)
+    return row;
+  }
 
   async function loadAll(){
     if(!isRemote || !client){
@@ -1328,6 +1356,7 @@ const Catalog = (() => {
     try {
       const { data, error } = await client.from('bonds').select('*').order('ticker');
       if(error){ console.error('[Catalog] loadAll error:', error); throw error; }
+      if(data && data.length) _hasCallSched = ('call_sched' in data[0]);   // detectar columna del call
       return (data||[]).map(rowToBond);
     } catch(e){
       console.warn('[Catalog] fallback a BASE_META por error:', e?.message);
@@ -1338,7 +1367,7 @@ const Catalog = (() => {
   async function upsert(bond){
     if(!isRemote || !client) return { ok:false, error:'Sin Supabase configurado' };
     if(!session) return { ok:false, error:'No estás logueado como admin' };
-    const row = bondToRow(bond);
+    const row = bondToRowFull(bond);
     const { data, error } = await client.from('bonds').upsert(row).select().single();
     if(error){ console.error('[Catalog] upsert error:', error); return {ok:false, error:error.message}; }
     return { ok:true, bond:rowToBond(data) };
@@ -1572,6 +1601,7 @@ async function reloadCatalog(opts){
     .map(m => ({
       ticker: m.ticker, ...m,
       amortSched: Array.isArray(m.amortSched) ? m.amortSched.map(a=>({...a})) : [],
+      callSched: Array.isArray(m.callSched) ? m.callSched.map(a=>({...a})) : [],
       precio: null, prevPrecio: null, vp: null, tir: null, tna: null, dur: null,
       vol: null, bid: null, ask: null, open: null, loaded: false,
       isUserBond: false
@@ -1648,8 +1678,10 @@ const _cfCache = new WeakMap();     // bond object -> entry
 function bondCFSig(b){
   const am = (b.amort==='cuotas' && Array.isArray(b.amortSched) && b.amortSched.length)
     ? b.amortSched.map(a=>a.fecha+':'+a.pct).join('|') : '';
+  const cs = (Array.isArray(b.callSched) && b.callSched.length)
+    ? b.callSched.map(c=>c.desde+':'+c.precio).join('|') : '';
   return [b.venc, b.fecha_emision||'', b.fecha_inicio_int||'', b.cupon, b.periodicidad,
-          b.base_dias||'', b.devengo||'', b.amort||'', am,
+          b.base_dias||'', b.devengo||'', b.amort||'', am, cs,
           _CF_EPOCH, dkey(new Date())].join('~');
 }
 
@@ -1661,31 +1693,30 @@ function buildCFEntry(b, sig){
   const e={ sig, sett, vd, per,
             yrs: Math.max(0.01,(vd-sett)/(365*24*3600*1000)),
             expired: vd<sett,                           // ≡ el `if(vd<sett) return;` de antes
-            cf:null, diasPeriodo:null,
+            cf:null, diasPeriodo:null, callCFs:[],       // callCFs: cronogramas de call (YTC), indep. del precio
             memoPx:new Map(),                           // calcTIRForPrice: precioUSD -> {tir,tna}
-            memoTir:new Map() };                        // recalcTIR:       precioUSD -> {tir,tna,dur}
+            memoTir:new Map() };                        // recalcTIR:       precioUSD -> {tir,tna,dur,ytw...}
   if(e.expired || isNaN(vd)) return e;
   const hasAmortSched=(b.amort==='cuotas'&&Array.isArray(b.amortSched)&&b.amortSched.length);
-  // El cronograma se arma para TODO bono con cupón (o que amortiza). Antes se exigía además
-  // fecha_inicio_int; sin ella, los bonos con cupón caían en la aproximación de abajo y daban
-  // una TNA distinta a la calculadora (ej. TTCEO 4.58% en la tabla vs 5.00% en la calculadora).
-  // También entran los cupón-0 que amortizan (si no, iban a la rama ZC naive → GN37O 363%).
+  const baseD=b.base_dias||'act365';
+  // Derivar emisión + primer pago de interés (misma lógica que calcFromPanel). Se usa para el
+  // cronograma a vencimiento Y para los cronogramas de call (que sólo cambian la fecha final).
+  const emD=b.fecha_emision?new Date(b.fecha_emision+'T12:00:00'):new Date(today);
+  let iiD;
+  if(b.fecha_inicio_int){ iiD=new Date(b.fecha_inicio_int+'T12:00:00'); }
+  else if(per===0){ iiD=new Date(vd); }
+  else {
+    iiD=new Date(vd);
+    while(iiD>emD){ const prev=new Date(iiD); prev.setMonth(prev.getMonth()-per); if(prev<=emD) break; iiD=prev; }
+    if(iiD<=emD){ iiD=new Date(emD); iiD.setMonth(iiD.getMonth()+per); }
+  }
+  const amortSchedD=hasAmortSched
+    ? b.amortSched.map(a=>({fecha:new Date(a.fecha+'T12:00:00'),pct:a.pct}))
+    : [{fecha:vd,pct:100}];
+  // Cronograma a vencimiento (YTM): se arma para TODO bono con cupón (o que amortiza). Los cupón-0
+  // bullet usan la rama ZC exacta de recalcTIR/calcTIRForPrice (si no, daban TIR disparatadas).
   if(hasAmortSched || b.cupon>0){
-    const emD=b.fecha_emision?new Date(b.fecha_emision+'T12:00:00'):new Date(today);
-    // Primer pago de interés: si no está cargado, se deriva desde el vencimiento hacia atrás por
-    // periodicidad (misma lógica que calcFromPanel), en vez de asumir un único cupón al final.
-    let iiD;
-    if(b.fecha_inicio_int){ iiD=new Date(b.fecha_inicio_int+'T12:00:00'); }
-    else if(per===0){ iiD=new Date(vd); }
-    else {
-      iiD=new Date(vd);
-      while(iiD>emD){ const prev=new Date(iiD); prev.setMonth(prev.getMonth()-per); if(prev<=emD) break; iiD=prev; }
-      if(iiD<=emD){ iiD=new Date(emD); iiD.setMonth(iiD.getMonth()+per); }
-    }
-    const amortSched=hasAmortSched
-      ? b.amortSched.map(a=>({fecha:new Date(a.fecha+'T12:00:00'),pct:a.pct}))
-      : [{fecha:vd,pct:100}];
-    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,b.base_dias||'act365',amortSched,0,b.devengo);
+    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,baseD,amortSchedD,0,b.devengo);
     const cf=applySettlement(cfRaw,sett);
     if(cf.length>0){
       e.cf=cf;                                          // sólo lectura: nadie muta estos objetos
@@ -1693,6 +1724,17 @@ function buildCFEntry(b, sig){
         ? Math.round((cfRaw[cfRaw.length-1].fecha-cfRaw[cfRaw.length-2].fecha)/(24*3600*1000))
         : Math.round(per/12*365);
     }
+  }
+  // Cronogramas de call (YTC): uno por condición futura de callSched (rescate al precio de call).
+  if(Array.isArray(b.callSched) && b.callSched.length){
+    b.callSched.forEach(c=>{
+      const cd=new Date(String(c.desde).substring(0,10)+'T12:00:00');
+      const pr=+c.precio;
+      if(isNaN(cd) || !(pr>0)) return;
+      if(cd<sett || cd>vd) return;                       // ya pasó o posterior al vto → no aplica
+      const r=buildCallCF(emD,iiD,cd,b.cupon,per,baseD,amortSchedD,b.devengo,pr,sett);
+      if(r && r.cf && r.cf.length) e.callCFs.push({desde:c.desde, precio:pr, callDate:cd, cf:r.cf, diasPeriodo:r.diasPeriodo});
+    });
   }
   return e;
 }
@@ -2133,7 +2175,9 @@ function recalcTIR(b){
   // Memo: si este bono ya se calculó con este mismo precio, no se recalcula nada.
   if(e.memoTir.has(pPrice)){
     if(PERF) PERF.memoHit++;
-    const m=e.memoTir.get(pPrice); b.tir=m.tir; b.tna=m.tna; b.dur=m.dur; return;
+    const m=e.memoTir.get(pPrice); b.tir=m.tir; b.tna=m.tna; b.dur=m.dur;
+    b.ytwTir=m.ytwTir; b.ytwTna=m.ytwTna; b.ytwKind=m.ytwKind; b.ytwDesde=m.ytwDesde; b.ytwPrecio=m.ytwPrecio; b.ytw=m.ytwTna;
+    return;
   }
   if(PERF) PERF.memoMiss++;
   const sett=e.sett, vd=e.vd, per=e.per, yrs=e.yrs;
@@ -2148,7 +2192,7 @@ function recalcTIR(b){
         const r=tir/100;let sM=0;
         cf.forEach(x=>{const t=x.dias/365,vp=x.total/Math.pow(1+r,t);sM+=t*vp;});
         b.dur=parseFloat((sM/pPrice).toFixed(2));
-        _memoSet(e.memoTir,pPrice,{tir:b.tir,tna:b.tna,dur:b.dur});
+        _memoSet(e.memoTir,pPrice,_setYTW(b,e,pPrice,{tir:b.tir,tna:b.tna,dur:b.dur}));
         return;
       }
     }
@@ -2175,7 +2219,23 @@ function recalcTIR(b){
     b.tna=b.tir; // ZC: TNA = TIR
     b.dur=parseFloat((yrs*0.92).toFixed(2));
   }
-  _memoSet(e.memoTir,pPrice,{tir:b.tir,tna:b.tna,dur:b.dur});
+  _memoSet(e.memoTir,pPrice,_setYTW(b,e,pPrice,{tir:b.tir,tna:b.tna,dur:b.dur}));
+}
+
+// Yield to Worst: peor tasa (menor TIR) entre la YTM (b.tir ya calculada) y las YTC de cada condición
+// de call. Setea b.ytw* en el bono y agrega los campos al objeto de memo. Sin callCFs → YTW = YTM.
+function _setYTW(b, e, pPrice, memo){
+  let wt=b.tir, wn=b.tna, kind='YTM', desde=null, precio=null;
+  if(e.callCFs && e.callCFs.length && b.tir!=null){
+    e.callCFs.forEach(cc=>{
+      const t=calcTIR(cc.cf, pPrice); if(t==null) return;
+      const t2=parseFloat(t.toFixed(2));
+      if(t2 < wt){ wt=t2; wn=tirToTNA(t, e.per, cc.diasPeriodo); kind='call'; desde=cc.desde; precio=cc.precio; }
+    });
+  }
+  b.ytwTir=wt; b.ytwTna=wn; b.ytwKind=kind; b.ytwDesde=desde; b.ytwPrecio=precio; b.ytw=wn;
+  memo.ytwTir=wt; memo.ytwTna=wn; memo.ytwKind=kind; memo.ytwDesde=desde; memo.ytwPrecio=precio;
+  return memo;
 }
 
 // Guarda en el memo con una cota de memoria (sesiones largas con muchos precios distintos).
@@ -2644,6 +2704,10 @@ function render(){
       askTna:   tnaOnlyCell(askCalc, '#f87171'),
       tir:      tirCell,
       tna:      `<span class="tna-val" id="tna-${b.ticker}">${tnaDisp!=null?tnaDisp.toFixed(2)+'%':'—'}</span>`,
+      ytw:      (()=>{ if(b.ytwTna==null) return `<span style="color:var(--muted2)">—</span>`;
+                       const bind=(b.ytwKind==='call');
+                       const tip=bind?('Peor escenario: call '+(b.ytwDesde?b.ytwDesde.split('-').reverse().join('/'):'')+' @ '+b.ytwPrecio):'Peor escenario: a vencimiento (YTM)';
+                       return `<span title="${tip}" style="font-size:.72rem;font-weight:600;color:${bind?'var(--amber)':'var(--text2)'}">${b.ytwTna.toFixed(2)}%${bind?' ◂':''}</span>`; })(),
       dur:      `<span style="color:var(--text2)">${b.dur!=null?b.dur.toFixed(1)+'a':'—'}</span>`,
       emision:  `<span style="color:var(--text2);font-size:.62rem">${ef}</span>`,
       venc:     `<span style="color:var(--text2);font-size:.62rem">${vf}</span>`,
@@ -2679,6 +2743,7 @@ const COL_DEFS = [
   {id:'askTna',   label:'Offer TNA',    sort:'askTna',   width:80,  visible:true},
   {id:'tir',      label:'TIR %',        sort:'tir',      width:100, visible:false},
   {id:'tna',      label:'TNA %',        sort:'tna',      width:80,  visible:false},
+  {id:'ytw',      label:'YTW %',        sort:'ytw',      width:85,  visible:false},
   {id:'dur',      label:'Duration',     sort:'dur',      width:80,  visible:true},
   {id:'emision',  label:'Emisión',      sort:'fecha_emision', width:95, visible:false},
   {id:'venc',     label:'Vencimiento',  sort:'venc',     width:95,  visible:true},
@@ -3218,6 +3283,30 @@ function generateScheduleAll(emDate,iiDate,vcDate,cupon,per,base,amortSched,tasa
     .map(x => ({...x, isPast: x.fecha.getTime() < today.getTime()}));
 }
 
+// ── Cashflow para Yield to Call ────────────────────────────────────────────────
+// Asume que el emisor rescata el bono en `callDate` al precio de call `callPrice` (%VN).
+// Reusa buildSchedule con vcDate = callDate (cupones hasta el call + stub de interés corrido a esa
+// fecha) y reemplaza la redención final por callPrice% del capital vigente. Las amortizaciones
+// programadas ESTRICTAMENTE antes del call se pagan normal; las coincidentes/posteriores se
+// rescatan con el call. Convención estándar: precio de call limpio + interés corrido.
+function buildCallCF(emD, iiD, callDate, cupon, per, base, amortSched, devengo, callPrice, sett){
+  if(!callDate || isNaN(callDate)) return null;
+  const amortPre = (amortSched||[]).filter(a=>{
+    const af=(a.fecha instanceof Date)?a.fecha:new Date(String(a.fecha).substring(0,10)+'T12:00:00');
+    return af < callDate;
+  });
+  const raw = buildSchedule(emD, iiD, callDate, cupon, per, base, amortPre, devengo);
+  if(!raw || !raw.length) return null;
+  const flows = raw.map(x=>({...x}));
+  const last = flows[flows.length-1];
+  last.amort = parseFloat((callPrice/100 * last.capital).toFixed(6));   // rescate al precio de call
+  last.total = parseFloat((last.interes + last.amort).toFixed(6));
+  const diasPeriodo = raw.length>=2
+    ? Math.round((raw[raw.length-1].fecha - raw[raw.length-2].fecha)/(24*3600*1000))
+    : Math.round((per>0?per:6)/12*365);
+  return { cf: applySettlement(flows, sett), diasPeriodo };
+}
+
 /* ── TIR compatible con Excel TIR.NO.PER ──────────────────────────────
    Settlement = T+1 hábil (el comprador paga mañana).
    Los días de descuento se miden desde el settlement, no desde hoy.
@@ -3415,6 +3504,7 @@ function restoreState(tk, bond) {
     if(bond.amort==='cuotas'&&Array.isArray(bond.amortSched)&&bond.amortSched.length){
       bond.amortSched.forEach(a=>addAmortRow(a.fecha,a.pct));
     }
+    populateCallRows(bond);
     toggleCuponTipo(); toggleAmortTipo(); updateAmortSum();
     ['results-section','cf-section'].forEach(id => document.getElementById(id).style.display = 'none');
     if(typeof updateDLEquiv==='function') updateDLEquiv();
@@ -3463,6 +3553,7 @@ function restoreState(tk, bond) {
       ? bond.amortSched.map(a=>({f:a.fecha,p:a.pct}))
       : [];
   amortRowsToLoad.forEach(r => addAmortRow(r.f, r.p));
+  populateCallRows(bond);
   toggleCuponTipo(); toggleAmortTipo(); updateAmortSum();
   // Restaurar resultados
   if (s.resVisible) {
@@ -3766,6 +3857,78 @@ function updateAmortSum(){
   if(typeof scheduleRecalc==='function') scheduleRecalc();
 }
 
+// ── Editor de condiciones del call (fecha desde + precio %VN) ──
+function addCallRow(f='',p=''){
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td><input type="date" value="${f}" onchange="markDirty()"></td>`
+    +`<td><input type="number" step="0.01" placeholder="ej: 104.75" value="${p}" onchange="markDirty()"></td>`
+    +`<td><button class="btn-sm del" onclick="this.closest('tr').remove();updateCallEmpty();markDirty()">✕</button></td>`;
+  document.getElementById('call-tbody').appendChild(tr);
+  updateCallEmpty();
+}
+function readCallRows(){
+  const s=[];
+  document.querySelectorAll('#call-tbody tr').forEach(r=>{
+    const inp=r.querySelectorAll('input');
+    const fv=inp[0].value, pv=parseFloat(inp[1].value);
+    if(fv && !isNaN(pv) && pv>0) s.push({desde:fv, precio:pv});
+  });
+  s.sort((a,b)=> a.desde<b.desde?-1:a.desde>b.desde?1:0);   // ordenadas por fecha
+  return s;
+}
+function updateCallEmpty(){
+  const n=document.querySelectorAll('#call-tbody tr').length;
+  const el=document.getElementById('call-empty-readonly');
+  if(el) el.style.display = n>0 ? 'none' : 'block';
+}
+function toggleCallSection(){
+  const sec=document.getElementById('section-call'); if(!sec) return;
+  sec.style.display = (document.getElementById('fi-callable').value==='Si') ? 'block' : 'none';
+}
+function populateCallRows(bond){
+  const tb=document.getElementById('call-tbody'); if(!tb) return;
+  tb.innerHTML='';
+  if(bond && Array.isArray(bond.callSched)) bond.callSched.forEach(c=>addCallRow(c.desde, c.precio));
+  updateCallEmpty(); toggleCallSection();
+}
+
+// Calcula y muestra YTM / YTC(s) / YTW en el panel de resultados de la calculadora.
+function renderCallYields(callRows, callable, ctx){
+  const ytcCell=document.getElementById('res-ytc'), ytcSub=document.getElementById('res-ytc-sub');
+  const block=document.getElementById('call-yields-block'), tb=document.getElementById('call-yields-tbody');
+  if(!ytcCell) return;
+  const fmtD=d=>{ if(!d) return '—'; const s=(d instanceof Date)?d.toISOString().slice(0,10):String(d).slice(0,10);
+    const p=s.split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:s; };
+  // Escenarios: YTM (a vencimiento) + una YTC por condición futura de call.
+  const scen=[{kind:'YTM',label:'A vencimiento (YTM)',fecha:ctx.vcD,precio:null,tir:ctx.ytmTir,tna:ctx.ytmTna}];
+  (callRows||[]).forEach(c=>{
+    const cd=new Date(String(c.desde).slice(0,10)+'T12:00:00');
+    if(isNaN(cd)||cd<ctx.sett||cd>ctx.vcD) return;
+    const r=buildCallCF(ctx.emD,ctx.iiD,cd,ctx.cupon,ctx.per,ctx.base,ctx.amortS,ctx.devengo,+c.precio,ctx.sett);
+    if(!r||!r.cf||!r.cf.length) return;
+    const t=calcTIR(r.cf,ctx.precioUSD); if(t==null) return;
+    scen.push({kind:'YTC',label:'Call',fecha:cd,precio:+c.precio,tir:t,tna:tirToTNA(t,ctx.per,r.diasPeriodo)});
+  });
+  // Yield to Worst = escenario de menor TIR (peor para el inversor).
+  let worst=scen[0]; scen.forEach(s=>{ if(s.tir!=null && (worst.tir==null||s.tir<worst.tir)) worst=s; });
+  ytcCell.textContent = (worst.tna!=null)?worst.tna.toFixed(2)+'%':'—';
+  if(ytcSub) ytcSub.textContent = worst.kind==='YTM' ? 'a vencimiento' : ('call '+fmtD(worst.fecha)+' @ '+worst.precio);
+  // Desglose sólo si hay al menos una YTC válida.
+  if(!tb || scen.length<=1){ if(block) block.style.display='none'; if(tb) tb.innerHTML=''; return; }
+  tb.innerHTML='';
+  scen.forEach(s=>{
+    const isW=(s===worst), tr=document.createElement('tr');
+    if(isW) tr.style.cssText='background:rgba(251,191,36,.10);font-weight:600';
+    tr.innerHTML=`<td>${s.label}${isW?' <span style="color:var(--amber)">◀ worst</span>':''}</td>`
+      +`<td>${fmtD(s.fecha)}</td>`
+      +`<td>${s.precio!=null?s.precio.toFixed(2):'100.00'}</td>`
+      +`<td class="c-blue">${s.tna!=null?s.tna.toFixed(2)+'%':'—'}</td>`
+      +`<td class="c-teal">${s.tir!=null?s.tir.toFixed(2)+'%':'—'}</td>`;
+    tb.appendChild(tr);
+  });
+  if(block) block.style.display='block';
+}
+
 function readAmortSched(vd){
   if(document.getElementById('fi-amort-tipo').value==='bullet')return[{fecha:vd,pct:100}];
   const s=[];
@@ -3884,7 +4047,12 @@ function calcFromPanel(){
   document.getElementById('res-cc').textContent=cc.toFixed(4)+'%';document.getElementById('res-cc-sub').textContent='% VN devengado hoy';
   document.getElementById('res-dm').textContent=met.durMod.toFixed(2)+' a.';document.getElementById('res-dm-sub').textContent='Macaulay: '+met.durMac.toFixed(2)+' a.';
   document.getElementById('res-cvx').textContent=met.convex.toFixed(2);
-  document.getElementById('res-ytc').textContent=document.getElementById('fi-callable').value==='Si'?'Callable – ver YTC':'N/A';
+  // Yield to Maturity / Call / Worst (usa las condiciones cargadas en el editor del call)
+  renderCallYields(
+    (typeof readCallRows==='function'?readCallRows():[]),
+    document.getElementById('fi-callable').value==='Si',
+    {emD,iiD,vcD,cupon,per,base,amortS,devengo,sett,precioUSD,ytmTir:tir,ytmTna:tna}
+  );
   // Tabla de Flujos de Caja: TODOS los pagos del bono (pasados en gris).
   // Los pagos futuros se descuentan con la TIR; los pasados solo se listan.
   const r=tir/100, cfT=document.getElementById('cf-tbody');
@@ -4060,7 +4228,7 @@ function toggleEditMode(){
   if(isEditing){ saveBondChanges(); return; }
   // Save snapshot to allow cancel
   const b=bonds.find(x=>x.ticker===ACTIVE_TK);
-  if(b) _editModeSnapshot={...b, amortSched:(b.amortSched||[]).map(a=>({...a}))};
+  if(b) _editModeSnapshot={...b, amortSched:(b.amortSched||[]).map(a=>({...a})), callSched:(b.callSched||[]).map(a=>({...a}))};
   panel.classList.add('edit-mode');
   document.getElementById('btn-edit-mode').textContent='💾 Guardar';
   document.getElementById('btn-cancel-edit').style.display='inline-block';
@@ -4081,6 +4249,7 @@ function toggleEditMode(){
   });
   document.getElementById('amort-add-row').style.display='flex';
   document.getElementById('amort-sum-readonly').style.display='none';
+  const callAdd=document.getElementById('call-add-row'); if(callAdd) callAdd.style.display='flex';
   const genWrap = document.getElementById('amort-gen-wrap');
   if(genWrap) genWrap.style.display='block';
   // Pre-cargar fecha de inicio del generador con el inicio_int del bono
@@ -4122,6 +4291,7 @@ function exitEditMode(){
   document.getElementById('fi-tasa-base').disabled=true;
   document.getElementById('amort-add-row').style.display='none';
   document.getElementById('amort-sum-readonly').style.display='block';
+  const callAdd=document.getElementById('call-add-row'); if(callAdd) callAdd.style.display='none';
   const genWrap = document.getElementById('amort-gen-wrap');
   if(genWrap) genWrap.style.display='none';
   panelDirty=false;
@@ -4415,6 +4585,7 @@ function persistBonds(){
     base_dias:b.base_dias,amort:b.amort,
     fecha_emision:b.fecha_emision||'',fecha_inicio_int:b.fecha_inicio_int||'',
     amortSched:b.amortSched||[],
+    callSched:b.callSched||[],
   }));
   try{localStorage.setItem(LS_BONDS,JSON.stringify(toSave));}catch(e){}
 }
@@ -4529,6 +4700,7 @@ function loadFromStorage(){
             : (baseAmort&&baseAmort.length>0 ? baseAmort.map(a=>({...a})) : []);
           return {
             ...s, amortSched,
+            callSched: Array.isArray(s.callSched) ? s.callSched.map(a=>({...a})) : [],
             // Restaurar flag isUserBond desde el registry
             isUserBond: userBondTickers.has(s.ticker),
             precio:null,prevPrecio:null,vp:null,tir:null,tna:null,dur:null,
@@ -4542,6 +4714,7 @@ function loadFromStorage(){
             if(!isExpired(b)) bonds.push({
               ...b,
               amortSched:Array.isArray(m.amortSched)?m.amortSched.map(a=>({...a})):[],
+              callSched:Array.isArray(m.callSched)?m.callSched.map(a=>({...a})):[],
               isUserBond:false,
               precio:null,prevPrecio:null,vp:null,tir:null,tna:null,dur:null,
               vol:null,bid:null,ask:null,open:null,loaded:false
@@ -4610,6 +4783,7 @@ async function saveBondChanges(){
   }else{
     b.amortSched=[];
   }
+  b.callSched = readCallRows();   // condiciones del call (se usan en YTC/YTW)
   if(b.precio) recalcTIR(b);
 
   // ── Si Supabase está activo y hay sesión: persistir en la nube ────────
