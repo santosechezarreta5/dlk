@@ -6744,8 +6744,18 @@ window.FCI = (function(){
     // Auto-run al cambiar cualquier select de filtro (una sola vez para no duplicar listeners en reintentos).
     if(!_fciBound){ ['fci-ini','fci-fin','fci-agr','fci-f-ger','fci-f-fondo'].forEach(id=>$(id).addEventListener('change', autoRun)); _fciBound=true; }
     rebuildFondoList();
-    const def = tipos.includes('Soberano ARS') ? 'Soberano ARS' : tipos[0];
-    if(def){ msTipo.set([def]); }
+    // Selección por defecto de Tipo de Activo: Soberano ARS + Soberano USD + ON/Corporativo
+    // (los que existan en el universo actual; tolerante a variantes de escritura). Si no matchea
+    // ninguno, cae al primer tipo disponible (comportamiento previo).
+    const _wantTipos = [
+      t => { const n=t.toLowerCase(); return n.includes('soberano') && n.includes('ars'); },
+      t => { const n=t.toLowerCase(); return n.includes('soberano') && n.includes('usd'); },
+      t => t===ON_TIPO || t.toLowerCase().includes('corporativ'),
+    ];
+    let def = [];
+    _wantTipos.forEach(pred=>{ const hit=tipos.find(pred); if(hit && !def.includes(hit)) def.push(hit); });
+    if(!def.length && tipos.length) def=[tipos[0]];
+    if(def.length){ msTipo.set(def); }
     refreshBonoFilters();
     runBono();
   }
