@@ -2662,7 +2662,8 @@ function getPricesForTab(b){
 
 function render(){
   const data=visible();
-  if(typeof renderFilterChips==='function') renderFilterChips();   // chips de filtros activos
+  // Chips de filtros activos. Aislado: un fallo acá no puede impedir que se pinte la tabla.
+  try { renderFilterChips(); } catch(e){ console.error('[renderFilterChips]', e); }
   const wt=data.filter(b=>b.tir!=null),wp=data.filter(b=>b.precio!=null),wv=data.filter(b=>b.vol!=null);
   document.getElementById('cnt').textContent=data.length;
   document.getElementById('s0').textContent=data.length;
@@ -5115,7 +5116,10 @@ clock();setInterval(clock,1000);
 // Cargar datos guardados ANTES de primer fetch
 loadFromStorage();
 watchPanelInputs();
-applyUIPrefs();   // Fase 1: restaura filtros/grafico colapsados + pinta chips
+// Fase 1: restaura filtros/gráfico colapsados + pinta chips.
+// NUNCA debe cortar el arranque: va acá porque necesita el DOM, pero un fallo suyo
+// no puede impedir el fetch inicial (si tira, la página quedaría en "Cargando…").
+try { applyUIPrefs(); } catch(e){ console.error('[applyUIPrefs]', e); }
 // ── Detección de file:// (sin servidor) ──────────────────────────────────────
 // Cuando el HTML se abre directamente desde el ZIP o file://, los fetch a
 // data912/dolarapi fallan por CORS. Mostramos un banner explicativo y ajustamos
