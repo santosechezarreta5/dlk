@@ -123,26 +123,52 @@ grant select on public.fci_bonos_mv  to anon, authenticated;
 grant select on public.fci_fondos_mv to anon, authenticated;
 grant select on public.fci_fechas_mv to anon, authenticated;
 
+
+-- ---------------------------------------------------------------------------
+-- 4b) Función de refresco, para que el sync la llame al terminar de importar
+--
+--     SECURITY DEFINER es necesario: REFRESH MATERIALIZED VIEW exige ser dueño
+--     de la vista, y quien llama (service_role) no lo es. Con SECURITY DEFINER
+--     la función corre con los permisos de su dueño (postgres), que sí lo es.
+--     `set search_path` es obligatorio en funciones SECURITY DEFINER.
+--
+--     Sólo service_role puede ejecutarla: la anon key está embebida en la
+--     página pública, así que no debe poder disparar refrescos.
+-- ---------------------------------------------------------------------------
+create or replace function public.fci_refrescar_catalogos()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  refresh materialized view concurrently public.fci_bonos_mv;
+  refresh materialized view concurrently public.fci_fondos_mv;
+  refresh materialized view concurrently public.fci_fechas_mv;
+  return 'ok';
+end $$;
+
+revoke all on function public.fci_refrescar_catalogos() from public;
+revoke all on function public.fci_refrescar_catalogos() from anon;
+revoke all on function public.fci_refrescar_catalogos() from authenticated;
+grant execute on function public.fci_refrescar_catalogos() to service_role;
+
 notify pgrst, 'reload schema';   -- refrescar el cache de PostgREST
 
 
 -- ============================================================================
---  5) REFRESCO — IMPORTANTE
---     Las MV NO se actualizan solas. Después de cada importación de cartera
---     hay que correr esto, o la solapa de FCI va a mostrar datos viejos:
--- ============================================================================
+--  5) REFRESCO — las MV NO se actualizan solas
+--
+--  Ya está resuelto de forma automática: `src/supabase_sync.py` llama a
+--  fci_refrescar_catalogos() al terminar de subir tenencias. Los catálogos
+--  quedan al día exactamente cuando cambian los datos, sin depender de que
+--  alguien se acuerde.
+--
+--  Si alguna vez necesitás forzarlo a mano (SQL Editor):
 --
 --   refresh materialized view concurrently public.fci_bonos_mv;
 --   refresh materialized view concurrently public.fci_fondos_mv;
 --   refresh materialized view concurrently public.fci_fechas_mv;
---
---  Opción automática (si tenés pg_cron habilitado), todos los días a las 06:00:
---
---   select cron.schedule('fci-catalogos', '0 6 * * *', $cron$
---     refresh materialized view concurrently public.fci_bonos_mv;
---     refresh materialized view concurrently public.fci_fondos_mv;
---     refresh materialized view concurrently public.fci_fechas_mv;
---   $cron$);
 --
 --  Nota: el primer refresh de una MV recién creada no puede ser CONCURRENTLY
 --  (ya queda poblada por el CREATE, así que no hace falta).
