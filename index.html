@@ -336,6 +336,13 @@ th .resize-handle:hover,th .resize-handle.dragging{background:var(--blue);opacit
 .toast-title{font-family:'Syne',sans-serif;font-size:.72rem;font-weight:700;color:#fbbf24;margin-bottom:3px;}
 .toast-body{font-size:.6rem;color:#cbd5e1;line-height:1.5;}
 .toast-time{font-size:.5rem;color:#94a3b8;margin-top:4px;}
+/* Variantes de toast (reemplazan a los alert() bloqueantes del navegador) */
+.toast.t-err{border-color:rgba(248,113,113,.5);border-left-color:#f87171;}
+.toast.t-err .toast-title{color:#f87171;}
+.toast.t-ok{border-color:rgba(45,212,191,.5);border-left-color:#2dd4bf;}
+.toast.t-ok .toast-title{color:#2dd4bf;}
+/* Validación inline: resalta el campo que causó el problema */
+.field-err{border-color:var(--red) !important;box-shadow:0 0 0 2px rgba(248,113,113,.18);}
 /* ── Condition cards ── */
 .cond-card{background:#0a1120;border:1px solid #263649;border-radius:7px;padding:12px 14px;margin-bottom:10px;}
 .cond-card.on{border-color:rgba(251,191,36,.4);}
@@ -3835,9 +3842,9 @@ function generateAmortSchedule(){
   const periodMonths = parseInt(document.getElementById('gen-amort-period').value);
   const count = parseInt(document.getElementById('gen-amort-count').value);
 
-  if(!fechaIni){ alert('Ingresá la fecha del primer pago.'); return; }
-  if(!count || count < 1 || count > 120){ alert('Cantidad de pagos inválida (1 a 120).'); return; }
-  if(!periodMonths || periodMonths < 1){ alert('Periodicidad inválida.'); return; }
+  if(!fechaIni){ toast('Ingresá la fecha del primer pago.'); return; }
+  if(!count || count < 1 || count > 120){ toast('Cantidad de pagos inválida (1 a 120).'); return; }
+  if(!periodMonths || periodMonths < 1){ toast('Periodicidad inválida.'); return; }
 
   // Si ya hay filas manuales (excluyendo la auto), pedir confirmación
   const tbody = document.getElementById('amort-tbody');
@@ -4017,7 +4024,7 @@ function calcFromPanel(silent){
   const base=document.getElementById('fi-base-dias').value,tipo=document.getElementById('fi-tipo-cupon').value;
   const devengo=(document.getElementById('fi-devengo')||{}).value||'ajustado';
   const tBase=tipo!=='fijo'?(parseFloat(document.getElementById('fi-tasa-base').value)||0):0;
-  if(!vcS||isNaN(cupon)){if(!silent)alert('Completá al menos el vencimiento.');return;}
+  if(!vcS||isNaN(cupon)){if(!silent){toast('Completá al menos el vencimiento.');flagField('fi-venc');}return;}
   const today=new Date();today.setHours(0,0,0,0);
   const sett=nextBusinessDay(today); // T+1 hábil
   const vcD=new Date(vcS+'T12:00:00');
@@ -4035,9 +4042,9 @@ function calcFromPanel(silent){
   }
   const amortS=readAmortSched(vcD);
   const cfRaw=generateCashflows(emD,iiD,vcD,cupon,per,base,amortS,tBase,devengo);
-  if(!cfRaw.length){if(!silent)alert('No hay flujos futuros. Verificá las fechas.');return;}
+  if(!cfRaw.length){if(!silent)toast('No hay flujos futuros. Verificá las fechas.');return;}
   const cf=applySettlement(cfRaw,sett);
-  if(!cf.length){if(!silent)alert('No hay flujos futuros con liquidación T+1.');return;}
+  if(!cf.length){if(!silent)toast('No hay flujos futuros con liquidación T+1.');return;}
   const diasProxPeriodo=cfRaw.length>=2
     ? Math.round((cfRaw[cfRaw.length-1].fecha-cfRaw[cfRaw.length-2].fecha)/(24*3600*1000))
     : Math.round(per/12*365);
@@ -4052,7 +4059,7 @@ function calcFromPanel(silent){
     usdToArs = v => v;
   } else {
     a3500Mid = (FX.a3500Bid && FX.a3500Ask) ? (FX.a3500Bid + FX.a3500Ask)/2 : (FX.a3500Bid || FX.a3500Ask || null);
-    if(!a3500Mid){ if(!silent)alert('Falta el tipo de cambio A3500. Esperá a que cargue el panel FX.'); return; }
+    if(!a3500Mid){ if(!silent)toast('Falta el tipo de cambio A3500. Esperá a que cargue el panel FX.'); return; }
     arsToUsd = ars => ars / a3500Mid;
     usdToArs = usd => usd * a3500Mid;
   }
@@ -4064,15 +4071,15 @@ function calcFromPanel(silent){
 
   if(!manualTIR){
     precioARS=parseFloat(document.getElementById('inp-precio').value);
-    if(isNaN(precioARS)||precioARS<=0){if(!silent)alert('Ingresá un precio válido.');return;}
+    if(isNaN(precioARS)||precioARS<=0){if(!silent){toast('Ingresá un precio válido.');flagField('inp-precio');}return;}
     precioUSD = arsToUsd(precioARS);
     tir=calcTIR(cf,precioUSD);
-    if(tir===null){if(!silent)alert('No convergió el cálculo. Revisá los datos.');return;}
+    if(tir===null){if(!silent)toast('No convergió el cálculo. Revisá los datos.');return;}
     const te=document.getElementById('inp-tir');te.value=tir.toFixed(4);te.classList.remove('tir-override');document.getElementById('badge-tir').style.display='none';
   } else if(tnaIsManual){
     const tnaIn=tnaInpVal/100;
     tir=tnaToTIR(tnaIn, per, diasProxPeriodo, document.getElementById('fi-base-dias').value);
-    if(isNaN(tir)||tir===null){if(!silent)alert('TNA inválida.');return;}
+    if(isNaN(tir)||tir===null){if(!silent){toast('TNA inválida.');flagField('inp-tna');}return;}
     precioUSD=parseFloat(calcPrecioFromTIR(cf,tir).toFixed(4));
     precioARS=usdToArs(precioUSD);
     const pe=document.getElementById('inp-precio');
@@ -4080,7 +4087,7 @@ function calcFromPanel(silent){
     pe.classList.remove('manual-override');document.getElementById('badge-price').style.display='none';
     const te=document.getElementById('inp-tir');te.value=tir.toFixed(4);te.classList.remove('tir-override');document.getElementById('badge-tir').style.display='none';
   } else {
-    if(isNaN(tirInpVal)){if(!silent)alert('Ingresá una TIR válida.');return;}
+    if(isNaN(tirInpVal)){if(!silent){toast('Ingresá una TIR válida.');flagField('inp-tir');}return;}
     tir=tirInpVal;
     precioUSD=parseFloat(calcPrecioFromTIR(cf,tir).toFixed(4));
     precioARS=usdToArs(precioUSD);
@@ -4222,9 +4229,9 @@ async function addHoliday(){
   if(!v)return;
   if(HOLIDAY_SET.has(v)){ document.getElementById('inp-holiday').value=''; return; }
   if(Catalog.isRemote){
-    if(!Catalog.isLoggedIn()){ alert('Iniciá sesión como admin para editar feriados.'); return; }
+    if(!Catalog.isLoggedIn()){ toast('Iniciá sesión como admin para editar feriados.'); return; }
     const r = await Catalog.addFeriadoRemote(v);
-    if(!r.ok){ alert('No se pudo guardar el feriado: '+(r.error||'')); return; }
+    if(!r.ok){ toast('No se pudo guardar el feriado: '+(r.error||'')); return; }
   }
   HOLIDAYS.push(new Date(v+'T12:00:00'));
   HOLIDAYS.sort((a,b)=>a-b);
@@ -4237,9 +4244,9 @@ async function removeHoliday(i){
   if(!h)return;
   const fecha=h.toISOString().substring(0,10);
   if(Catalog.isRemote){
-    if(!Catalog.isLoggedIn()){ alert('Iniciá sesión como admin para editar feriados.'); return; }
+    if(!Catalog.isLoggedIn()){ toast('Iniciá sesión como admin para editar feriados.'); return; }
     const r = await Catalog.deleteFeriadoRemote(fecha);
-    if(!r.ok){ alert('No se pudo eliminar el feriado: '+(r.error||'')); return; }
+    if(!r.ok){ toast('No se pudo eliminar el feriado: '+(r.error||'')); return; }
   }
   HOLIDAYS.splice(i,1);
   rebuildHolidaySet();
@@ -4399,8 +4406,8 @@ async function saveBond(){
     ? document.getElementById('mb-emisor-new').value.trim()
     : selVal).trim();
   const vc=document.getElementById('mb-venc').value;
-  if(!tk||!em||!vc){alert('Ticker, emisor y vencimiento son obligatorios.');return;}
-  if(em===''&&selVal==='__new__'){alert('Ingresá el nombre del nuevo emisor.');return;}
+  if(!tk||!em||!vc){toast('Ticker, emisor y vencimiento son obligatorios.');return;}
+  if(em===''&&selVal==='__new__'){toast('Ingresá el nombre del nuevo emisor.');return;}
   if(bonds.find(b=>b.ticker===tk)){if(!confirm(`El ticker ${tk} ya existe. ¿Sobreescribir?`))return;bonds=bonds.filter(b=>b.ticker!==tk);}
   const amortTipo=document.getElementById('mb-amort').value;
 
@@ -4628,7 +4635,7 @@ function confirmImport(){
   render();
   }catch(e){
     console.error('[confirmImport] ERROR:', e);
-    alert('Error al importar bonos:\n' + e.message + '\n\nRevisá la consola (F12) para más detalles.');
+    toast('Error al importar bonos:\n' + e.message + '\n\nRevisá la consola (F12) para más detalles.');
   }
 }
 
@@ -5297,7 +5304,7 @@ function cancelA3500(){
 function saveA3500(){
   const v = parseFloat(document.getElementById('fx-a3500-val-inp').value);
   if(isNaN(v) || v <= 0){
-    alert('Ingresá un valor válido para el A3500.');
+    toast('Ingresá un valor válido para el A3500.');
     return;
   }
   FX_MANUAL_A3500.active = true;
@@ -5963,6 +5970,30 @@ function clearHistory(){
   renderHistory();
 }
 
+/* ══ Fase 2 · Toasts no bloqueantes ═══════════════════════════════════════════
+   Reemplazan a alert(): no interrumpen, no se pueden dejar "colgados" y respetan
+   la estética del producto. Firma compatible 1:1 con alert(msg). */
+function toast(msg, kind='err', ms=6000){
+  const cont=document.getElementById('toast-container');
+  const txt=String(msg==null?'':msg);
+  if(!cont){ console.warn('[toast]', txt); return; }
+  const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const titulo = kind==='ok' ? 'Listo' : kind==='warn' ? 'Atención' : 'No se pudo';
+  const t=document.createElement('div');
+  t.className='toast t-'+kind;
+  t.innerHTML=`<div class="toast-title">${titulo}</div><div class="toast-body">${esc(txt).replace(/\n/g,'<br>')}</div>`;
+  t.onclick=()=>dismiss(t);
+  cont.appendChild(t);
+  setTimeout(()=>dismiss(t), ms);
+}
+// Validación inline: marca el campo problemático y le da el foco.
+function flagField(id){
+  const el=document.getElementById(id); if(!el) return;
+  el.classList.add('field-err');
+  try{ el.focus({preventScroll:true}); }catch(e){ }
+  setTimeout(()=>el.classList.remove('field-err'), 2500);
+}
+
 function showToast(title, body, time){
   const cont=document.getElementById('toast-container');
   if(!cont) return;
@@ -6011,7 +6042,15 @@ body.ops-mode #view-ops{display:block}
 #view-ops .serie-node{display:flex;align-items:center;gap:5px;font-size:.68rem;padding:2px 0;cursor:default}
 #view-ops .serie-node .sw{width:10px;height:10px;border-radius:2px;flex-shrink:0}
 #view-ops .serie-node .nt{cursor:pointer;width:12px;color:#93c5fd;user-select:none}
-#view-ops .serie-chart{flex:1;min-width:480px;background:#0c1018;border:1px solid #1e2d42;border-radius:6px;padding:10px;height:440px}
+#view-ops .serie-chart{flex:1;min-width:480px;background:#0c1018;border:1px solid #1e2d42;border-radius:6px;padding:10px;height:440px;position:relative}
+/* Estados del grafico de serie: cargando / vacio / error. Antes quedaba un canvas
+   en blanco de ~418px sin ninguna explicacion, que se leia como "se rompio". */
+#ops-serie-state{display:none;position:absolute;inset:10px;flex-direction:column;align-items:center;justify-content:center;gap:9px;text-align:center;background:#0c1018;border-radius:5px}
+#ops-serie-state .ic{font-size:1.5rem;opacity:.75;line-height:1}
+#ops-serie-state .msg{font-size:.78rem;color:#94a3b8;max-width:44ch;line-height:1.5}
+#ops-serie-state .sub{font-size:.66rem;color:#5b6b80}
+#ops-serie-state button{font:inherit;font-size:.72rem;font-weight:600;background:#16233a;color:#cfe0f5;border:1px solid #2b3f5c;border-radius:5px;padding:6px 14px;cursor:pointer}
+#ops-serie-state button:hover{border-color:#60a5fa;color:#fff}
 #view-ops .filt{margin-bottom:9px}
 #view-ops .filt-h{font-weight:700;font-size:.66rem;color:#cfe0f5;margin-bottom:3px;display:flex;align-items:center;gap:5px}
 #view-ops .filt-list{max-height:110px;overflow:auto;display:flex;flex-direction:column;gap:1px;border:1px solid #16233a;border-radius:4px;padding:3px 5px}
@@ -6083,7 +6122,7 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
     </div>
     <div class="serie-wrap">
       <div class="serie-ctrl" id="ops-serie-ctrl"></div>
-      <div class="serie-chart"><canvas id="ops-serie-canvas"></canvas></div>
+      <div class="serie-chart"><canvas id="ops-serie-canvas"></canvas><div id="ops-serie-state"></div></div>
     </div>
 
     <div class="ops-h" style="margin-top:24px">Resumen del período</div>
@@ -6124,8 +6163,10 @@ const OPS = (function(){
     const out=[]; let from=0; const page=1000;
     while(true){
       let chunk=[];
-      try{ const r=await fetch(REST+path,{headers:{...HDRS, Range:from+'-'+(from+page-1), 'Range-Unit':'items'}}); if(r.ok) chunk=await r.json(); }
-      catch(e){ console.error('[OPS]',e); break; }
+      try{ const r=await fetch(REST+path,{headers:{...HDRS, Range:from+'-'+(from+page-1), 'Range-Unit':'items'}});
+        if(r.ok) chunk=await r.json();
+        else { _fetchFailed=true; console.error('[OPS] HTTP', r.status, path); break; } }
+      catch(e){ _fetchFailed=true; console.error('[OPS]',e); break; }
       out.push(...chunk);
       if(chunk.length<page) break;
       from+=page;
@@ -6198,6 +6239,20 @@ const OPS = (function(){
     if(!e.target.closest('.ops-col-wrap')) document.getElementById('ops-col-cfg-menu')?.classList.remove('open');
   });
   let rangeMapped=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
+  let _fetchFailed=false;   // distingue 'fallo la request' de 'no hay datos'
+  // Estado del grafico de serie. kind: 'load' | 'empty' | 'err' | null (mostrar el grafico).
+  function serieState(kind, msg, sub, actLabel, actFn){
+    const box=document.getElementById('ops-serie-state'), cv=document.getElementById('ops-serie-canvas');
+    if(!box||!cv) return;
+    if(!kind){ box.style.display='none'; cv.style.visibility=''; return; }
+    cv.style.visibility='hidden';
+    const ic = kind==='load' ? '&#8987;' : kind==='err' ? '&#9888;&#65039;' : '&#8709;';
+    box.innerHTML = '<div class="ic">'+ic+'</div><div class="msg">'+msg+'</div>'
+      + (sub?'<div class="sub">'+sub+'</div>':'')
+      + (actFn?'<button type="button" id="ops-st-act">'+actLabel+'</button>':'');
+    box.style.display='flex';
+    if(actFn){ const btn=document.getElementById('ops-st-act'); if(btn) btn.onclick=actFn; }
+  }
   let breakdownKeys=['rating'], maxLines=15, filters={rating:null,sector:null,empresa:null,anio:null};
   const gv=(r,k)=>{ const v=r[k]; return (v==null||v==='')?('(s/'+k+')'):v; };
   // ── Filtro por Fuente (BYMA Mercado / BYMA Bilateral / MAE) — aplica a Resumen y Serie ──
@@ -6335,6 +6390,25 @@ const OPS = (function(){
   function renderSerie(){
     const rows=filteredRows();
     const fechas=[...new Set(rows.map(r=>r.fecha))].sort();
+    // Sin datos: hay que decir POR QUE. Un canvas vacio se lee como error.
+    if(!fechas.length){
+      if(chart){ chart.destroy(); chart=null; }
+      const per=(dateFrom&&dateTo)?(dateFrom.split('-').reverse().join('/')+' a '+dateTo.split('-').reverse().join('/')):'el período elegido';
+      if(_fetchFailed){
+        serieState('err','No se pudieron cargar las operaciones.',
+                   'Puede ser un problema de conexión o del servidor.','Reintentar',()=>loadRange());
+      } else {
+        serieState('empty','Sin operaciones en '+per+'.',
+                   'Probá con un rango más amplio o cambiá el cuadro.','Ampliar a 6 meses',()=>{
+                     const d=new Date(dateTo||Date.now()); d.setMonth(d.getMonth()-6);
+                     dateFrom=d.toISOString().slice(0,10);
+                     const fi=document.getElementById('ops-from'); if(fi) fi.value=dateFrom;
+                     loadRange();
+                   });
+      }
+      return;
+    }
+    serieState(null);
     let groups;
     if(!breakdownKeys.length){ groups=[{label:'Total', rows}]; }
     else{
@@ -6512,6 +6586,8 @@ const OPS = (function(){
   }
   async function loadRange(){
     filters={rating:null,sector:null,empresa:null,anio:null};
+    _fetchFailed=false;
+    serieState('load','Cargando operaciones…');
     let path='/market_ops?select=fecha,ticker,emisor,tipo,leg,jur,rating,sector,anio_vto,monto,tir,tna,outlier,fuente&order=fecha.asc';
     if(dateFrom) path+='&fecha=gte.'+dateFrom;
     if(dateTo) path+='&fecha=lte.'+dateTo;
@@ -6599,6 +6675,15 @@ const OPS = (function(){
   #view-fci .empty{color:#7c93ad;font-style:italic;padding:14px}
   #view-fci .fci-note{font-size:.66rem;color:#7c93ad;margin:2px 0 8px}
   #view-fci .ms{position:relative;display:inline-block}
+  /* Skeleton de filtros: los multiselect son <div> vacios hasta que llegan los datos.
+     Sin esto las etiquetas quedan flotando sobre un hueco y, al construirse, empujan
+     el layout. Reservamos el alto/ancho final del control desde el primer frame. */
+  #view-fci label > div:empty{display:block;min-width:170px;height:28px;border:1px solid #1e2d42;border-radius:5px;
+    background:linear-gradient(90deg,#0c1018 25%,#141d2b 50%,#0c1018 75%);background-size:200% 100%;
+    animation:fciSkel 1.3s ease-in-out infinite}
+  @keyframes fciSkel{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  #fci-ini,#fci-fin{min-width:118px}
+  @media (prefers-reduced-motion:reduce){#view-fci label > div:empty{animation:none}}
   #view-fci .ms-btn{font:inherit;font-size:.74rem;text-align:left;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:5px;padding:5px 22px 5px 9px;min-width:170px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #view-fci .ms-btn:hover{border-color:#2E8B6B}
   #view-fci .ms-pan{position:absolute;z-index:60;top:calc(100% + 3px);left:0;width:290px;max-width:90vw;background:#0e141d;border:1px solid #1e2d42;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.45);padding:7px}
