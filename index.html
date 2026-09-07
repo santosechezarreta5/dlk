@@ -169,7 +169,7 @@ svg.chart{width:100%;overflow:visible;display:block;}
 .emisor-opt.checked{color:var(--blue-l);}
 .emisor-clr{display:block;text-align:center;padding:5px 12px 4px;font-family:'IBM Plex Mono',monospace;font-size:.52rem;color:var(--muted2);cursor:pointer;border-top:1px solid var(--border);margin-top:4px;}
 .emisor-clr:hover{color:var(--red);}
-.tw{border:1px solid var(--border);border-radius:6px;overflow:hidden;}
+.tw{border:1px solid var(--border);border-radius:6px;}   /* sin overflow:hidden — rompería el thead sticky */
 table{width:100%;border-collapse:collapse;font-size:.68rem;}
 thead{background:#0f1929;border-bottom:2px solid var(--border2);}
 th{padding:9px 11px;text-align:left;font-size:.52rem;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;font-weight:600;cursor:pointer;white-space:nowrap;user-select:none;transition:color .1s;}
@@ -180,6 +180,26 @@ tbody tr:nth-child(even){background:#0b1220;}
 tbody tr:last-child{border-bottom:none;}tbody tr:hover{background:rgba(59,130,246,.08);}
 tbody tr.active-row{background:rgba(56,189,248,.09);border-left:2px solid var(--blue);}
 td{padding:9px 11px;white-space:nowrap;color:var(--text2);}
+/* ── Encabezado fijo de la tabla principal (bajo el header sticky de 52px) ── */
+#main-table thead th{position:sticky;top:52px;z-index:30;background:#0f1929;box-shadow:inset 0 -2px 0 var(--border2);}
+#main-table thead th:first-child{border-top-left-radius:5px;}
+#main-table thead th:last-child{border-top-right-radius:5px;}
+/* ── Filtros colapsables ── */
+.filter-wrap.collapsed .filter-row{display:none !important;}
+.f-toggle{font-family:'IBM Plex Mono',monospace;font-size:.58rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);background:transparent;border:1px solid var(--border);border-radius:4px;padding:5px 10px;cursor:pointer;white-space:nowrap;}
+.f-toggle:hover{border-color:var(--teal);color:var(--teal);}
+.f-toggle .n{color:var(--teal);}
+/* ── Chips de filtros activos ── */
+.chip-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.chip-row:empty{display:none;}
+.chip{display:inline-flex;align-items:center;gap:5px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;background:rgba(45,212,191,.1);border:1px solid rgba(45,212,191,.35);color:var(--teal);border-radius:20px;padding:3px 4px 3px 9px;}
+.chip .k{color:var(--muted2);}
+.chip button{background:none;border:0;color:inherit;cursor:pointer;font-size:.72rem;line-height:1;padding:0 4px;border-radius:50%;}
+.chip button:hover{background:rgba(45,212,191,.25);}
+.chip-clr{font-family:'IBM Plex Mono',monospace;font-size:.56rem;color:var(--muted2);background:none;border:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px;padding:3px 4px;}
+.chip-clr:hover{color:var(--red);}
+/* ── Gráfico colapsable ── */
+.chart-panel.collapsed .chart,.chart-panel.collapsed .cp-sub,.chart-panel.collapsed .cp-legend{display:none;}
 .tk-n{font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;letter-spacing:-.01em;}
 .badge{display:inline-flex;align-items:center;padding:2px 6px;border-radius:20px;font-size:.5rem;letter-spacing:.04em;font-weight:500;}
 .b-usd{background:rgba(59,130,246,.12);color:var(--blue-l);border:1px solid rgba(59,130,246,.2);}
@@ -547,6 +567,7 @@ window.SUPABASE_CONFIG = {
       <div style="display:flex;align-items:center;gap:8px;">
         <div class="cp-legend" id="chart-legend"></div>
         <button class="btn-png" onclick="exportYieldPNG()" title="Exportar gráfico a PNG">⤓ PNG</button>
+        <button class="btn-png" id="chart-toggle" onclick="toggleChart()" title="Contraer / expandir el gráfico" aria-expanded="true">▾</button>
       </div>
     </div>
     <svg class="chart" viewBox="0 0 920 220" height="220" id="ysvg"></svg>
@@ -616,7 +637,9 @@ window.SUPABASE_CONFIG = {
       <button class="fb" data-f="jur" data-v="Argentina">Argentina</button>
       <button class="fb" data-f="jur" data-v="Estados Unidos">EE.UU.</button>
     </div>
+    <div class="chip-row" id="filter-chips"></div>
     <div class="filter-bottom">
+      <button class="f-toggle" id="filters-toggle" onclick="toggleFilters()" aria-expanded="true">▾ Filtros</button>
       <input class="srch" type="text" placeholder="Buscar ticker o emisor…" id="srch">
       <div style="display:flex;align-items:center;gap:10px;">
         <div class="col-cfg-wrap">
@@ -2639,6 +2662,7 @@ function getPricesForTab(b){
 
 function render(){
   const data=visible();
+  if(typeof renderFilterChips==='function') renderFilterChips();   // chips de filtros activos
   const wt=data.filter(b=>b.tir!=null),wp=data.filter(b=>b.precio!=null),wv=data.filter(b=>b.vol!=null);
   document.getElementById('cnt').textContent=data.length;
   document.getElementById('s0').textContent=data.length;
@@ -4954,6 +4978,111 @@ function updateStatsOnly(){
   drawYield(data);
 }
 
+/* ══ Fase 1 · Filtros: chips de filtros activos + bloques colapsables ══════════
+   Los 8 grupos de filtros empujaban la tabla fuera de la pantalla. Ahora se pueden
+   contraer, y lo aplicado queda siempre visible como chips en la barra inferior. */
+const FCHIP_LBL={sector:'Sector',anio:'Vto',call:'Callable',emisor:'Emisor',
+                 leg:'Legislación',jur:'Jurisdicción',rating:'Crédito',precio:'Precio'};
+const _escA=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// Etiqueta legible de un valor: la del botón que lo representa (evita duplicar textos).
+function fchipText(f,v){
+  let t=v;
+  document.querySelectorAll(`.fb[data-f="${f}"]`).forEach(b=>{ if(b.dataset.v===v) t=b.textContent.trim(); });
+  return t;
+}
+function activeFilterCount(){
+  let n=0;
+  for(const k in F){
+    if(k==='emisor'){ n+=F.emisor.size; continue; }
+    F[k].forEach(v=>{ if(v!=='all') n++; });
+  }
+  if((document.getElementById('srch')||{}).value) n++;
+  return n;
+}
+function syncFbButtons(f){
+  const set=F[f]; if(!set) return;
+  document.querySelectorAll(`.fb[data-f="${f}"]`).forEach(b=>{
+    const bv=b.dataset.v;
+    b.classList.toggle('on', set.has(bv) || (bv==='all' && set.has('all')));
+  });
+}
+function removeFilter(f,v){
+  if(f==='__srch'){ const s=document.getElementById('srch'); if(s) s.value=''; render(); return; }
+  if(f==='emisor'){
+    F.emisor.delete(v); updateEmisorLabel();
+    if(typeof buildEmisorOpts==='function') buildEmisorOpts((document.getElementById('emisor-search')||{}).value||'');
+    render(); return;
+  }
+  const set=F[f]; if(!set) return;
+  set.delete(v); if(set.size===0) set.add('all');
+  syncFbButtons(f); render();
+}
+function clearAllFilters(){
+  for(const k in F){ F[k].clear(); if(k!=='emisor') F[k].add('all'); }
+  Object.keys(F).forEach(k=>{ if(k!=='emisor') syncFbButtons(k); });
+  updateEmisorLabel();
+  if(typeof buildEmisorOpts==='function') buildEmisorOpts('');
+  const s=document.getElementById('srch'); if(s) s.value='';
+  render();
+}
+function renderFilterChips(){
+  const box=document.getElementById('filter-chips'); if(!box) return;
+  const parts=[];
+  const add=(f,v,lbl)=>parts.push(
+    `<span class="chip"><span class="k">${_escA(lbl)}</span>${_escA(fchipText(f,v))}`
+    +`<button data-f="${_escA(f)}" data-v="${_escA(v)}" onclick="removeFilter(this.dataset.f,this.dataset.v)"`
+    +` title="Quitar filtro" aria-label="Quitar filtro ${_escA(lbl)} ${_escA(v)}">✕</button></span>`);
+  ['sector','anio','call','precio','rating','leg','jur'].forEach(k=>{
+    if(!F[k]) return;
+    [...F[k]].filter(v=>v!=='all').forEach(v=>add(k,v,FCHIP_LBL[k]));
+  });
+  [...F.emisor].forEach(v=>add('emisor',v,FCHIP_LBL.emisor));
+  const sv=(document.getElementById('srch')||{}).value;
+  if(sv) parts.push(`<span class="chip"><span class="k">Busca</span>${_escA(sv)}`
+    +`<button data-f="__srch" data-v="" onclick="removeFilter('__srch','')"`
+    +` title="Limpiar búsqueda" aria-label="Limpiar búsqueda">✕</button></span>`);
+  box.innerHTML = parts.length
+    ? parts.join('')+`<button class="chip-clr" onclick="clearAllFilters()">limpiar todo</button>` : '';
+  const tg=document.getElementById('filters-toggle'), w=document.querySelector('.filter-wrap');
+  if(tg&&w){
+    const n=activeFilterCount(), open=!w.classList.contains('collapsed');
+    tg.innerHTML=(open?'▾':'▸')+' Filtros'+(n?` <span class="n">${n}</span>`:'');
+  }
+}
+// ── Preferencias de colapsado (persistidas) ──
+const UIK='bonoscorp_ui';
+function _uiGet(){ try{ return JSON.parse(localStorage.getItem(UIK))||{}; }catch(e){ return {}; } }
+function _uiSet(k,v){ try{ const o=_uiGet(); o[k]=v; localStorage.setItem(UIK,JSON.stringify(o)); }catch(e){} }
+function toggleFilters(){
+  const w=document.querySelector('.filter-wrap'); if(!w) return;
+  const collapsed=w.classList.toggle('collapsed');
+  const tg=document.getElementById('filters-toggle');
+  if(tg) tg.setAttribute('aria-expanded', String(!collapsed));
+  _uiSet('filtersCollapsed', collapsed);
+  renderFilterChips();
+}
+function toggleChart(){
+  const p=document.querySelector('.chart-panel'); if(!p) return;
+  const collapsed=p.classList.toggle('collapsed');
+  const tg=document.getElementById('chart-toggle');
+  if(tg){ tg.textContent=collapsed?'▸':'▾'; tg.setAttribute('aria-expanded', String(!collapsed)); }
+  _uiSet('chartCollapsed', collapsed);
+}
+function applyUIPrefs(){
+  const o=_uiGet();
+  if(o.filtersCollapsed){
+    const w=document.querySelector('.filter-wrap'); if(w) w.classList.add('collapsed');
+    const tg=document.getElementById('filters-toggle'); if(tg) tg.setAttribute('aria-expanded','false');
+  }
+  if(o.chartCollapsed){
+    const p=document.querySelector('.chart-panel'); if(p) p.classList.add('collapsed');
+    const tg=document.getElementById('chart-toggle');
+    if(tg){ tg.textContent='▸'; tg.setAttribute('aria-expanded','false'); }
+  }
+  renderFilterChips();
+}
+
 document.querySelectorAll('.fb').forEach(btn=>{
   btn.addEventListener('click',()=>{
     const f=btn.dataset.f, v=btn.dataset.v;
@@ -4986,6 +5115,7 @@ clock();setInterval(clock,1000);
 // Cargar datos guardados ANTES de primer fetch
 loadFromStorage();
 watchPanelInputs();
+applyUIPrefs();   // Fase 1: restaura filtros/grafico colapsados + pinta chips
 // ── Detección de file:// (sin servidor) ──────────────────────────────────────
 // Cuando el HTML se abre directamente desde el ZIP o file://, los fetch a
 // data912/dolarapi fallan por CORS. Mostramos un banner explicativo y ajustamos
@@ -6233,9 +6363,12 @@ const OPS = (function(){
   async function loadDates(){
     const r=await q('/fx_history?select=fecha&order=fecha.desc');
     dates=r.map(x=>x.fecha); maxDate=dates[0]||null; const minDate=dates[dates.length-1]||null;
-    // Período (resumen + operaciones): por defecto el último día disponible
+    // Período (resumen + operaciones): por defecto los últimos 5 días hábiles CON datos.
+    // Antes arrancaba con Desde = Hasta = último día, lo que hacía muy probable abrir la
+    // vista vacía (`dates` ya viene ordenado desc y sólo trae fechas con datos).
+    const from5 = dates.length ? dates[Math.min(4, dates.length-1)] : maxDate;
     const df=document.getElementById('ops-d-from'), dt=document.getElementById('ops-d-to');
-    if(df&&dt){ df.min=dt.min=minDate||''; df.max=dt.max=maxDate||''; df.value=maxDate||''; dt.value=maxDate||''; }
+    if(df&&dt){ df.min=dt.min=minDate||''; df.max=dt.max=maxDate||''; df.value=from5||''; dt.value=maxDate||''; }
     // Serie de tiempo: por defecto últimos ~3 meses
     let from=maxDate;
     if(maxDate){ const d=new Date(maxDate); d.setMonth(d.getMonth()-3); from=d.toISOString().slice(0,10); if(minDate&&from<minDate)from=minDate; }
