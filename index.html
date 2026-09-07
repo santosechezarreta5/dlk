@@ -5072,15 +5072,19 @@ function toggleChart(){
 }
 function applyUIPrefs(){
   const o=_uiGet();
-  if(o.filtersCollapsed){
-    const w=document.querySelector('.filter-wrap'); if(w) w.classList.add('collapsed');
-    const tg=document.getElementById('filters-toggle'); if(tg) tg.setAttribute('aria-expanded','false');
-  }
-  if(o.chartCollapsed){
-    const p=document.querySelector('.chart-panel'); if(p) p.classList.add('collapsed');
-    const tg=document.getElementById('chart-toggle');
-    if(tg){ tg.textContent='▸'; tg.setAttribute('aria-expanded','false'); }
-  }
+  // Defaults de primera visita: gráfico CONTRAÍDO (la tabla es la superficie de trabajo)
+  // y filtros EXPANDIDOS (para que se vean y se descubran).
+  // `??` respeta un false guardado: si el usuario expande el gráfico, se recuerda expandido.
+  const fCol = o.filtersCollapsed ?? false;
+  const cCol = o.chartCollapsed   ?? true;
+  const w=document.querySelector('.filter-wrap');
+  if(w) w.classList.toggle('collapsed', fCol);
+  const tgf=document.getElementById('filters-toggle');
+  if(tgf) tgf.setAttribute('aria-expanded', String(!fCol));
+  const p=document.querySelector('.chart-panel');
+  if(p) p.classList.toggle('collapsed', cCol);
+  const tgc=document.getElementById('chart-toggle');
+  if(tgc){ tgc.textContent = cCol?'▸':'▾'; tgc.setAttribute('aria-expanded', String(!cCol)); }
   renderFilterChips();
 }
 
