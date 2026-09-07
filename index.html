@@ -3661,7 +3661,7 @@ function openPanel(bond) {
     try {
       const pv = parseFloat(document.getElementById('inp-precio').value);
       if(!isNaN(pv) && pv>0 && document.getElementById('fi-venc').value){
-        calcFromPanel();
+        calcFromPanel(true);   // auto: sin alerts (los avisos son solo del boton Calcular)
       }
     } catch(e){ /* silencioso */ }
   }, 50);
@@ -3725,7 +3725,7 @@ let _recalcTimer = null;
 function scheduleRecalc(){
   if(_recalcTimer) clearTimeout(_recalcTimer);
   _recalcTimer = setTimeout(()=>{
-    try { calcFromPanel(); } catch(e){ /* silencioso */ }
+    try { calcFromPanel(true); } catch(e){ /* silencioso */ }
   }, 350);
 }
 
@@ -3984,7 +3984,7 @@ function readAmortSched(vd){
   return s;
 }
 
-function calcFromPanel(){
+function calcFromPanel(silent){
   const emS=document.getElementById('fi-emision').value,iiS=document.getElementById('fi-inicio-int').value,vcS=document.getElementById('fi-venc').value;
   const cuponRaw=document.getElementById('fi-cupon').value;
   const cupon=cuponRaw===''||cuponRaw===null?0:parseFloat(cuponRaw);
@@ -3992,7 +3992,7 @@ function calcFromPanel(){
   const base=document.getElementById('fi-base-dias').value,tipo=document.getElementById('fi-tipo-cupon').value;
   const devengo=(document.getElementById('fi-devengo')||{}).value||'ajustado';
   const tBase=tipo!=='fijo'?(parseFloat(document.getElementById('fi-tasa-base').value)||0):0;
-  if(!vcS||isNaN(cupon)){alert('Completá al menos el vencimiento.');return;}
+  if(!vcS||isNaN(cupon)){if(!silent)alert('Completá al menos el vencimiento.');return;}
   const today=new Date();today.setHours(0,0,0,0);
   const sett=nextBusinessDay(today); // T+1 hábil
   const vcD=new Date(vcS+'T12:00:00');
@@ -4010,9 +4010,9 @@ function calcFromPanel(){
   }
   const amortS=readAmortSched(vcD);
   const cfRaw=generateCashflows(emD,iiD,vcD,cupon,per,base,amortS,tBase,devengo);
-  if(!cfRaw.length){alert('No hay flujos futuros. Verificá las fechas.');return;}
+  if(!cfRaw.length){if(!silent)alert('No hay flujos futuros. Verificá las fechas.');return;}
   const cf=applySettlement(cfRaw,sett);
-  if(!cf.length){alert('No hay flujos futuros con liquidación T+1.');return;}
+  if(!cf.length){if(!silent)alert('No hay flujos futuros con liquidación T+1.');return;}
   const diasProxPeriodo=cfRaw.length>=2
     ? Math.round((cfRaw[cfRaw.length-1].fecha-cfRaw[cfRaw.length-2].fecha)/(24*3600*1000))
     : Math.round(per/12*365);
@@ -4027,7 +4027,7 @@ function calcFromPanel(){
     usdToArs = v => v;
   } else {
     a3500Mid = (FX.a3500Bid && FX.a3500Ask) ? (FX.a3500Bid + FX.a3500Ask)/2 : (FX.a3500Bid || FX.a3500Ask || null);
-    if(!a3500Mid){ alert('Falta el tipo de cambio A3500. Esperá a que cargue el panel FX.'); return; }
+    if(!a3500Mid){ if(!silent)alert('Falta el tipo de cambio A3500. Esperá a que cargue el panel FX.'); return; }
     arsToUsd = ars => ars / a3500Mid;
     usdToArs = usd => usd * a3500Mid;
   }
@@ -4039,15 +4039,15 @@ function calcFromPanel(){
 
   if(!manualTIR){
     precioARS=parseFloat(document.getElementById('inp-precio').value);
-    if(isNaN(precioARS)||precioARS<=0){alert('Ingresá un precio válido.');return;}
+    if(isNaN(precioARS)||precioARS<=0){if(!silent)alert('Ingresá un precio válido.');return;}
     precioUSD = arsToUsd(precioARS);
     tir=calcTIR(cf,precioUSD);
-    if(tir===null){alert('No convergió el cálculo. Revisá los datos.');return;}
+    if(tir===null){if(!silent)alert('No convergió el cálculo. Revisá los datos.');return;}
     const te=document.getElementById('inp-tir');te.value=tir.toFixed(4);te.classList.remove('tir-override');document.getElementById('badge-tir').style.display='none';
   } else if(tnaIsManual){
     const tnaIn=tnaInpVal/100;
     tir=tnaToTIR(tnaIn, per, diasProxPeriodo, document.getElementById('fi-base-dias').value);
-    if(isNaN(tir)||tir===null){alert('TNA inválida.');return;}
+    if(isNaN(tir)||tir===null){if(!silent)alert('TNA inválida.');return;}
     precioUSD=parseFloat(calcPrecioFromTIR(cf,tir).toFixed(4));
     precioARS=usdToArs(precioUSD);
     const pe=document.getElementById('inp-precio');
@@ -4055,7 +4055,7 @@ function calcFromPanel(){
     pe.classList.remove('manual-override');document.getElementById('badge-price').style.display='none';
     const te=document.getElementById('inp-tir');te.value=tir.toFixed(4);te.classList.remove('tir-override');document.getElementById('badge-tir').style.display='none';
   } else {
-    if(isNaN(tirInpVal)){alert('Ingresá una TIR válida.');return;}
+    if(isNaN(tirInpVal)){if(!silent)alert('Ingresá una TIR válida.');return;}
     tir=tirInpVal;
     precioUSD=parseFloat(calcPrecioFromTIR(cf,tir).toFixed(4));
     precioARS=usdToArs(precioUSD);
