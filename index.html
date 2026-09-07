@@ -63,6 +63,7 @@ header{position:sticky;top:0;z-index:200;background:rgba(7,9,15,.93);backdrop-fi
 main{max-width:1680px;margin:0 auto;padding:28px;position:relative;z-index:1;transition:margin-right .3s ease;}
 main.shifted{margin-right:var(--panel-w);}
 .hero{margin-bottom:20px;}
+h1.h-title{margin:0;}
 .h-title{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(1.2rem,2.2vw,1.7rem);letter-spacing:-.03em;line-height:1;background:linear-gradient(130deg,#e2e8f0 0%,var(--blue-l) 55%,var(--sky) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
 .h-sub{font-size:.57rem;color:var(--muted2);letter-spacing:.1em;text-transform:uppercase;margin-top:5px;}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:20px;}
@@ -329,6 +330,44 @@ th .resize-handle:hover,th .resize-handle.dragging{background:var(--blue);opacit
 .btn-alerts.ringing{animation:ring 2s infinite;}
 @keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,.4)}60%{box-shadow:0 0 0 5px rgba(251,191,36,0)}}
 .alert-badge{display:none;background:#fbbf24;color:#000;font-size:.45rem;font-weight:700;border-radius:9px;padding:1px 5px;margin-left:3px;vertical-align:middle;}
+/* ══ Fase 4 · Postura en móvil ════════════════════════════════════════════════
+   Esto es una terminal de escritorio: ocho columnas de tabla y un panel lateral
+   de 540px no se adaptan a 390px sin volverse otra cosa. En vez de fingir que
+   funciona (hoy se desborda 318px), lo decimos y damos el dato accionable.
+   A partir de 820px de ancho la app va bien, así que el corte va en 700px. */
+#mobile-notice{display:none;}
+@media (max-width:700px){
+  #mobile-notice{display:flex;flex-direction:column;gap:10px;margin:14px;padding:16px 18px;
+    background:var(--s1);border:1px solid var(--border2);border-left:3px solid var(--sky);border-radius:8px;}
+  #mobile-notice h2{font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700;color:var(--text);margin:0;}
+  #mobile-notice p{font-size:.72rem;color:var(--muted2);line-height:1.55;margin:0;}
+  #mobile-notice .mn-fx{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin-top:2px;}
+  #mobile-notice .mn-c{background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;}
+  #mobile-notice .mn-k{font-size:.5rem;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;}
+  #mobile-notice .mn-v{font-family:'IBM Plex Mono',monospace;font-size:.86rem;font-weight:600;color:var(--teal);margin-top:2px;}
+  #mobile-notice button{align-self:flex-start;font-family:'IBM Plex Mono',monospace;font-size:.62rem;
+    background:transparent;color:var(--muted2);border:1px solid var(--border2);border-radius:5px;padding:6px 12px;cursor:pointer;}
+  #mobile-notice button:hover{border-color:var(--sky);color:var(--sky);}
+  body.mn-dismissed #mobile-notice{display:none;}
+}
+/* ══ Fase 4 · Accesibilidad ═══════════════════════════════════════════════════
+   No habia NINGUN estilo de foco en toda la app: con Tab no se veia donde estabas
+   parado. Para una mesa que opera con teclado eso es friccion real, no una casilla
+   de cumplimiento. :focus-visible sale solo con teclado, no al clickear con mouse. */
+:focus-visible{outline:2px solid var(--sky);outline-offset:2px;border-radius:3px;}
+.fb:focus-visible,.btn-sm:focus-visible,button:focus-visible{outline:2px solid var(--sky);outline-offset:2px;}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--sky);outline-offset:1px;}
+/* Salto al contenido: primer tab de la pagina, oculto hasta enfocarse */
+.skip-link{position:absolute;left:-9999px;top:0;z-index:1000;background:var(--s2);color:var(--text);
+  padding:9px 15px;border:1px solid var(--sky);border-radius:0 0 6px 0;font-size:.72rem;}
+.skip-link:focus{left:0;}
+/* Titulo de vista para lectores de pantalla (no altera el diseno) */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;scroll-behavior:auto !important;}
+}
 /* ── Toast ── */
 .toast{background:#131e35;border:1px solid rgba(251,191,36,.45);border-left:3px solid #fbbf24;border-radius:7px;padding:12px 16px;max-width:320px;box-shadow:0 8px 24px rgba(0,0,0,.55);animation:tIn .25s ease;cursor:pointer;pointer-events:all;}
 @keyframes tIn{from{transform:translateX(110%);opacity:0}to{transform:none;opacity:1}}
@@ -400,8 +439,20 @@ window.SUPABASE_CONFIG = {
 </script>
 </head>
 <body>
+<a href="#main-content" class="skip-link">Saltar al contenido</a>
+<div id="mobile-notice">
+  <h2>Pensada para pantalla grande</h2>
+  <p>La tabla de bonos y la calculadora necesitan ancho: en el teléfono se ven incompletas.
+     Abrila desde una notebook o monitor para trabajar cómodo. Mientras tanto, los tipos de cambio:</p>
+  <div class="mn-fx">
+    <div class="mn-c"><div class="mn-k">A3500</div><div class="mn-v" id="mn-a3500">—</div></div>
+    <div class="mn-c"><div class="mn-k">MEP</div><div class="mn-v" id="mn-mep">—</div></div>
+    <div class="mn-c"><div class="mn-k">Cable</div><div class="mn-v" id="mn-cable">—</div></div>
+  </div>
+  <button type="button" onclick="document.body.classList.add('mn-dismissed')">Ver igual la versión completa</button>
+</div>
 <header>
-  <button id="menu-btn" onclick="OPS.toggleMenu()" title="Menú"
+  <button id="menu-btn" onclick="OPS.toggleMenu()" title="Menú" aria-label="Abrir el menú de vistas"
     style="margin-right:14px;font:inherit;font-size:1.05rem;font-weight:700;color:#1F3864;background:#e8eef7;border:1px solid #B4C6E7;border-radius:6px;padding:4px 12px;cursor:pointer;line-height:1">☰</button>
   <div class="logo"><div class="logo-mark">BC</div>BONOS<span class="acc">CORP</span></div>
   <div class="hdr-r">
@@ -424,11 +475,11 @@ window.SUPABASE_CONFIG = {
       Solo necesario para editar el catálogo de bonos. Los demás usuarios pueden ver y operar normalmente sin login.
     </div>
     <div class="form-group" style="margin-bottom:10px">
-      <label class="form-label">Email</label>
+      <label class="form-label" for="login-email">Email</label>
       <input class="form-input" id="login-email" type="email" placeholder="admin@ejemplo.com" autocomplete="email">
     </div>
     <div class="form-group" style="margin-bottom:14px">
-      <label class="form-label">Password</label>
+      <label class="form-label" for="login-password">Password</label>
       <input class="form-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password">
     </div>
     <div id="login-error" style="display:none;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);color:#f87171;padding:6px 10px;border-radius:4px;font-size:.6rem;margin-bottom:10px"></div>
@@ -447,7 +498,7 @@ window.SUPABASE_CONFIG = {
         <div style="font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700;color:var(--text)">🏷 Emisores · Sector y Rating</div>
         <div style="font-size:.55rem;color:var(--muted2);margin-top:2px">Sector y calificación crediticia (escala nacional). Aplican a todos los bonos del emisor.</div>
       </div>
-      <button class="btn-close" onclick="closeRatingsModal()">✕</button>
+      <button class="btn-close" aria-label="Cerrar" onclick="closeRatingsModal()">✕</button>
     </div>
     <div style="padding:8px 18px 0">
       <input class="form-input" id="ratings-search" type="text" placeholder="Buscar emisor…" oninput="renderRatingsList(this.value)" style="margin-bottom:6px">
@@ -488,7 +539,7 @@ window.SUPABASE_CONFIG = {
 </div>
 <main id="main-content">
   <div class="hero">
-    <div class="h-title">BONOS CORPORATIVOS AR</div>
+    <h1 class="h-title">BONOS CORPORATIVOS AR</h1>
     <div class="h-sub">// data912.com + dolarapi.com · <span id="bond-count">64</span> instrumentos · Auto-refresh 30s · Click para calculadora</div>
   </div>
   <div class="alert warn" id="warn-bar"></div>
@@ -574,7 +625,7 @@ window.SUPABASE_CONFIG = {
       <div style="display:flex;align-items:center;gap:8px;">
         <div class="cp-legend" id="chart-legend"></div>
         <button class="btn-png" onclick="exportYieldPNG()" title="Exportar gráfico a PNG">⤓ PNG</button>
-        <button class="btn-png" id="chart-toggle" onclick="toggleChart()" title="Contraer / expandir el gráfico" aria-expanded="true">▾</button>
+        <button class="btn-png" id="chart-toggle" onclick="toggleChart()" title="Contraer / expandir el gráfico" aria-label="Contraer o expandir el gráfico" aria-expanded="true">▾</button>
       </div>
     </div>
     <svg class="chart" viewBox="0 0 920 220" height="220" id="ysvg"></svg>
@@ -748,7 +799,7 @@ window.SUPABASE_CONFIG = {
       <button class="btn-edit-bond" id="btn-edit-mode" onclick="toggleEditMode()" title="Editar datos del bono">✏️ Editar</button>
       <button class="btn-save" id="btn-save-bond" onclick="saveBondChanges()" style="display:none">💾 Guardar</button>
       <button class="btn-cancel-edit" id="btn-cancel-edit" onclick="cancelEditMode()" style="display:none">✕ Cancelar</button>
-      <button class="btn-close" onclick="closePanel()">✕</button>
+      <button class="btn-close" aria-label="Cerrar" onclick="closePanel()">✕</button>
     </div>
   </div>
   <div class="cp-lastop" id="cp-lastop" style="display:none"></div>
@@ -763,17 +814,17 @@ window.SUPABASE_CONFIG = {
         <div class="cst">Precio y Tasa</div>
         <div class="form-grid">
           <div class="form-group">
-            <label class="form-label"><span id="price-label-text">Precio ARS (por VN 100k)</span> <span class="manual-badge" id="badge-price" style="display:none">MANUAL</span></label>
+            <label class="form-label" for="inp-precio"><span id="price-label-text">Precio ARS (por VN 100k)</span> <span class="manual-badge" id="badge-price" style="display:none">MANUAL</span></label>
             <input class="form-input" id="inp-precio" type="number" step="100" placeholder="e.g. 138500">
             <button class="btn-reset" id="btn-reset-precio" onclick="resetPrecio()">↺ Volver a mercado</button>
           </div>
           <div class="form-group">
-            <label class="form-label">TIR (%) <span class="manual-badge" id="badge-tir" style="display:none">MANUAL</span></label>
+            <label class="form-label" for="inp-tir">TIR (%) <span class="manual-badge" id="badge-tir" style="display:none">MANUAL</span></label>
             <input class="form-input" id="inp-tir" type="number" step="0.01" placeholder="calculada">
             <button class="btn-reset" id="btn-reset-tir" onclick="resetTIR()">↺ Recalcular</button>
           </div>
           <div class="form-group">
-            <label class="form-label">TNA (%) <span class="manual-badge" id="badge-tna" style="display:none">MANUAL</span></label>
+            <label class="form-label" for="inp-tna">TNA (%) <span class="manual-badge" id="badge-tna" style="display:none">MANUAL</span></label>
             <input class="form-input" id="inp-tna" type="number" step="0.01" placeholder="calculada">
             <button class="btn-reset" id="btn-reset-tna" onclick="resetTNA()">↺ Recalcular</button>
           </div>
@@ -790,42 +841,42 @@ window.SUPABASE_CONFIG = {
       <div class="calc-section" id="section-bond-data">
         <div class="cst">Datos del Bono <span id="edit-mode-badge" style="display:none;font-size:.48rem;color:var(--amber);font-weight:600;margin-left:6px;letter-spacing:.04em;">● EDITANDO</span></div>
         <div class="form-grid">
-          <div class="form-group"><label class="form-label">Emisor</label><input class="form-input panel-readonly" id="fi-emisor" type="text" readonly></div>
-          <div class="form-group"><label class="form-label">Ticker</label><input class="form-input panel-readonly" id="fi-ticker" type="text" readonly></div>
-          <div class="form-group"><label class="form-label">Fecha emisión</label><input class="form-input panel-readonly" id="fi-emision" type="date" readonly></div>
-          <div class="form-group"><label class="form-label">Inicio pago int.</label><input class="form-input panel-readonly" id="fi-inicio-int" type="date" readonly></div>
-          <div class="form-group"><label class="form-label">Vencimiento</label><input class="form-input panel-readonly" id="fi-venc" type="date" readonly></div>
-          <div class="form-group"><label class="form-label">Callable</label>
+          <div class="form-group"><label class="form-label" for="fi-emisor">Emisor</label><input class="form-input panel-readonly" id="fi-emisor" type="text" readonly></div>
+          <div class="form-group"><label class="form-label" for="fi-ticker">Ticker</label><input class="form-input panel-readonly" id="fi-ticker" type="text" readonly></div>
+          <div class="form-group"><label class="form-label" for="fi-emision">Fecha emisión</label><input class="form-input panel-readonly" id="fi-emision" type="date" readonly></div>
+          <div class="form-group"><label class="form-label" for="fi-inicio-int">Inicio pago int.</label><input class="form-input panel-readonly" id="fi-inicio-int" type="date" readonly></div>
+          <div class="form-group"><label class="form-label" for="fi-venc">Vencimiento</label><input class="form-input panel-readonly" id="fi-venc" type="date" readonly></div>
+          <div class="form-group"><label class="form-label" for="fi-callable">Callable</label>
             <select class="form-select panel-readonly" id="fi-callable" disabled onchange="toggleCallSection()"><option value="No">No</option><option value="Si">Sí</option></select></div>
-          <div class="form-group"><label class="form-label">Legislación</label>
+          <div class="form-group"><label class="form-label" for="fi-leg">Legislación</label>
             <select class="form-select panel-readonly" id="fi-leg" disabled><option>Argentina</option><option>Nueva York</option><option>Inglaterra</option></select></div>
-          <div class="form-group"><label class="form-label">Jurisdicción de pago</label>
+          <div class="form-group"><label class="form-label" for="fi-jur">Jurisdicción de pago</label>
             <select class="form-select panel-readonly" id="fi-jur" disabled><option>Argentina</option><option>Estados Unidos</option></select></div>
         </div>
       </div>
       <div class="calc-section" id="section-cupon">
         <div class="cst">Cupón e Intereses</div>
         <div class="form-grid">
-          <div class="form-group"><label class="form-label">Tipo cupón</label>
+          <div class="form-group"><label class="form-label" for="fi-tipo-cupon">Tipo cupón</label>
             <select class="form-select panel-readonly" id="fi-tipo-cupon" disabled onchange="toggleCuponTipo()">
               <option value="fijo">Tasa fija</option><option value="badlar">BADLAR + spread</option>
               <option value="cer">CER + spread</option><option value="otro">Otro variable</option>
             </select></div>
-          <div class="form-group"><label class="form-label">Tasa / Spread (%)</label>
+          <div class="form-group"><label class="form-label" for="fi-cupon">Tasa / Spread (%)</label>
             <input class="form-input panel-readonly" id="fi-cupon" type="number" step="0.01" placeholder="ej: 8.5" readonly></div>
-          <div class="form-group"><label class="form-label">Tasa base (%) <span id="lbl-base" style="display:none;color:var(--sky);font-size:.49rem"></span></label>
+          <div class="form-group"><label class="form-label" for="fi-tasa-base">Tasa base (%) <span id="lbl-base" style="display:none;color:var(--sky);font-size:.49rem"></span></label>
             <input class="form-input panel-readonly" id="fi-tasa-base" type="number" step="0.01" placeholder="solo si variable" disabled></div>
-          <div class="form-group"><label class="form-label">Periodicidad</label>
+          <div class="form-group"><label class="form-label" for="fi-periodicidad">Periodicidad</label>
             <select class="form-select panel-readonly" id="fi-periodicidad" disabled>
               <option value="6">Semestral (6m)</option><option value="3">Trimestral (3m)</option>
               <option value="1">Mensual (1m)</option><option value="12">Anual (12m)</option>
               <option value="0">Al vencimiento (interés al final)</option>
             </select></div>
-          <div class="form-group"><label class="form-label">Base de días</label>
+          <div class="form-group"><label class="form-label" for="fi-base-dias">Base de días</label>
             <select class="form-select panel-readonly" id="fi-base-dias" disabled>
               <option value="act365">ACT/365</option><option value="act360">ACT/360</option><option value="30_360">30/360</option><option value="180_360">180/360</option>
             </select></div>
-          <div class="form-group"><label class="form-label">Devengamiento</label>
+          <div class="form-group"><label class="form-label" for="fi-devengo">Devengamiento</label>
             <select class="form-select panel-readonly" id="fi-devengo" disabled title="Ajustado: los días se cuentan hasta la fecha de pago efectiva (día hábil). Teórico: hasta la fecha de cupón teórica, así correr el pago a día hábil no devenga interés extra.">
               <option value="ajustado">Ajustado a día hábil</option><option value="teorico">Teórico (sin ajuste)</option>
             </select></div>
@@ -834,7 +885,7 @@ window.SUPABASE_CONFIG = {
       <div class="calc-section" id="section-amort">
         <div class="cst">Amortizaciones</div>
         <div style="margin-bottom:8px">
-          <select class="form-select panel-readonly" id="fi-amort-tipo" disabled onchange="toggleAmortTipo()">
+          <select class="form-select panel-readonly" id="fi-amort-tipo" aria-label="Tipo de amortización" disabled onchange="toggleAmortTipo()">
             <option value="bullet">Bullet — 100% al vencimiento</option>
             <option value="cuotas">Cuotas — cronograma</option>
           </select>
@@ -849,11 +900,11 @@ window.SUPABASE_CONFIG = {
             </div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:end">
               <div>
-                <label class="form-label">Fecha 1° pago</label>
+                <label class="form-label" for="gen-amort-fecha">Fecha 1° pago</label>
                 <input class="form-input" id="gen-amort-fecha" type="date">
               </div>
               <div>
-                <label class="form-label">Periodicidad</label>
+                <label class="form-label" for="gen-amort-period">Periodicidad</label>
                 <select class="form-select" id="gen-amort-period">
                   <option value="1">Mensual</option>
                   <option value="3" selected>Trimestral</option>
@@ -862,7 +913,7 @@ window.SUPABASE_CONFIG = {
                 </select>
               </div>
               <div>
-                <label class="form-label">N° de pagos</label>
+                <label class="form-label" for="gen-amort-count">N° de pagos</label>
                 <input class="form-input" id="gen-amort-count" type="number" min="1" max="120" step="1" placeholder="ej: 4" value="4">
               </div>
             </div>
@@ -955,37 +1006,37 @@ window.SUPABASE_CONFIG = {
 <!-- MODAL NUEVO BONO -->
 <div class="modal-overlay" id="modal-bond">
   <div class="modal">
-    <div class="modal-head"><div class="modal-title" id="modal-bond-title">Agregar nuevo bono</div><button class="btn-close" onclick="closeBondModal()">✕</button></div>
+    <div class="modal-head"><div class="modal-title" id="modal-bond-title">Agregar nuevo bono</div><button class="btn-close" aria-label="Cerrar" onclick="closeBondModal()">✕</button></div>
     <div class="modal-body">
       <div class="modal-grid">
-        <div class="form-group"><label class="form-label">Ticker * (exacto BYMA)</label><input class="form-input" id="mb-ticker" type="text" placeholder="NUEVO1"></div>
-        <div class="form-group"><label class="form-label">Emisor *</label>
+        <div class="form-group"><label class="form-label" for="mb-ticker">Ticker * (exacto BYMA)</label><input class="form-input" id="mb-ticker" type="text" placeholder="NUEVO1"></div>
+        <div class="form-group"><label class="form-label" for="mb-emisor-sel">Emisor *</label>
           <select class="form-select" id="mb-emisor-sel" onchange="onEmisorSelChange(this.value)"></select>
           <input class="form-input" id="mb-emisor-new" type="text" placeholder="Nombre del nuevo emisor" style="display:none;margin-top:6px;">
         </div>
-        <div class="form-group"><label class="form-label">Moneda</label>
+        <div class="form-group"><label class="form-label" for="mb-moneda">Moneda</label>
           <select class="form-select" id="mb-moneda" onchange="onMbMonedaChange()"><option>DL</option><option>USD</option><option>ARS</option><option>CER</option></select></div>
         <!-- Legislación y jurisdicción de pago: características del bono.
              En DL siempre Argentina/Argentina (se bloquean automáticamente). -->
-        <div class="form-group"><label class="form-label">Legislación</label>
+        <div class="form-group"><label class="form-label" for="mb-leg">Legislación</label>
           <select class="form-select" id="mb-leg"><option>Argentina</option><option>Nueva York</option><option>Inglaterra</option></select></div>
-        <div class="form-group"><label class="form-label">Jurisdicción de pago</label>
+        <div class="form-group"><label class="form-label" for="mb-jur">Jurisdicción de pago</label>
           <select class="form-select" id="mb-jur"><option>Argentina</option><option>Estados Unidos</option></select></div>
-        <div class="form-group"><label class="form-label">Fecha emisión</label><input class="form-input" id="mb-emision" type="date"></div>
-        <div class="form-group"><label class="form-label">Inicio pago intereses</label><input class="form-input" id="mb-inicio-int" type="date"></div>
-        <div class="form-group"><label class="form-label">Vencimiento *</label><input class="form-input" id="mb-venc" type="date"></div>
-        <div class="form-group"><label class="form-label">Callable</label>
+        <div class="form-group"><label class="form-label" for="mb-emision">Fecha emisión</label><input class="form-input" id="mb-emision" type="date"></div>
+        <div class="form-group"><label class="form-label" for="mb-inicio-int">Inicio pago intereses</label><input class="form-input" id="mb-inicio-int" type="date"></div>
+        <div class="form-group"><label class="form-label" for="mb-venc">Vencimiento *</label><input class="form-input" id="mb-venc" type="date"></div>
+        <div class="form-group"><label class="form-label" for="mb-callable">Callable</label>
           <select class="form-select" id="mb-callable"><option value="No">No</option><option value="Si">Sí</option></select></div>
-        <div class="form-group"><label class="form-label">Cupón (%)</label><input class="form-input" id="mb-cupon" type="number" step="0.01" placeholder="8.5"></div>
-        <div class="form-group"><label class="form-label">Tipo cupón</label>
+        <div class="form-group"><label class="form-label" for="mb-cupon">Cupón (%)</label><input class="form-input" id="mb-cupon" type="number" step="0.01" placeholder="8.5"></div>
+        <div class="form-group"><label class="form-label" for="mb-tipo-cupon">Tipo cupón</label>
           <select class="form-select" id="mb-tipo-cupon"><option value="fijo">Fijo</option><option value="badlar">BADLAR+</option><option value="cer">CER+</option><option value="otro">Otro</option></select></div>
-        <div class="form-group"><label class="form-label">Periodicidad (meses)</label>
+        <div class="form-group"><label class="form-label" for="mb-periodicidad">Periodicidad (meses)</label>
           <select class="form-select" id="mb-periodicidad"><option value="6">6 – Semestral</option><option value="3">3 – Trimestral</option><option value="1">1 – Mensual</option><option value="12">12 – Anual</option><option value="0">Al vencimiento (interés al final)</option></select></div>
-        <div class="form-group"><label class="form-label">Base de días</label>
+        <div class="form-group"><label class="form-label" for="mb-base-dias">Base de días</label>
           <select class="form-select" id="mb-base-dias"><option value="act365">ACT/365</option><option value="act360">ACT/360</option><option value="30_360">30/360</option><option value="180_360">180/360</option></select></div>
-        <div class="form-group"><label class="form-label">Devengamiento</label>
+        <div class="form-group"><label class="form-label" for="mb-devengo">Devengamiento</label>
           <select class="form-select" id="mb-devengo" title="Ajustado: devenga hasta la fecha de pago efectiva (día hábil). Teórico: hasta la fecha de cupón teórica."><option value="ajustado">Ajustado a día hábil</option><option value="teorico">Teórico (sin ajuste)</option></select></div>
-        <div class="form-group"><label class="form-label">Amortización</label>
+        <div class="form-group"><label class="form-label" for="mb-amort">Amortización</label>
           <select class="form-select" id="mb-amort"><option value="bullet">Bullet</option><option value="cuotas">Cuotas</option></select></div>
       </div>
       <p class="modal-note">* obligatorios. Luego podés abrir la calculadora para cargar el cronograma de amortizaciones si corresponde.</p>
@@ -1001,7 +1052,7 @@ window.SUPABASE_CONFIG = {
 <!-- MODAL IMPORTAR EXCEL -->
 <div class="modal-overlay" id="modal-import">
   <div class="modal" style="max-width:520px">
-    <div class="modal-head"><div class="modal-title">Importar bonos desde Excel</div><button class="btn-close" onclick="closeImportModal()">✕</button></div>
+    <div class="modal-head"><div class="modal-title">Importar bonos desde Excel</div><button class="btn-close" aria-label="Cerrar" onclick="closeImportModal()">✕</button></div>
     <div class="modal-body">
       <div class="import-area" id="import-area"
            onclick="document.getElementById('file-input').click()"
@@ -1040,7 +1091,7 @@ window.SUPABASE_CONFIG = {
       <span style="font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700;color:#fbbf24;">🔔 Alertas de Mercado</span>
       <div style="display:flex;align-items:center;gap:8px;">
         <button id="btn-notif-perm" onclick="requestNotifPermission()" style="font-size:.58rem;padding:4px 10px;border-radius:6px;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-weight:600;border:1px solid;transition:all .2s;"></button>
-        <button class="btn-close" onclick="closeAlertModal()">✕</button>
+        <button class="btn-close" aria-label="Cerrar" onclick="closeAlertModal()">✕</button>
       </div>
     </div>
     <div style="padding:16px 20px;flex:1;">
@@ -2187,6 +2238,10 @@ async function fetchFX(){
     if($('fx-brecha-ask')) $('fx-brecha-ask').textContent = fmtp(brechaAsk);
     if($('fx-ts'))        $('fx-ts').textContent =
       new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Buenos_Aires'});
+    // Aviso de móvil: el mismo dato, sin depender de la tabla ni del panel lateral.
+    if($('mn-a3500')) $('mn-a3500').textContent = fmt(a3500Bid);
+    if($('mn-mep'))   $('mn-mep').textContent   = fmt(mepBid);
+    if($('mn-cable')) $('mn-cable').textContent = fmt(cableBid);
     if(typeof updateDLEquiv==='function') updateDLEquiv();
     // Las TNA de las puntas se calculan convirtiendo por MEP/cable → dependen del FX.
     if(typeof recalcPuntasHD==='function') recalcPuntasHD();
@@ -3115,23 +3170,38 @@ function drawYield(data){
       out+=`<circle data-tk="${b.ticker}" style="cursor:pointer" cx="${cx}" cy="${cy}" r="${r}" fill="${c}" opacity=".9" stroke="var(--bg)" stroke-width="${r>5?2:1.5}"><title>${b.ticker} · ${b.emisor}\nTIR: ${b.tir.toFixed(2)}%  Dur: ${b.dur.toFixed(2)}a\nVenc: ${b.venc}\n(clic para abrir)</title></circle>`;
     }
   });
-  // Etiquetas — colocar arriba o abajo según espacio, evitar solapamiento guardando posiciones usadas
+  // Etiquetas — colocación con detección de colisión sobre la caja real del texto.
+  // Antes se pisaban en la zona densa por dos motivos: el comparador de orden
+  // (Math.abs(b.tir-a.tir)) nunca devolvía negativos, así que la prioridad era
+  // arbitraria; y las 4 posiciones candidatas compartían las mismas coordenadas de
+  // colisión (sólo cambiaba el anchor), con lo que en realidad había 2, no 4.
   const placed=[];
-  // Ordenar por TIR desc para dar prioridad a los extremos visibles
-  const labeled=[...pts].sort((a,b)=>Math.abs(b.tir-a.tir));
+  const CW=0.62;                                   // ancho de carácter de IBM Plex Mono, en ems
+  // Prioridad: primero el bono abierto, después los extremos de TIR (los que más
+  // aportan a leer la curva). Los del centro denso ceden el lugar.
+  const tirsOrd=pts.map(b=>b.tir).sort((a,b)=>a-b);
+  const tMed=tirsOrd.length?tirsOrd[Math.floor(tirsOrd.length/2)]:0;
+  const labeled=[...pts].sort((a,b)=>{
+    if(a.ticker===ACTIVE_TK) return -1;
+    if(b.ticker===ACTIVE_TK) return 1;
+    return Math.abs(b.tir-tMed)-Math.abs(a.tir-tMed);
+  });
   labeled.forEach(b=>{
     const cx=px(b.dur),cy=py(b.tir);
     const isActive=b.ticker===ACTIVE_TK;
-    // Intentar posición arriba, luego abajo
-    for(const [dy,anchor] of [[-9,'middle'],[11,'middle'],[-9,'start'],[11,'end']]){
-      const ly=cy+dy,lx=cx;
-      // Check no solapamiento con otras etiquetas (mínimo 16px separación vertical, 40px horizontal)
-      const collide=placed.some(p=>Math.abs(p.y-ly)<10&&Math.abs(p.x-lx)<42);
+    const fs=isActive?9.5:8;
+    const hw=(b.ticker||'').length*fs*CW/2;        // media anchura real de la etiqueta
+    const hh=fs*0.62;                              // media altura aproximada
+    // Cuatro candidatas que SÍ difieren en posición: arriba, abajo, derecha, izquierda.
+    for(const [dx,dy] of [[0,-9],[0,11],[hw+7,3],[-(hw+7),3]]){
+      const lx=cx+dx, ly=cy+dy;
+      // Solapamiento de cajas (con 3px de aire), no de puntos.
+      const collide=placed.some(p=>Math.abs(p.x-lx)<(p.hw+hw+3) && Math.abs(p.y-ly)<(p.hh+hh+3));
       if(!collide||isActive){
-        placed.push({x:lx,y:ly});
+        placed.push({x:lx,y:ly,hw,hh});
         const fill=isActive?'#e2e8f0':'rgba(148,163,184,.75)';
         const fw=isActive?'600':'400';
-        out+=`<text x="${lx}" y="${ly}" font-size="${isActive?9.5:8}" fill="${fill}" font-weight="${fw}" text-anchor="${anchor}" font-family="IBM Plex Mono,monospace" pointer-events="none">${b.ticker}</text>`;
+        out+=`<text x="${lx}" y="${ly}" font-size="${fs}" fill="${fill}" font-weight="${fw}" text-anchor="middle" font-family="IBM Plex Mono,monospace" pointer-events="none">${b.ticker}</text>`;
         break;
       }
     }
@@ -6127,7 +6197,7 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
 </aside>
 
 <div id="view-ops">
-  <div class="ops-h">📊 Operaciones de Mercado · ONs Renta Fija (bilateral)</div>
+  <h1 class="ops-h">📊 Operaciones de Mercado · ONs Renta Fija (bilateral)</h1>
   <div class="ops-toolbar">
     <span style="font-size:.6rem;color:#94a3b8;letter-spacing:.05em">PERÍODO (resumen y operaciones)</span>
     <label style="font-size:.7rem">Desde:&nbsp;<input type="date" id="ops-d-from" onchange="OPS.loadDayRange()"></label>
@@ -6409,6 +6479,7 @@ const OPS = (function(){
     // Máximo de líneas a mostrar en el gráfico
     const ml=document.createElement('div'); ml.className='filt'; ml.innerHTML='<div class="filt-h">Máx. líneas</div>';
     const mlSel=document.createElement('select'); mlSel.id='ops-maxlines';
+    mlSel.setAttribute('aria-label','Máximo de líneas en el gráfico');
     [['5','5'],['10','10'],['15','15'],['20','20'],['30','30'],['50','50'],['9999','Todas']].forEach(([v,l])=>{
       const o=document.createElement('option'); o.value=v; o.textContent=l; if(+v===maxLines)o.selected=true; mlSel.appendChild(o); });
     mlSel.onchange=()=>{ maxLines=+mlSel.value; renderSerie(); }; ml.appendChild(mlSel); el.appendChild(ml);
@@ -6418,6 +6489,7 @@ const OPS = (function(){
       const g=document.createElement('div'); g.className='filt';
       const hd=document.createElement('div'); hd.className='filt-h';
       const all=document.createElement('input'); all.type='checkbox'; all.checked=vals.length>0&&vals.every(v=>filters[key].has(v));
+      all.setAttribute('aria-label','Seleccionar todo: '+lbl);
       all.onchange=()=>{ if(all.checked) vals.forEach(v=>filters[key].add(v)); else filters[key].clear(); buildFilters(); renderSerie(); };
       hd.appendChild(all); hd.appendChild(document.createTextNode(lbl)); g.appendChild(hd);
       const list=document.createElement('div'); list.className='filt-list';
@@ -6757,7 +6829,7 @@ const OPS = (function(){
 </style>
 
 <div id="view-fci">
-  <div class="ops-h">📈 Movimientos de FCI <span style="font-size:.6rem;color:#7c93ad;font-weight:400">· composición de cartera (Tabla de Montos)</span></div>
+  <h1 class="ops-h">📈 Movimientos de FCI <span style="font-size:.6rem;color:#7c93ad;font-weight:400">· composición de cartera (Tabla de Montos)</span></h1>
   <div class="fci-sub">
     <button class="fci-stab active" id="fci-st-bono" onclick="FCI.setTab('bono')">📊 Movimiento del bono</button>
     <button class="fci-stab" id="fci-st-fondo" onclick="FCI.setTab('fondo')">🏦 Movimiento del fondo</button>
@@ -7237,7 +7309,7 @@ body.byma-mode #view-byma{display:block}
 </style>
 
 <div id="view-byma">
-  <div class="byma-h">🧾 Operaciones BYMA · Precio por TNA objetivo</div>
+  <h1 class="byma-h">🧾 Operaciones BYMA · Precio por TNA objetivo</h1>
   <div class="byma-fxbar" id="byma-fx"></div>
   <div class="byma-note">Agregá los tickers, elegí la moneda de cotización y cargá la TNA objetivo: el precio se calcula con el cronograma real del bono (mismo cálculo que la calculadora). El vencimiento se autocompleta desde el catálogo. Los DL se pesifican por A3500; USD MEP/CABLE dividen ese precio por el TC correspondiente.</div>
 
@@ -7283,6 +7355,7 @@ body.byma-mode #view-byma{display:block}
   <div class="byma-actions">
     <button class="byma-add" onclick="BYMAOPS.addRow(true)">+ Agregar fila</button>
     <button class="byma-clear" onclick="BYMAOPS.clearAll()">Limpiar todo</button>
+    <span id="byma-count" style="font-size:.68rem;color:#7f8ea3;margin-left:4px" aria-live="polite"></span>
   </div>
   <datalist id="byma-tickers"></datalist>
 </div>
@@ -7372,7 +7445,7 @@ window.BYMAOPS = (function(){
     tb.innerHTML='';
     list.forEach(b=>{
       const tr=document.createElement('tr');
-      tr.innerHTML='<td><button class="byma-addbtn" title="Agregar a la tabla de cálculo">+</button></td>'
+      tr.innerHTML='<td><button class="byma-addbtn" title="Agregar a la tabla de cálculo" aria-label="Agregar a la tabla de cálculo">+</button></td>'
         +'<td>'+esc(b.ticker)+'</td><td title="'+esc(b.emisor||'')+'">'+esc(b.emisor||'')+'</td><td>'+fmtDate(b.venc)+'</td>'
         +'<td>'+esc(b.rating||'—')+'</td><td>'+esc(b.sector||'—')+'</td>'
         +'<td>'+esc(b.leg||'—')+'</td><td>'+esc(b.jur||'—')+'</td><td>'+esc(b.moneda||'')+'</td>';
@@ -7494,6 +7567,7 @@ window.BYMAOPS = (function(){
 
     td=document.createElement('td');
     const mon=document.createElement('select'); mon.className='byma-mon';
+    mon.setAttribute('aria-label','Moneda de cotización de la fila');
     ['ARS','USD MEP','USD CABLE'].forEach(m=>{ const o=document.createElement('option'); o.value=o.textContent=m; mon.appendChild(o); });
     mon.value=r.moneda||'ARS';
     mon.addEventListener('change',()=>{ r.moneda=mon.value; recompute(r,tr); fillVwap(r,tr); save(); });
@@ -7510,6 +7584,7 @@ window.BYMAOPS = (function(){
 
     td=document.createElement('td');
     const x=document.createElement('button'); x.className='byma-x'; x.textContent='✕'; x.title='Quitar fila';
+    x.setAttribute('aria-label','Quitar esta fila de la tabla de calculo');
     x.addEventListener('click',()=>{ const i=rows.indexOf(r); if(i>=0) rows.splice(i,1); tr.remove(); save(); if(!rows.length) addRow(); });
     td.appendChild(x); tr.appendChild(td);
 
@@ -7547,13 +7622,20 @@ window.BYMAOPS = (function(){
     rows.sort(cmp); save(); renderAll();
   }
 
-  function renderAll(){ const tb=$('byma-tbody'); if(!tb) return; tb.innerHTML=''; rows.forEach(r=> tb.appendChild(buildRow(r))); updateHead(); }
+  function renderAll(){ const tb=$('byma-tbody'); if(!tb) return; tb.innerHTML=''; rows.forEach(r=> tb.appendChild(buildRow(r))); updateHead();  updCount(); }
   function addRow(focus){ const r={ticker:'',moneda:'',tna:null}; rows.push(r); const tr=buildRow(r); $('byma-tbody').appendChild(tr); save(); if(focus) tr._refs.tk.focus(); }
   function clearAll(){ rows=[]; save(); renderAll(); addRow(); }
 
   function load(){ try{ const s=JSON.parse(localStorage.getItem(LS)); if(Array.isArray(s)&&s.length) rows=s.map(o=>({ticker:o.ticker||'',moneda:o.moneda||'',tna:(o.tna!=null?o.tna:null)})); }catch(_){}
     if(!rows.length) rows=[{ticker:'',moneda:'',tna:null}]; }
-  function save(){ try{ localStorage.setItem(LS, JSON.stringify(rows)); }catch(_){} }
+  function save(){ try{ localStorage.setItem(LS, JSON.stringify(rows)); }catch(_){} updCount(); }
+  // BYMA-2: el "+" del buscador no mostraba su efecto. El contador hace visible
+  // que la fila se agregó a la tabla de abajo (aria-live lo anuncia además).
+  function updCount(){
+    const el=$('byma-count'); if(!el) return;
+    const n=rows.length;
+    el.textContent = n===0 ? '' : (n===1 ? '1 fila en la tabla' : n+' filas en la tabla');
+  }
 
   function buildDatalist(){ const dl=$('byma-tickers'); if(!dl||typeof bonds==='undefined'||!Array.isArray(bonds)) return;
     dl.innerHTML=''; bonds.slice().sort((a,b)=>a.ticker<b.ticker?-1:1).forEach(b=>{ const o=document.createElement('option'); o.value=b.ticker; o.textContent=(b.emisor||'')+' · '+fmtDate(b.venc); dl.appendChild(o); }); }
