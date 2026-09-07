@@ -5970,6 +5970,40 @@ function clearHistory(){
   renderHistory();
 }
 
+/* ══ Fase 3 · Instrumentación de red ══════════════════════════════════════════
+   Mide tiempo y tasa de error por endpoint. Nace de un caso concreto: el RPC
+   fci_bonos agrega ~396k filas y a veces supera el statement_timeout (~3s), pero
+   como los reintentos lo tapaban, el síntoma visible era "a veces tarda" y no
+   había forma de cuantificarlo. En consola: NET.report()  */
+window.NET = (function(){
+  const s = new Map();                     // endpoint -> {n, err, ms, maxMs, lastErr}
+  function rec(ep, ms, ok, info){
+    if(!ep) return;
+    const e = s.get(ep) || {n:0, err:0, ms:0, maxMs:0, lastErr:null};
+    e.n++; e.ms += ms; if(ms > e.maxMs) e.maxMs = ms;
+    if(!ok){ e.err++; e.lastErr = info || null; }
+    s.set(ep, e);
+    if(!ok) console.warn(`[net] ${ep} falló en ${Math.round(ms)}ms`, info||'');
+    else if(ms > 2000) console.warn(`[net] ${ep} lento: ${Math.round(ms)}ms`);
+  }
+  function report(){
+    const rows = [...s.entries()].map(([ep,e])=>({
+      endpoint: ep, llamadas: e.n, errores: e.err,
+      'error %': +(100*e.err/e.n).toFixed(1),
+      'ms prom': Math.round(e.ms/e.n), 'ms máx': Math.round(e.maxMs),
+      'último error': e.lastErr || ''
+    })).sort((a,b)=> b['ms prom'] - a['ms prom']);
+    if(console.table) console.table(rows); else console.log(rows);
+    return rows;
+  }
+  // Nombre corto y estable del endpoint (sin query ni paginación).
+  function ep(url){
+    try{ const u = String(url).split('/rest/v1/')[1] || String(url); return u.split('?')[0]; }
+    catch(e){ return null; }
+  }
+  return { rec, report, ep, raw: ()=>[...s.entries()] };
+})();
+
 /* ══ Fase 2 · Toasts no bloqueantes ═══════════════════════════════════════════
    Reemplazan a alert(): no interrumpen, no se pueden dejar "colgados" y respetan
    la estética del producto. Firma compatible 1:1 con alert(msg). */
@@ -6158,15 +6192,24 @@ const OPS = (function(){
   const cfg = window.SUPABASE_CONFIG || {};
   const REST = (cfg.url||'') + '/rest/v1';
   const HDRS = {apikey:cfg.anonKey||'', Authorization:'Bearer '+(cfg.anonKey||'')};
-  async function q(path){ try{ const r=await fetch(REST+path,{headers:HDRS}); return r.ok? await r.json():[]; }catch(e){ console.error('[OPS]',e); return []; } }
+  async function q(path){ const _t0=performance.now();
+    try{ const r=await fetch(REST+path,{headers:HDRS});
+      if(window.NET) NET.rec(NET.ep(REST+path), performance.now()-_t0, r.ok, r.ok?null:('HTTP '+r.status));
+      if(!r.ok) _fetchFailed=true;
+      return r.ok? await r.json():[]; }
+    catch(e){ if(window.NET) NET.rec(NET.ep(REST+path), performance.now()-_t0, false, e.message);
+      _fetchFailed=true; console.error('[OPS]',e); return []; } }
   async function qAll(path){ // pagina (Supabase devuelve máx 1000 filas por request)
     const out=[]; let from=0; const page=1000;
     while(true){
       let chunk=[];
+      const _t0=performance.now();
       try{ const r=await fetch(REST+path,{headers:{...HDRS, Range:from+'-'+(from+page-1), 'Range-Unit':'items'}});
+        if(window.NET) NET.rec(NET.ep(REST+path), performance.now()-_t0, r.ok, r.ok?null:('HTTP '+r.status));
         if(r.ok) chunk=await r.json();
         else { _fetchFailed=true; console.error('[OPS] HTTP', r.status, path); break; } }
-      catch(e){ _fetchFailed=true; console.error('[OPS]',e); break; }
+      catch(e){ if(window.NET) NET.rec(NET.ep(REST+path), performance.now()-_t0, false, e.message);
+        _fetchFailed=true; console.error('[OPS]',e); break; }
       out.push(...chunk);
       if(chunk.length<page) break;
       from+=page;
@@ -6774,8 +6817,11 @@ window.FCI = (function(){
       const sep = url.includes('?') ? '&' : '?';
       let r = null;
       for(let att=0; att<3; att++){                 // reintenta la página ante fallo transitorio (red/timeout)
-        try{ const rr = await fetch(url + sep + 'limit=' + PAGE + '&offset=' + off, opts); if(rr.ok){ r=rr; break; } }
-        catch(e){}
+        const _t0 = performance.now();
+        try{ const rr = await fetch(url + sep + 'limit=' + PAGE + '&offset=' + off, opts);
+             if(window.NET) NET.rec(NET.ep(url), performance.now()-_t0, rr.ok, rr.ok?null:('HTTP '+rr.status));
+             if(rr.ok){ r=rr; break; } }
+        catch(e){ if(window.NET) NET.rec(NET.ep(url), performance.now()-_t0, false, e.message); }
         await new Promise(res=>setTimeout(res, 350*(att+1)));
       }
       if(!r) throw new Error('pagedFetch sin respuesta tras reintentos: '+url);  // que el caller decida (no partial silencioso)
