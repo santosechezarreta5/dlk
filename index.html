@@ -540,7 +540,7 @@ window.SUPABASE_CONFIG = {
 <main id="main-content">
   <div class="hero">
     <h1 class="h-title">BONOS CORPORATIVOS AR</h1>
-    <div class="h-sub">// data912.com + dolarapi.com · <span id="bond-count">64</span> instrumentos · Auto-refresh 30s · Click para calculadora</div>
+    <div class="h-sub">// data912.com + MAE · <span id="bond-count">64</span> instrumentos · Auto-refresh 30s · Click para calculadora</div>
   </div>
   <div class="alert warn" id="warn-bar"></div>
   <div class="alert err" id="err-bar"></div>
@@ -559,13 +559,14 @@ window.SUPABASE_CONFIG = {
           <span style="display:none" id="fx-a3500-ask">—</span>
           <span style="font-size:.55rem;color:var(--muted2);margin-left:6px;opacity:.7">✎</span>
         </span>
+        <span id="fx-a3500-meta" style="font-size:.5rem;color:var(--muted2);margin-left:6px;opacity:.75"></span>
         <!-- Modo edición (oculto por default) -->
         <span id="fx-a3500-edit" style="display:none;align-items:center;gap:4px">
           <input type="number" step="0.01" id="fx-a3500-val-inp" style="width:90px;font-family:'IBM Plex Mono',monospace;font-size:.65rem;padding:2px 4px;background:var(--s1);border:1px solid var(--blue);color:var(--text);border-radius:3px;outline:none" placeholder="ej: 1380.50">
           <button onclick="saveA3500()" style="background:var(--teal);color:#0a1a18;border:0;padding:2px 6px;border-radius:3px;font-size:.55rem;font-weight:700;cursor:pointer">OK</button>
           <button onclick="cancelA3500()" style="background:transparent;color:var(--muted2);border:1px solid var(--border);padding:2px 6px;border-radius:3px;font-size:.55rem;cursor:pointer">×</button>
         </span>
-        <button id="fx-a3500-reset" onclick="resetA3500()" style="display:none;background:transparent;color:var(--muted2);border:1px solid var(--border);padding:2px 6px;border-radius:3px;font-size:.55rem;cursor:pointer;margin-left:6px" title="Volver al valor de dolarapi.com">↺</button>
+        <button id="fx-a3500-reset" onclick="resetA3500()" style="display:none;background:transparent;color:var(--muted2);border:1px solid var(--border);padding:2px 6px;border-radius:3px;font-size:.55rem;cursor:pointer;margin-left:6px" title="Volver al valor de mercado">↺</button>
       </div>
     </div>
     <!-- MEP comparativo -->
@@ -2147,23 +2148,72 @@ async function loadBondExtras(bond){
   if(html){ el.innerHTML=html; el.style.display=''; }
 }
 
+// De donde salio el A3500 que se esta mostrando y de cuando. Se llena en
+// fetchFX() y lo consume el rotulo del panel.
+var A3500_META = {tipo:null, fecha:null, fuente:null};
+
+// Rotulo del A3500. "operado" = ultima punta del mayorista con la rueda abierta;
+// "ppn" = promedio ponderado ya cerrado, que es el A3500 definitivo del dia;
+// "cierre" = lo que publico el BCRA; "aprox" = respaldo minorista, no es A3500.
+function _a3500MetaTxt(){
+  const m = A3500_META;
+  if(!m || !m.tipo) return '';
+  const et = {operado:'último operado', ppn:'PPN cierre',
+              cierre:'cierre BCRA', aprox:'aprox. minorista'}[m.tipo] || m.tipo;
+  let cuando = '';
+  if(m.fecha){
+    if(m.fecha.length <= 10){                              // "2026-09-14" (BCRA)
+      cuando = m.fecha.split('-').reverse().join('/');
+    }else if(/[Zz]|[+-]\d{2}:\d{2}$/.test(m.fecha)){       // ISO con zona
+      cuando = new Date(m.fecha).toLocaleTimeString('es-AR',
+        {hour:'2-digit',minute:'2-digit',hour12:false,
+         timeZone:'America/Argentina/Buenos_Aires'});
+    }else{
+      // El MAE sella en hora de Buenos Aires y sin offset: parsearlo como Date
+      // lo correria para quien mire desde otro huso, asi que se toma el texto.
+      cuando = m.fecha.slice(11,16);
+    }
+  }
+  return cuando ? et+' · '+cuando : et;
+}
+
 // ── FX: MEP / Cable / Canje via AL30 ────────────────────────────────────────
 async function fetchFX(){
   try{
-    // ── 1) A3500 (dólar oficial mayorista) desde dolarapi.com — public, sin auth
+    // ── 1) A3500 via Edge Function propia (web/supabase/functions/a3500).
+    // El A3500 es un valor unico, no un bid/ask. Con la rueda abierta la funcion
+    // devuelve el ultimo operado del mayorista (MAE) y al cerrar el PPN, que es
+    // el mismo numero que despues publica el BCRA. Va por funcion propia porque
+    // el MAE no manda cabeceras CORS y el browser no puede pegarle directo.
+    // Se asigna igual a bid y ask para no tocar el resto del calculo, que ya
+    // trabaja con el punto medio de ambos.
     let a3500Bid=null, a3500Ask=null;
+    A3500_META = {tipo:null, fecha:null, fuente:null};
     try{
-      // Intento directo; si falla por CORS, fallback al proxy local /api/oficial
-      let oficial = await fetch('https://dolarapi.com/v1/dolares/oficial').then(r=>r.json()).catch(()=>null);
-      // Solo intentamos el proxy local si NO estamos en file:// (ahí no hay servidor)
-      if((!oficial || (!oficial.compra && !oficial.venta)) && location.protocol!=='file:'){
-        oficial = await fetch('/api/oficial').then(r=>r.json()).catch(()=>null);
-        if(typeof oficial === 'string'){ try{ oficial = JSON.parse(oficial); }catch(_){} }
+      const cfg = window.SUPABASE_CONFIG||{};
+      let d = null;
+      if(cfg.url && cfg.anonKey){
+        d = await fetch(cfg.url+'/functions/v1/a3500', {headers:_sbHeaders()||{}})
+              .then(r=>r.ok?r.json():null).catch(()=>null);
       }
-      const cb = parseFloat(oficial?.compra), cv = parseFloat(oficial?.venta);
-      if(!isNaN(cb)&&cb>0) a3500Bid = cb;
-      if(!isNaN(cv)&&cv>0) a3500Ask = cv;
-    }catch(e){ console.warn('[fetchFX] dolarapi error:', e); }
+      const v = parseFloat(d?.valor);
+      if(!isNaN(v) && v>0){
+        a3500Bid = a3500Ask = v;
+        A3500_META = {tipo:d.tipo, fecha:d.fecha, fuente:d.fuente};
+      }else{
+        // Respaldo si la funcion no responde: el oficial MINORISTA de dolarapi.
+        // NO es el A3500 — su punto medio corre ~5 pesos abajo y la punta
+        // compradora ~30 — asi que se rotula como aproximado en pantalla.
+        const oficial = await fetch('https://dolarapi.com/v1/dolares/oficial')
+                          .then(r=>r.json()).catch(()=>null);
+        const vals = [parseFloat(oficial?.compra), parseFloat(oficial?.venta)]
+                       .filter(x=>!isNaN(x)&&x>0);
+        if(vals.length){
+          a3500Bid = a3500Ask = vals.reduce((a,b)=>a+b,0)/vals.length;
+          A3500_META = {tipo:'aprox', fecha:null, fuente:'dolarapi (minorista)'};
+        }
+      }
+    }catch(e){ console.warn('[fetchFX] A3500 error:', e); }
 
     // Guardar el último valor de mercado para poder volver a él si el usuario reseteó el override
     FX_MARKET_A3500.bid = a3500Bid;
@@ -2226,6 +2276,8 @@ async function fetchFX(){
     const $ = id => document.getElementById(id);
     if($('fx-a3500-bid')) $('fx-a3500-bid').textContent = fmt(a3500Bid);
     if($('fx-a3500-ask')) $('fx-a3500-ask').textContent = fmt(a3500Ask);
+    if($('fx-a3500-meta')) $('fx-a3500-meta').textContent =
+      FX_MANUAL_A3500.active ? '' : _a3500MetaTxt();
     if($('fx-a3500-badge')) $('fx-a3500-badge').style.display = FX_MANUAL_A3500.active ? 'inline-block' : 'none';
     if($('fx-a3500-reset')) $('fx-a3500-reset').style.display = FX_MANUAL_A3500.active ? 'inline-block' : 'none';
     if($('fx-mep-bid'))    $('fx-mep-bid').textContent    = fmt(mepBid);
