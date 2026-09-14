@@ -1,0 +1,7 @@
+# Artefactos del CLI de Supabase: se regeneran en cada `functions deploy`.
+supabase/.temp/
+supabase/.branches/
+
+# Variables de entorno de las Edge Functions (nunca versionarlas).
+supabase/.env
+supabase/functions/**/.env

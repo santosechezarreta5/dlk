@@ -5260,8 +5260,9 @@ watchPanelInputs();
 try { applyUIPrefs(); } catch(e){ console.error('[applyUIPrefs]', e); }
 // ── Detección de file:// (sin servidor) ──────────────────────────────────────
 // Cuando el HTML se abre directamente desde el ZIP o file://, los fetch a
-// data912/dolarapi fallan por CORS. Mostramos un banner explicativo y ajustamos
-// el comportamiento para no acumular errores ni consumir memoria.
+// data912, la Edge Function del A3500 y dolarapi fallan por CORS. Mostramos un
+// banner explicativo y ajustamos el comportamiento para no acumular errores ni
+// consumir memoria.
 const IS_FILE_PROTO = (typeof location !== 'undefined' && location.protocol === 'file:');
 if(IS_FILE_PROTO){
   setTimeout(()=>{
@@ -5393,7 +5394,7 @@ const BOOKS = ['MEP','ARS','CABLE'];   // monedas de operación (los DL usan USD
 let FX = { mepBid:null, mepAsk:null, cableBid:null, cableAsk:null, canjeBid:null, canjeAsk:null, a3500Bid:null, a3500Ask:null, brechaBid:null, brechaAsk:null };
 
 // ── Override manual del A3500 ────────────────────────────────────────────
-// El usuario puede pisar el valor de dolarapi con un valor manual que se
+// El usuario puede pisar el valor de mercado con un valor manual que se
 // propaga a TODAS las calculadoras y el cálculo de USD-eq. Persiste en localStorage.
 const LS_FX_MANUAL_A3500 = 'bonosdl_manual_a3500';
 const FX_MANUAL_A3500 = (function(){
