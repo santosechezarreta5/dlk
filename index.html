@@ -2177,43 +2177,49 @@ function _a3500MetaTxt(){
   return cuando ? et+' · '+cuando : et;
 }
 
+// A3500 via Edge Function propia (web/supabase/functions/a3500).
+// El A3500 es un valor unico, no un bid/ask. Con la rueda abierta la funcion
+// devuelve el ultimo operado del mayorista (MAE) y al cerrar el PPN, que es el
+// mismo numero que despues publica el BCRA. Va por funcion propia porque el MAE
+// no manda cabeceras CORS y el browser no puede pegarle directo.
+async function _fetchA3500(){
+  try{
+    const cfg = window.SUPABASE_CONFIG||{};
+    let d = null;
+    if(cfg.url && cfg.anonKey){
+      d = await fetch(cfg.url+'/functions/v1/a3500', {headers:_sbHeaders()||{}})
+            .then(r=>r.ok?r.json():null).catch(()=>null);
+    }
+    const v = parseFloat(d?.valor);
+    if(!isNaN(v) && v>0) return {valor:v, meta:{tipo:d.tipo, fecha:d.fecha, fuente:d.fuente}};
+
+    // Respaldo si la funcion no responde: el oficial MINORISTA de dolarapi.
+    // NO es el A3500 — su punto medio corre ~5 pesos abajo y la punta
+    // compradora ~30 — asi que se rotula como aproximado en pantalla.
+    const oficial = await fetch('https://dolarapi.com/v1/dolares/oficial')
+                      .then(r=>r.json()).catch(()=>null);
+    const vals = [parseFloat(oficial?.compra), parseFloat(oficial?.venta)]
+                   .filter(x=>!isNaN(x)&&x>0);
+    if(vals.length) return {valor: vals.reduce((a,b)=>a+b,0)/vals.length,
+                            meta:{tipo:'aprox', fecha:null, fuente:'dolarapi (minorista)'}};
+  }catch(e){ console.warn('[fetchFX] A3500 error:', e); }
+  return {valor:null, meta:{tipo:null, fecha:null, fuente:null}};
+}
+
 // ── FX: MEP / Cable / Canje via AL30 ────────────────────────────────────────
 async function fetchFX(){
   try{
-    // ── 1) A3500 via Edge Function propia (web/supabase/functions/a3500).
-    // El A3500 es un valor unico, no un bid/ask. Con la rueda abierta la funcion
-    // devuelve el ultimo operado del mayorista (MAE) y al cerrar el PPN, que es
-    // el mismo numero que despues publica el BCRA. Va por funcion propia porque
-    // el MAE no manda cabeceras CORS y el browser no puede pegarle directo.
-    // Se asigna igual a bid y ask para no tocar el resto del calculo, que ya
-    // trabaja con el punto medio de ambos.
-    let a3500Bid=null, a3500Ask=null;
-    A3500_META = {tipo:null, fecha:null, fuente:null};
-    try{
-      const cfg = window.SUPABASE_CONFIG||{};
-      let d = null;
-      if(cfg.url && cfg.anonKey){
-        d = await fetch(cfg.url+'/functions/v1/a3500', {headers:_sbHeaders()||{}})
-              .then(r=>r.ok?r.json():null).catch(()=>null);
-      }
-      const v = parseFloat(d?.valor);
-      if(!isNaN(v) && v>0){
-        a3500Bid = a3500Ask = v;
-        A3500_META = {tipo:d.tipo, fecha:d.fecha, fuente:d.fuente};
-      }else{
-        // Respaldo si la funcion no responde: el oficial MINORISTA de dolarapi.
-        // NO es el A3500 — su punto medio corre ~5 pesos abajo y la punta
-        // compradora ~30 — asi que se rotula como aproximado en pantalla.
-        const oficial = await fetch('https://dolarapi.com/v1/dolares/oficial')
-                          .then(r=>r.json()).catch(()=>null);
-        const vals = [parseFloat(oficial?.compra), parseFloat(oficial?.venta)]
-                       .filter(x=>!isNaN(x)&&x>0);
-        if(vals.length){
-          a3500Bid = a3500Ask = vals.reduce((a,b)=>a+b,0)/vals.length;
-          A3500_META = {tipo:'aprox', fecha:null, fuente:'dolarapi (minorista)'};
-        }
-      }
-    }catch(e){ console.warn('[fetchFX] A3500 error:', e); }
+    // ── 1) A3500 y precios de data912, EN PARALELO.
+    // El A3500 va por el MAE, que tarda ~2s en contestar, y los bonos no
+    // dependen de el: encadenarlos le sumaba esa espera a cada refresco.
+    // El valor del A3500 se asigna igual a bid y ask, porque es un numero unico
+    // y el resto del calculo ya trabaja con el punto medio de ambos.
+    const [_a3500, raw] = await Promise.all([
+      _fetchA3500(),
+      fetch(`${DATA912}/arg_bonds`).then(r=>r.json()).catch(()=>null),
+    ]);
+    let a3500Bid = _a3500.valor, a3500Ask = _a3500.valor;
+    A3500_META = _a3500.meta;
 
     // Guardar el último valor de mercado para poder volver a él si el usuario reseteó el override
     FX_MARKET_A3500.bid = a3500Bid;
@@ -2225,8 +2231,7 @@ async function fetchFX(){
       a3500Ask = FX_MANUAL_A3500.ask;
     }
 
-    // ── 2) MEP y Cable desde AL30/AL30D/AL30C (data912)
-    const raw = await fetch(`${DATA912}/arg_bonds`).then(r=>r.json()).catch(()=>null);
+    // ── 2) MEP y Cable desde AL30/AL30D/AL30C (data912, ya resuelto arriba)
     let mepBid=null, mepAsk=null, cableBid=null, cableAsk=null;
     let canjeBid=0, canjeAsk=0;
     if(Array.isArray(raw)){
