@@ -2302,7 +2302,7 @@ async function fetchFX(){
     if(typeof updateDLEquiv==='function') updateDLEquiv();
     // Las TNA de las puntas se calculan convirtiendo por MEP/cable → dependen del FX.
     if(typeof recalcPuntasHD==='function') recalcPuntasHD();
-    // La solapa Operaciones BYMA calcula precios a partir de los TC → refrescar al cambiar el FX.
+    // La solapa Tasa → Precio calcula precios a partir de los TC → refrescar al cambiar el FX.
     if(window.BYMAOPS && window.BYMAOPS.onFX) window.BYMAOPS.onFX();
   }catch(e){ console.error('[fetchFX] Error:', e); }
 }
@@ -6250,7 +6250,7 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
   <div class="dh"><span>Menú</span><span class="x" onclick="OPS.toggleMenu(false)">✕</span></div>
   <button class="ditem active" data-v="calc" onclick="OPS.selectView('calc')">🧮 Calculadoras</button>
   <button class="ditem" data-v="ops" onclick="OPS.selectView('ops')">📊 Operaciones Mercado</button>
-  <button class="ditem" data-v="byma" onclick="OPS.selectView('byma')">🧾 Operaciones BYMA</button>
+  <button class="ditem" data-v="byma" onclick="OPS.selectView('byma')">🧾 Tasa → Precio</button>
   <button class="ditem" data-v="fci" onclick="OPS.selectView('fci')">📈 Movimientos de FCI</button>
 </aside>
 
@@ -7306,7 +7306,7 @@ window.FCI = (function(){
 })();
 </script>
 
-<!-- ═══════════════ VISTA OPERACIONES BYMA (precio por TNA) ═══════════════ -->
+<!-- ═══════════════ VISTA TASA → PRECIO (precio por TNA) ═══════════════ -->
 <style>
 body.byma-mode #main-content, body.byma-mode #calc-panel{display:none !important}
 #view-byma{display:none;padding:16px 22px;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif}
@@ -7367,7 +7367,7 @@ body.byma-mode #view-byma{display:block}
 </style>
 
 <div id="view-byma">
-  <h1 class="byma-h">🧾 Operaciones BYMA · Precio por TNA objetivo</h1>
+  <h1 class="byma-h">🧾 Tasa → Precio · a partir de la TNA objetivo</h1>
   <div class="byma-fxbar" id="byma-fx"></div>
   <div class="byma-note">Agregá los tickers, elegí la moneda de cotización y cargá la TNA objetivo: el precio se calcula con el cronograma real del bono (mismo cálculo que la calculadora). El vencimiento se autocompleta desde el catálogo. Los DL se pesifican por A3500; USD MEP/CABLE dividen ese precio por el TC correspondiente.</div>
 
