@@ -3530,19 +3530,39 @@ function activeCallScenarios(callSched, couponDates, sett, vd){
 // Asume que el emisor rescata el bono en `callDate` al precio de call `callPrice` (%VN).
 // Reusa buildSchedule con vcDate = callDate (cupones hasta el call + stub de interés corrido a esa
 // fecha) y reemplaza la redención final por callPrice% del capital vigente. Las amortizaciones
-// programadas ESTRICTAMENTE antes del call se pagan normal; las coincidentes/posteriores se
-// rescatan con el call. Convención estándar: precio de call limpio + interés corrido.
+// anteriores al call se pagan normal; una cuota que cae EN la fecha de rescate se paga a la
+// PAR (es un pago contractual de capital en su fecha, no un rescate anticipado) y el call
+// redime sólo el remanente; las posteriores al call no se pagan, quedan absorbidas en el
+// rescate. Convención estándar: precio de call limpio + interés corrido.
 function buildCallCF(emD, iiD, callDate, cupon, per, base, amortSched, devengo, callPrice, sett){
   if(!callDate || isNaN(callDate)) return null;
-  const amortPre = (amortSched||[]).filter(a=>{
+  // Las fechas se comparan AJUSTADA contra AJUSTADA. callDate puede llegar ya corrida a dia
+  // habil (cuando activeCallScenarios ancla en un cupon) o en crudo (fecha declarada), y de
+  // cualquier modo buildSchedule ubica el flujo en su dia habil. Comparando la cuota en
+  // crudo, una cuota de la MISMA fecha que el rescate parecia anterior solo porque ese dia
+  // era feriado: en LMS7O la cuota y el cupon caen ambos el 12/10/2026 (feriado) y los dos
+  // se corren al 13/10, pero 12/10 < 13/10 la daba por previa.
+  const callAj = adjustDate(callDate);
+  // Tres grupos. `previas` se pagan normal dentro del cronograma. `enCall` son las que caen
+  // en la fecha de rescate (o tan cerca que buildSchedule las aparearia con ese evento y la
+  // redencion final las borraria): se pagan a la PAR y el call redime solo el remanente.
+  // Las posteriores al call no entran en ninguno: si el emisor rescata, nunca se pagan.
+  const DIAS_MATCH = 5;            // misma ventana con que buildSchedule aparea cuota y cupon
+  const previas = [], enCall = [];
+  (amortSched||[]).forEach(a=>{
     const af=(a.fecha instanceof Date)?a.fecha:new Date(String(a.fecha).substring(0,10)+'T12:00:00');
-    return af < callDate;
+    const aj=adjustDate(af);
+    if(aj > callAj) return;
+    if(Math.abs(aj - callAj)/(24*3600*1000) <= DIAS_MATCH) enCall.push(a);
+    else previas.push(a);
   });
-  const raw = buildSchedule(emD, iiD, callDate, cupon, per, base, amortPre, devengo);
+  const pctEnCall = enCall.reduce((t,a)=>t + (parseFloat(a.pct)||0), 0);
+  const raw = buildSchedule(emD, iiD, callDate, cupon, per, base, previas, devengo);
   if(!raw || !raw.length) return null;
   const flows = raw.map(x=>({...x}));
   const last = flows[flows.length-1];
-  last.amort = parseFloat((callPrice/100 * last.capital).toFixed(6));   // rescate al precio de call
+  const cuota = Math.min(pctEnCall, last.capital);
+  last.amort = parseFloat((cuota + callPrice/100 * (last.capital - cuota)).toFixed(6));
   last.total = parseFloat((last.interes + last.amort).toFixed(6));
   // Base de anualizacion: el periodo NOMINAL del bono, no el ultimo tramo. En un call ese
   // tramo es un stub arbitrario, y vale 0 cuando la fecha de rescate coincide con un cupon
