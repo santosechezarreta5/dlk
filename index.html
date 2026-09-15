@@ -2319,7 +2319,8 @@ function recalcTIR(b){
   if(e.memoTir.has(pPrice)){
     if(PERF) PERF.memoHit++;
     const m=e.memoTir.get(pPrice); b.tir=m.tir; b.tna=m.tna; b.dur=m.dur;
-    b.ytwTir=m.ytwTir; b.ytwTna=m.ytwTna; b.ytwKind=m.ytwKind; b.ytwDesde=m.ytwDesde; b.ytwPrecio=m.ytwPrecio; b.ytw=m.ytwTna;
+    b.ytwTir=m.ytwTir; b.ytwTna=m.ytwTna; b.ytwKind=m.ytwKind; b.ytwDesde=m.ytwDesde; b.ytwPrecio=m.ytwPrecio;
+        b.ytwSimple=m.ytwSimple; b.ytwDias=m.ytwDias; b.ytw=(m.ytw!==undefined)?m.ytw:m.ytwTna;
     return;
   }
   if(PERF) PERF.memoMiss++;
@@ -2365,19 +2366,53 @@ function recalcTIR(b){
   _memoSet(e.memoTir,pPrice,_setYTW(b,e,pPrice,{tir:b.tir,tna:b.tna,dur:b.dur}));
 }
 
+// ── Rendimiento de un escenario de call ───────────────────────────────────────
+// Devuelve la TIR anualizada y SIEMPRE el retorno simple del periodo. Anualizar un
+// horizonte de pocos dias da un numero sin sentido (perder 7% en 2 dias es -99,99% anual)
+// y ademas calcTIR ni converge: el clamp de Newton corta en r=-0.9999 y devuelve null.
+// Ese null hacia que el escenario se descartara en silencio y el YTW volviera a la YTM, o
+// sea que la alarma se apagaba justo cuando el rescate era mas inminente.
+const YTC_DIAS_CORTO = 60;
+function callYield(cf, precio){
+  if(!cf || !cf.length || !(precio > 0)) return null;
+  const fut = cf.filter(x => x.dias > 0);
+  if(!fut.length) return null;
+  const dias = Math.max(...fut.map(x => x.dias));
+  const simple = fut.reduce((s,x) => s + x.total, 0) / precio - 1;
+  return { tir: calcTIR(cf, precio), simple, dias, corto: dias < YTC_DIAS_CORTO };
+}
+// Un escenario sin TIR solo puede ser el PEOR si el retorno del periodo es negativo: si no
+// converge con retorno positivo es una tasa absurdamente alta, que nunca es el peor caso.
+function _rankYTC(tir, simple){
+  if(tir != null) return parseFloat(tir.toFixed(2));
+  return (simple != null && simple < 0) ? -Infinity : null;
+}
+// Texto del YTW: en horizonte corto (o si la TIR no converge) el numero util es el retorno
+// del periodo, no su anualizacion.
+function ytwTexto(b){
+  if(b.ytwKind === 'call' && b.ytwDias != null && (b.ytwTna == null || b.ytwDias < YTC_DIAS_CORTO))
+    return (b.ytwSimple * 100).toFixed(2) + '% en ' + b.ytwDias + 'd';
+  return (b.ytwTna != null) ? b.ytwTna.toFixed(2) + '%' : null;
+}
+
 // Yield to Worst: peor tasa (menor TIR) entre la YTM (b.tir ya calculada) y las YTC de cada condición
 // de call. Setea b.ytw* en el bono y agrega los campos al objeto de memo. Sin callCFs → YTW = YTM.
 function _setYTW(b, e, pPrice, memo){
-  let wt=b.tir, wn=b.tna, kind='YTM', desde=null, precio=null;
+  let wt=b.tir, wn=b.tna, kind='YTM', desde=null, precio=null, simple=null, dias=null;
   if(e.callCFs && e.callCFs.length && b.tir!=null){
     e.callCFs.forEach(cc=>{
-      const t=calcTIR(cc.cf, pPrice); if(t==null) return;
-      const t2=parseFloat(t.toFixed(2));
-      if(t2 < wt){ wt=t2; wn=tirToTNA(t, e.per, cc.diasPeriodo); kind='call'; desde=cc.callDateStr||cc.desde; precio=cc.precio; }
+      const y=callYield(cc.cf, pPrice); if(!y) return;
+      const rank=_rankYTC(y.tir, y.simple);
+      if(rank==null || !(rank < wt)) return;
+      wt=rank; wn=(y.tir!=null)?tirToTNA(y.tir, e.per, cc.diasPeriodo):null;
+      kind='call'; desde=cc.callDateStr||cc.desde; precio=cc.precio; simple=y.simple; dias=y.dias;
     });
   }
-  b.ytwTir=wt; b.ytwTna=wn; b.ytwKind=kind; b.ytwDesde=desde; b.ytwPrecio=precio; b.ytw=wn;
+  b.ytwTir=wt; b.ytwTna=wn; b.ytwKind=kind; b.ytwDesde=desde; b.ytwPrecio=precio;
+  b.ytwSimple=simple; b.ytwDias=dias;
+  b.ytw=(wn!=null)?wn:(kind==='call'?-999:null);   // solo clave de orden; el texto sale de ytwTexto()
   memo.ytwTir=wt; memo.ytwTna=wn; memo.ytwKind=kind; memo.ytwDesde=desde; memo.ytwPrecio=precio;
+  memo.ytwSimple=simple; memo.ytwDias=dias; memo.ytw=b.ytw;
   return memo;
 }
 
@@ -2849,10 +2884,12 @@ function render(){
       askTna:   tnaOnlyCell(askCalc, '#f87171'),
       tir:      tirCell,
       tna:      `<span class="tna-val" id="tna-${b.ticker}">${tnaDisp!=null?tnaDisp.toFixed(2)+'%':'—'}</span>`,
-      ytw:      (()=>{ if(b.ytwTna==null) return `<span style="color:var(--muted2)">—</span>`;
+      ytw:      (()=>{ const txt=ytwTexto(b); if(txt==null) return `<span style="color:var(--muted2)">—</span>`;
                        const bind=(b.ytwKind==='call');
-                       const tip=bind?('Peor escenario: call '+(b.ytwDesde?b.ytwDesde.split('-').reverse().join('/'):'')+' @ '+b.ytwPrecio):'Peor escenario: a vencimiento (YTM)';
-                       return `<span title="${tip}" style="font-size:.72rem;font-weight:600;color:${bind?'var(--amber)':'var(--text2)'}">${b.ytwTna.toFixed(2)}%${bind?' ◂':''}</span>`; })(),
+                       const corto=bind&&b.ytwDias!=null&&b.ytwDias<YTC_DIAS_CORTO;
+                       const tip=bind?('Peor escenario: call '+(b.ytwDesde?b.ytwDesde.split('-').reverse().join('/'):'')+' @ '+b.ytwPrecio
+                                      +(corto?' · horizonte corto: retorno del período, sin anualizar':'')):'Peor escenario: a vencimiento (YTM)';
+                       return `<span title="${tip}" style="font-size:.72rem;font-weight:600;color:${bind?'var(--amber)':'var(--text2)'}">${txt}${bind?' ◂':''}</span>`; })(),
       dur:      `<span style="color:var(--text2)">${b.dur!=null?b.dur.toFixed(1)+'a':'—'}</span>`,
       emision:  `<span style="color:var(--text2);font-size:.62rem">${ef}</span>`,
       venc:     `<span style="color:var(--text2);font-size:.62rem">${vf}</span>`,
@@ -3373,6 +3410,12 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo){
   // El interés se calcula sólo en eventos tipo 'coupon' (los 'amort_only' no devengan interés extra).
   let capVig = 100;
   let prevCouponDate = new Date(emDate); // base inicial para devengar
+  // El interes se devenga por TRAMOS de capital: una amortizacion que cae fuera de una fecha
+  // de cupon baja el capital en mitad del periodo, y los dias previos tienen que devengar
+  // sobre el capital viejo. `segDesde` es el inicio del tramo en curso y `devengado` lo ya
+  // acumulado en los tramos cerrados de este periodo.
+  let segDesde = new Date(emDate);
+  let devengado = 0;
   const result = [];
 
   events.forEach(ev => {
@@ -3387,8 +3430,10 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo){
       // Días devengados desde el cupón anterior hasta este
       diasP = Math.round((fAcc - prevCouponDate) / (24*3600*1000));
       desde = new Date(prevCouponDate);
-      const db = yearFrac(prevCouponDate, fAcc, base);
-      interes = tasa * db * capVig;
+      // Ultimo tramo: desde el ultimo corte de capital hasta este cupon.
+      const db = Math.max(0, yearFrac(segDesde, fAcc, base));
+      interes = devengado + tasa * db * capVig;
+      devengado = 0;
       amort = ev.amortPct;
       // Si es el último evento de cupón Y el capital remanente no se amortiza por completo
       // con las cuotas declaradas, pagamos todo lo que quede.
@@ -3397,8 +3442,12 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo){
         if(remaining > 0.001) amort += remaining;
       }
       prevCouponDate = fAcc;
+      segDesde = fAcc;
     } else {
-      // amort_only: sólo amortización, sin interés
+      // amort_only: no paga interes, pero CIERRA el tramo de capital. Lo devengado hasta
+      // aca corresponde al capital viejo y se cobra en el proximo cupon.
+      devengado += tasa * Math.max(0, yearFrac(segDesde, ev.fecha, base)) * capVig;
+      segDesde = new Date(ev.fecha);
       amort = ev.amortPct;
     }
 
@@ -3495,9 +3544,13 @@ function buildCallCF(emD, iiD, callDate, cupon, per, base, amortSched, devengo, 
   const last = flows[flows.length-1];
   last.amort = parseFloat((callPrice/100 * last.capital).toFixed(6));   // rescate al precio de call
   last.total = parseFloat((last.interes + last.amort).toFixed(6));
-  const diasPeriodo = raw.length>=2
-    ? Math.round((raw[raw.length-1].fecha - raw[raw.length-2].fecha)/(24*3600*1000))
-    : Math.round((per>0?per:6)/12*365);
+  // Base de anualizacion: el periodo NOMINAL del bono, no el ultimo tramo. En un call ese
+  // tramo es un stub arbitrario, y vale 0 cuando la fecha de rescate coincide con un cupon
+  // ya ajustado a dia habil (ahi buildSchedule agrega la fecha ajustada como cupon extra).
+  // tirToTNA elige la base comparando ese valor contra 180 dias: con un stub corto, un bono
+  // de cupon ANUAL se anualizaria en base 1 en vez de semestral. Con per=3 y per=6 daba
+  // igual de casualidad (12/6 = 2 es justo la base semestral), con per=12 no.
+  const diasPeriodo = Math.round((per>0?per:6)/12*365);
   return { cf: applySettlement(flows, sett), diasPeriodo };
 }
 
@@ -4099,12 +4152,19 @@ function renderCallYields(callRows, callable, ctx){
   activeCallScenarios(callRows||[], couponDates, ctx.sett, ctx.vcD).forEach(sc=>{
     const r=buildCallCF(ctx.emD,ctx.iiD,sc.callDate,ctx.cupon,ctx.per,ctx.base,ctx.amortS,ctx.devengo,sc.precio,ctx.sett);
     if(!r||!r.cf||!r.cf.length) return;
-    const t=calcTIR(r.cf,ctx.precioUSD); if(t==null) return;
-    scen.push({kind:'YTC',label:'Call',fecha:sc.callDate,precio:sc.precio,tir:t,tna:tirToTNA(t,ctx.per,r.diasPeriodo),open:sc.open});
+    const y=callYield(r.cf,ctx.precioUSD); if(!y) return;
+    scen.push({kind:'YTC',label:'Call',fecha:sc.callDate,precio:sc.precio,tir:y.tir,
+               tna:(y.tir!=null)?tirToTNA(y.tir,ctx.per,r.diasPeriodo):null,
+               simple:y.simple,dias:y.dias,open:sc.open});
   });
-  // Yield to Worst = escenario de menor TIR (peor para el inversor).
-  let worst=scen[0]; scen.forEach(s=>{ if(s.tir!=null && (worst.tir==null||s.tir<worst.tir)) worst=s; });
-  ytcCell.textContent = (worst.tna!=null)?worst.tna.toFixed(2)+'%':'—';
+  // Yield to Worst = escenario de menor TIR (peor para el inversor). Mismo criterio que
+  // _setYTW en la tabla (_rankYTC), para que no elijan escenarios distintos en empates.
+  let worst=scen[0];
+  scen.forEach(s=>{ const r=_rankYTC(s.tir,s.simple), w=_rankYTC(worst.tir,worst.simple);
+                    if(r!=null && (w==null || r<w)) worst=s; });
+  ytcCell.textContent = (worst.kind!=='YTM' && worst.dias!=null && (worst.tna==null || worst.dias<YTC_DIAS_CORTO))
+    ? (worst.simple*100).toFixed(2)+'% en '+worst.dias+'d'
+    : ((worst.tna!=null)?worst.tna.toFixed(2)+'%':'—');
   if(ytcSub) ytcSub.textContent = worst.kind==='YTM' ? 'a vencimiento' : ('call '+fmtD(worst.fecha)+' @ '+(worst.precio!=null?worst.precio.toFixed(2):'100'));
   // Desglose sólo si hay al menos una YTC válida.
   if(!tb || scen.length<=1){ if(block) block.style.display='none'; if(tb) tb.innerHTML=''; return; }
@@ -4120,7 +4180,7 @@ function renderCallYields(callRows, callable, ctx){
       +`<span style="${isW?'font-weight:600':''}">${s.label}</span>${badge}</div></td>`
       +`<td style="white-space:nowrap">${fmtD(s.fecha)}${star}</td>`
       +`<td>${s.precio!=null?s.precio.toFixed(2):'100.00'}</td>`
-      +`<td class="c-blue">${s.tna!=null?s.tna.toFixed(2)+'%':'—'}</td>`
+      +`<td class="c-blue">${s.tna!=null?s.tna.toFixed(2)+'%':(s.simple!=null?(s.simple*100).toFixed(2)+'% en '+s.dias+'d':'—')}</td>`
       +`<td class="c-teal">${s.tir!=null?s.tir.toFixed(2)+'%':'—'}</td>`;
     tb.appendChild(tr);
   });
