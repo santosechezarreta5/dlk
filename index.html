@@ -1547,12 +1547,16 @@ const Catalog = (() => {
     return { ok:true };
   }
 
+  // Cliente de supabase-js CON la sesión vigente, para las tablas cuya RLS solo deja
+  // leer a usuarios autenticados (las del tablero de valor relativo). null sin login.
+  function db(){ return (isRemote && client && session) ? client : null; }
+
   return {
     isRemote, init, loadAll, upsert, remove,
     loadRatings, upsertRating,
     loadFeriados, addFeriadoRemote, deleteFeriadoRemote,
     login, logout, isLoggedIn, currentEmail,
-    onAuthChange, onCatalogChange
+    onAuthChange, onCatalogChange, db
   };
 })();
 
@@ -6331,6 +6335,7 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
   <button class="ditem active" data-v="calc" onclick="OPS.selectView('calc')">🧮 Calculadoras</button>
   <button class="ditem" data-v="ops" onclick="OPS.selectView('ops')">📊 Operaciones Mercado</button>
   <button class="ditem" data-v="byma" onclick="OPS.selectView('byma')">🧾 Tasa → Precio</button>
+  <button class="ditem ditem-admin" data-v="spread" onclick="OPS.selectView('spread')">📐 Valor relativo</button>
   <button class="ditem" data-v="fci" onclick="OPS.selectView('fci')">📈 Movimientos de FCI</button>
 </aside>
 
@@ -6855,9 +6860,11 @@ const OPS = (function(){
       document.body.classList.toggle('ops-mode', v==='ops');
       document.body.classList.toggle('fci-mode', v==='fci');
       document.body.classList.toggle('byma-mode', v==='byma');
+      document.body.classList.toggle('spread-mode', v==='spread');
       if(v==='ops' && !inited){ inited=true; loadDates(); }
       if(v==='fci' && window.FCI){ window.FCI.init(); }
       if(v==='byma' && window.BYMAOPS){ window.BYMAOPS.show(); }
+      if(v==='spread' && window.SPREADV){ window.SPREADV.show(); }
     },
     toggleMenu(force){
       const open = (force===undefined) ? !document.body.classList.contains('drawer-open') : !!force;
@@ -7791,6 +7798,479 @@ window.BYMAOPS = (function(){
   return { show, onFX, addRow, clearAll, sort, toggleSearch, applyFilters, clearFilters };
 })();
 </script>
+<!-- ═══════════════ VISTA VALOR RELATIVO (solo administrador) ═══════════════ -->
+<style>
+body.spread-mode #main-content, body.spread-mode #calc-panel{display:none !important}
+#view-spread{display:none;padding:16px 22px;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif}
+body.spread-mode #view-spread{display:block}
+/* El item del menu solo existe para el admin. Ocultarlo es cosmetico: lo que protege los
+   datos es la RLS de bond_analytics y bond_price_override, que no dejan leer a `anon`. */
+body:not(.admin-mode) #ops-drawer .ditem-admin{display:none !important}
+#view-spread .spv-h{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;margin:6px 0 4px}
+#view-spread .spv-note{color:#94a3b8;font-size:.68rem;margin:0 0 12px;max-width:920px;line-height:1.5}
+#view-spread .spv-bar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:#0c1018;border:1px solid #1e2d42;border-radius:6px;padding:9px 12px;margin-bottom:10px;font-size:.7rem}
+#view-spread .spv-bar label{display:inline-flex;align-items:center;gap:4px;color:#cfe0f5;white-space:nowrap;cursor:pointer}
+#view-spread .spv-bar .g{display:inline-flex;align-items:center;gap:8px}
+#view-spread .spv-bar .t{font-size:.55rem;color:#5b6b80;text-transform:uppercase;letter-spacing:.05em}
+#view-spread input[type=number],#view-spread input[type=text],#view-spread input[type=date]{background:#0a0e14;border:1px solid #1e2d42;color:#e2e8f0;border-radius:4px;padding:3px 6px;font-size:.7rem;font-family:'IBM Plex Mono',monospace}
+#view-spread input[type=number]{width:62px}
+#view-spread .spv-btn{background:transparent;border:1px solid #1e2d42;color:#cfe0f5;border-radius:4px;padding:3px 8px;font-size:.65rem;cursor:pointer}
+#view-spread .spv-btn:hover{background:#11243f}
+#view-spread .spv-btn.pri{background:#1F3864;border-color:#2E75B6;color:#fff}
+#view-spread .spv-sum{font-size:.66rem;color:#94a3b8;margin:0 0 8px}
+#view-spread .spv-sum b{color:#cfe0f5}
+#view-spread .spv-wrap{overflow-x:auto;border:1px solid #1e2d42;border-radius:6px}
+#view-spread table{border-collapse:collapse;width:100%;font-size:.7rem}
+#view-spread th{position:sticky;top:0;background:#0c1018;color:#94a3b8;font-weight:600;text-align:right;padding:6px 8px;border-bottom:1px solid #1e2d42;cursor:pointer;white-space:nowrap;user-select:none}
+#view-spread th:hover{color:#cfe0f5}
+#view-spread th.l,#view-spread td.l{text-align:left}
+#view-spread td{padding:5px 8px;border-bottom:1px solid #131c2b;text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap}
+#view-spread tr:hover td{background:#0f1726}
+#view-spread tr.viejo td{opacity:.62}
+#view-spread tr.viejo:hover td{opacity:1}
+#view-spread .liq{display:inline-block;border-radius:3px;padding:1px 6px;font-size:.55rem;font-weight:700;letter-spacing:.04em;font-family:'Segoe UI',Arial,sans-serif;cursor:help}
+#view-spread .liq.solido{background:rgba(45,212,191,.12);color:#2dd4bf;border:1px solid rgba(45,212,191,.35)}
+#view-spread .liq.medio{background:rgba(148,163,184,.10);color:#cbd5e1;border:1px solid rgba(148,163,184,.3)}
+#view-spread .liq.fino{background:rgba(251,191,36,.10);color:#fbbf24;border:1px solid rgba(251,191,36,.35)}
+#view-spread .edad{color:#fbbf24;font-size:.58rem;margin-left:5px;font-family:'Segoe UI',Arial,sans-serif}
+#view-spread .mio{color:#93c5fd}
+#view-spread .mio-viejo{color:#fbbf24}
+#view-spread .pos{color:#fca5a5}
+#view-spread .neg{color:#86efac}
+#view-spread .muted{color:#5b6b80}
+#view-spread .spv-edit{display:inline-flex;gap:4px;align-items:center}
+#view-spread .spv-edit input[type=text]{width:200px;font-family:'Segoe UI',Arial,sans-serif}
+#view-spread .spv-empty{padding:28px;text-align:center;color:#94a3b8;font-size:.75rem;font-family:'Segoe UI',Arial,sans-serif}
+#view-spread .ord::after{content:' ↕';opacity:.35}
+#view-spread .ord.asc::after{content:' ↑';opacity:1}
+#view-spread .ord.desc::after{content:' ↓';opacity:1}
+</style>
+
+<div id="view-spread">
+  <h1 class="spv-h">📐 Valor relativo · spread sobre el Tesoro</h1>
+  <div class="spv-note">
+    Spread = TIR del bono − Tesoro USA interpolado a su duration modificada. Precio sucio por 100 VN,
+    en el dólar en que <b>paga</b> el bono: MEP si es ley argentina, cable si es ley extranjera.
+    Debajo de ~2 años de duration el spread refleja sobre todo la escasez de dólar local, no riesgo de
+    crédito — por eso el filtro arranca ahí. «Mi precio» es un override tuyo: se guarda con fecha y nota,
+    y el spread se recalcula con el mismo motor que la calculadora.
+  </div>
+
+  <div class="spv-bar">
+    <span class="g"><span class="t">Fecha</span>
+      <button class="spv-btn" onclick="SPREADV.paso(-1)" title="rueda anterior">◀</button>
+      <input type="date" id="spv-fecha" onchange="SPREADV.setFecha(this.value)">
+      <button class="spv-btn" onclick="SPREADV.paso(1)" title="rueda siguiente">▶</button></span>
+    <span class="g"><span class="t">Duration</span>
+      <label>mín <input type="number" step="0.5" id="spv-dmin" value="2" oninput="SPREADV.setDur()"></label>
+      <label>máx <input type="number" step="0.5" id="spv-dmax" placeholder="—" oninput="SPREADV.setDur()"></label></span>
+    <span class="g"><span class="t">Liquidez</span>
+      <label><input type="checkbox" checked onchange="SPREADV.setLiq('solido',this.checked)"> sólido</label>
+      <label><input type="checkbox" checked onchange="SPREADV.setLiq('medio',this.checked)"> medio</label>
+      <label><input type="checkbox" checked onchange="SPREADV.setLiq('fino',this.checked)"> fino</label></span>
+    <span class="g"><span class="t">Dólar</span>
+      <label><input type="checkbox" checked onchange="SPREADV.setMon('MEP',this.checked)"> MEP</label>
+      <label><input type="checkbox" checked onchange="SPREADV.setMon('CCL',this.checked)"> cable</label>
+      <label title="dollar-linked: TIR en USD equivalente vía A3500"><input type="checkbox" onchange="SPREADV.setMon('A3500',this.checked)"> DL</label></span>
+    <label title="bonos que no operaron ese día pero sí en los 10 anteriores"><input type="checkbox" checked onchange="SPREADV.setSinOp(this.checked)"> sin operación ese día</label>
+    <label title="solo los que tienen precio manual"><input type="checkbox" onchange="SPREADV.setSoloMios(this.checked)"> solo con mi precio</label>
+    <input type="text" id="spv-q" placeholder="ticker o emisor" oninput="SPREADV.setQ(this.value)" style="width:140px">
+    <button class="spv-btn" onclick="SPREADV.toggleUmbrales()">umbrales</button>
+  </div>
+
+  <div class="spv-bar" id="spv-umbrales" style="display:none">
+    <span class="t">Sólido si</span>
+    <label>operaciones ≥ <input type="number" id="spv-u-ops" min="1" step="1" onchange="SPREADV.setUmbrales()"></label>
+    <label>y monto ≥ USD <input type="number" id="spv-u-monto" step="50000" style="width:92px" onchange="SPREADV.setUmbrales()"></label>
+    <span class="t">· Fino si</span>
+    <label>hubo una sola operación, o las puntas se separan más de <input type="number" id="spv-u-disp" step="0.25" onchange="SPREADV.setUmbrales()"> %</label>
+    <span class="muted" style="font-size:.6rem">· fijados sobre ago-sep 2026: p25 del monto ≈ USD 230k, p88 de la separación ≈ 1,5%</span>
+  </div>
+
+  <div class="spv-sum" id="spv-sum"></div>
+  <div class="spv-wrap"><table>
+    <thead><tr>
+      <th class="l ord" data-c="tk">Ticker</th>
+      <th class="l ord" data-c="emisor">Emisor</th>
+      <th class="l ord" data-c="mon">Dólar</th>
+      <th class="ord" data-c="dur">Dur</th>
+      <th class="ord" data-c="precio">Precio</th>
+      <th class="ord" data-c="tir">TIR</th>
+      <th class="ord" data-c="spread">Spread</th>
+      <th class="l ord" data-c="liq">Liquidez</th>
+      <th class="ord" data-c="mio" title="precio sucio por 100 VN, en el dólar del bono">Mi precio</th>
+      <th class="ord" data-c="mioSpread">Mi spread</th>
+      <th class="ord" data-c="delta" title="tu spread menos el de mercado, en bp">Δ</th>
+      <th class="l">Nota</th>
+    </tr></thead>
+    <tbody id="spv-tbody"></tbody>
+  </table></div>
+</div>
+
+<script>
+// ── Vista de valor relativo (solo administrador) ─────────────────────────────
+// Lee bond_analytics (spread por bono y día, lo calcula ons/byma-reporter/spread.py) y
+// bond_price_override (precios asignados a mano). Ambas tienen RLS de lectura solo
+// autenticada: sin sesión de admin la consulta vuelve vacía, esté o no visible el menú.
+window.SPREADV = (function(){
+  // Umbrales de liquidez, fijados sobre la distribución real (ago-sep 2026): el p25 del
+  // monto diario ronda USD 230k, el p88 de la separación de puntas ≈ 1,5%, y el 35% de
+  // los bono-días tiene una sola operación. Se mueven desde «umbrales».
+  const LIQ = { minOps: 3, minMonto: 250000, maxDisp: 1.5 };
+  const VENTANA = 10;       // días hacia atrás para mostrar bonos que no operaron ese día
+  const OV_VIEJO = 7;       // un precio manual de más de 7 días se marca para revisar
+
+  let an = [];              // bond_analytics de la ventana, más reciente primero
+  let ov = {};              // ticker -> override vigente (solo los que tienen precio)
+  let curva = null;         // { fecha, c: {tenor: yield} }
+  let fechaSel = null, fechaMax = null;
+  let rows = [];
+  let editando = null;
+  let inited = false;
+  const filt = { dMin: 2, dMax: null, liq: {solido:true, medio:true, fino:true},
+                 mon: {MEP:true, CCL:true, A3500:false}, sinOp: true, soloMios: false, q: '' };
+  const orden = { c: 'spread', dir: -1 };
+
+  const $ = id => document.getElementById(id);
+  const db = () => (typeof Catalog !== 'undefined' && Catalog.db) ? Catalog.db() : null;
+  const findBond = tk => (typeof bonds !== 'undefined' && Array.isArray(bonds)) ? bonds.find(b => b.ticker === tk) : null;
+  const n2 = (v, d = 2) => (v == null || isNaN(v)) ? '—'
+    : (+v).toLocaleString('es-AR', {minimumFractionDigits: d, maximumFractionDigits: d});
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dmy = iso => iso ? iso.split('-').reverse().join('/') : '';
+
+  function diasEntre(a, b){
+    return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 864e5);
+  }
+  function restarDias(iso, n){
+    const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() - n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function nivelLiq(r){
+    if((r.n_ops || 0) <= 1) return 'fino';
+    if(r.precio_disp != null && +r.precio_disp > LIQ.maxDisp) return 'fino';
+    if(r.n_ops >= LIQ.minOps && (+r.monto_usd || 0) >= LIQ.minMonto) return 'solido';
+    return 'medio';
+  }
+
+  // Interpolación lineal; fuera de rango se toma el extremo, igual que spread.py
+  // (extrapolar una curva de tasas es inventar).
+  function interpolar(c, t){
+    if(!c || t == null || isNaN(t)) return null;
+    const ts = Object.keys(c).map(Number).sort((a, b) => a - b);
+    if(!ts.length) return null;
+    if(t <= ts[0]) return c[ts[0]];
+    if(t >= ts[ts.length - 1]) return c[ts[ts.length - 1]];
+    for(let i = 0; i < ts.length - 1; i++){
+      const a = ts[i], b = ts[i + 1];
+      if(t >= a && t <= b) return c[a] + (t - a) / (b - a) * (c[b] - c[a]);
+    }
+    return null;
+  }
+
+  // TIR / duration / spread para un precio dado, con el MISMO motor que la calculadora
+  // (cronograma y settlement T+1 de hoy). El precio va sucio, por 100 VN, en el dólar
+  // en que paga el bono: la misma unidad que precio_usd de bond_analytics.
+  function conPrecio(tk, precio){
+    const b = findBond(tk);
+    if(!b || !(precio > 0) || typeof cfEntry !== 'function') return null;
+    const e = cfEntry(b);
+    if(!e || e.expired || !e.cf || !e.cf.length) return null;
+    const tir = calcTIR(e.cf, precio);
+    if(tir == null) return null;
+    const m = calcMetrics(e.cf, precio, tir, e.per > 0 ? e.per : 6);
+    const u = curva ? interpolar(curva.c, m.durMod) : null;
+    return { tir, dur: m.durMod, spread: u != null ? (tir - u) * 100 : null };
+  }
+
+  function monedaRef(b){
+    if(!b) return 'MEP';
+    if((b.moneda || '').toUpperCase() === 'DL') return 'A3500';
+    return b.leg === 'Argentina' ? 'MEP' : 'CCL';
+  }
+
+  function armar(){
+    const ult = {};
+    an.forEach(r => { if(!ult[r.ticker]) ult[r.ticker] = r; });   // `an` viene desc por fecha
+    const enHoy = fechaSel === fechaMax;
+    rows = [];
+    new Set([...Object.keys(ult), ...Object.keys(ov)]).forEach(tk => {
+      const r = ult[tk], b = findBond(tk);
+      if(!r && !b) return;
+      const o = ov[tk];
+      // En fechas históricas el override se muestra pero no se recalcula: el motor usa el
+      // cronograma de hoy, y mezclarlo con la curva de otro día daría un número que no es
+      // ni de esa fecha ni de hoy.
+      const mio = (o && enHoy) ? conPrecio(tk, +o.precio_usd) : null;
+      rows.push({
+        tk, emisor: (b && b.emisor) || '', ley: (b && b.leg) || '',
+        mon: (r && r.moneda_ref) || monedaRef(b),
+        dur: r && r.dur_mod != null ? +r.dur_mod : (mio ? mio.dur : null),
+        precio: r && r.precio_usd != null ? +r.precio_usd : null,
+        tir: r && r.tir != null ? +r.tir : null,
+        spread: r && r.spread_bp != null ? +r.spread_bp : null,
+        nOps: r ? r.n_ops : 0,
+        monto: r && r.monto_usd != null ? +r.monto_usd : null,
+        disp: r && r.precio_disp != null ? +r.precio_disp : null,
+        edad: r ? diasEntre(r.fecha, fechaSel) : null,
+        liq: r ? nivelLiq(r) : 'fino',
+        o, mio,
+        ovEdad: o ? Math.floor((Date.now() - new Date(o.fijado_en)) / 864e5) : null,
+      });
+    });
+  }
+
+  function visibles(){
+    const q = filt.q.trim().toLowerCase();
+    return rows.filter(r => {
+      if(filt.soloMios && !r.o) return false;
+      if(!filt.sinOp && r.edad !== 0) return false;
+      if(!filt.mon[r.mon]) return false;
+      if(!filt.liq[r.liq]) return false;
+      if(filt.dMin != null && (r.dur == null || r.dur < filt.dMin)) return false;
+      if(filt.dMax != null && (r.dur == null || r.dur > filt.dMax)) return false;
+      if(q && !(r.tk.toLowerCase().includes(q) || r.emisor.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }
+
+  function clave(r, c){
+    switch(c){
+      case 'mio': return r.o ? +r.o.precio_usd : null;
+      case 'mioSpread': return r.mio ? r.mio.spread : null;
+      case 'delta': return (r.mio && r.mio.spread != null && r.spread != null) ? r.mio.spread - r.spread : null;
+      case 'liq': return {solido: 0, medio: 1, fino: 2}[r.liq];
+      default: return r[c];
+    }
+  }
+
+  function render(){
+    const tb = $('spv-tbody'); if(!tb) return;
+    const v = visibles().sort((a, b) => {
+      const x = clave(a, orden.c), y = clave(b, orden.c);
+      if(x == null && y == null) return 0;
+      if(x == null) return 1;          // los vacíos siempre al final, ordene como ordene
+      if(y == null) return -1;
+      return (typeof x === 'string' ? x.localeCompare(y) : x - y) * orden.dir;
+    });
+    document.querySelectorAll('#view-spread th[data-c]').forEach(th => {
+      th.classList.toggle('asc', th.dataset.c === orden.c && orden.dir > 0);
+      th.classList.toggle('desc', th.dataset.c === orden.c && orden.dir < 0);
+    });
+    const enHoy = fechaSel === fechaMax;
+    const cnt = {solido: 0, medio: 0, fino: 0}; v.forEach(r => cnt[r.liq]++);
+    const nOv = v.filter(r => r.o).length;
+    $('spv-sum').innerHTML = `<b>${v.length}</b> bonos de ${rows.length} en la ventana`
+      + ` · sólido <b>${cnt.solido}</b> · medio <b>${cnt.medio}</b> · fino <b>${cnt.fino}</b>`
+      + (nOv ? ` · con precio manual <b>${nOv}</b>` : '')
+      + (curva ? ` · curva UST del ${dmy(curva.fecha)}` : ' · <span class="pos">sin curva UST</span>')
+      + (enHoy ? '' : ' · <span class="edad">fecha histórica: el precio manual se edita solo en la última rueda</span>');
+    tb.innerHTML = v.length ? v.map(r => fila(r, enHoy)).join('')
+      : `<tr><td colspan="12" class="spv-empty">Ningún bono pasa los filtros.</td></tr>`;
+  }
+
+  function fila(r, enHoy){
+    const tip = r.edad == null ? `sin operaciones en los últimos ${VENTANA} días`
+      : `${r.nOps} op · USD ${n2(r.monto, 0)}`
+        + (r.disp != null ? ` · puntas separadas ${n2(r.disp)}%` : ' · una sola operación: no hay con qué comparar el precio')
+        + (r.edad > 0 ? ` · última operación hace ${r.edad} días` : '');
+    const edad = r.edad == null ? '<span class="edad">sin op</span>'
+      : (r.edad > 0 ? `<span class="edad">hace ${r.edad}d</span>` : '');
+    const tkJs = esc(r.tk);
+    let mio, mioSp = '<span class="muted">—</span>', delta = '<span class="muted">—</span>', nota = '';
+
+    if(editando === r.tk){
+      const pv = r.o ? (+r.o.precio_usd).toFixed(2) : (r.precio != null ? r.precio.toFixed(2) : '');
+      const keys = `onkeydown="if(event.key==='Enter')SPREADV.guardar('${tkJs}');if(event.key==='Escape')SPREADV.cancelar()"`;
+      mio = `<input type="number" step="0.01" id="spv-inp-px" value="${pv}" style="width:80px"
+               oninput="SPREADV.preview('${tkJs}')" ${keys}>`;
+      mioSp = `<span id="spv-prev" class="mio">—</span>`;
+      nota = `<span class="spv-edit">
+        <input type="text" id="spv-inp-nota" placeholder="por qué: bilateral a 98 con…, etc." value="${esc(r.o ? r.o.nota : '')}" ${keys}>
+        <button class="spv-btn pri" onclick="SPREADV.guardar('${tkJs}')">guardar</button>
+        ${r.o ? `<button class="spv-btn" onclick="SPREADV.borrar('${tkJs}')" title="volver al precio de mercado">quitar</button>` : ''}
+        <button class="spv-btn" onclick="SPREADV.cancelar()" title="cancelar (Esc)">✕</button></span>`;
+    } else if(r.o){
+      const viejo = r.ovEdad != null && r.ovEdad > OV_VIEJO;
+      mio = `<span class="${viejo ? 'mio-viejo' : 'mio'}" title="fijado por ${esc(r.o.autor || '?')} el ${esc(new Date(r.o.fijado_en).toLocaleDateString('es-AR'))}${viejo ? ` · tiene ${r.ovEdad} días: revisar` : ''}">${n2(r.o.precio_usd)}${viejo ? ' ⚠' : ''}</span>`
+        + (enHoy ? ` <button class="spv-btn" onclick="SPREADV.editar('${tkJs}')" title="cambiar">✎</button>` : '');
+      if(r.mio && r.mio.spread != null){
+        mioSp = `<span class="mio">${n2(r.mio.spread, 0)}</span>`;
+        if(r.spread != null){
+          const dd = r.mio.spread - r.spread;
+          delta = `<span class="${dd > 0 ? 'pos' : 'neg'}" title="tu spread menos el de mercado">${dd > 0 ? '+' : ''}${n2(dd, 0)}</span>`;
+        }
+      }
+      nota = `<span class="muted">${esc(r.o.nota || '')}</span>`;
+    } else {
+      mio = enHoy ? `<button class="spv-btn" onclick="SPREADV.editar('${tkJs}')" title="asignar precio a mano">＋</button>`
+                  : '<span class="muted">—</span>';
+    }
+
+    return `<tr class="${r.edad !== 0 ? 'viejo' : ''}">
+      <td class="l"><b>${esc(r.tk)}</b></td>
+      <td class="l">${esc(r.emisor)}</td>
+      <td class="l">${r.mon === 'A3500' ? 'DL' : (r.mon === 'CCL' ? 'cable' : 'MEP')}</td>
+      <td>${n2(r.dur)}</td>
+      <td>${n2(r.precio)}</td>
+      <td>${r.tir != null ? n2(r.tir) + '%' : '—'}</td>
+      <td><b>${n2(r.spread, 0)}</b></td>
+      <td class="l"><span class="liq ${r.liq}" title="${esc(tip)}">${r.liq}</span>${edad}</td>
+      <td>${mio}</td><td>${mioSp}</td><td>${delta}</td>
+      <td class="l">${nota}</td>
+    </tr>`;
+  }
+
+  async function cargarCurva(c){
+    const { data: f } = await c.from('ust_curve').select('fecha').lte('fecha', fechaSel)
+      .order('fecha', {ascending: false}).limit(1);
+    const fc = f && f[0] ? f[0].fecha : null;
+    if(!fc) return null;
+    const { data } = await c.from('ust_curve').select('tenor,yield').eq('fecha', fc);
+    const m = {}; (data || []).forEach(x => { m[+x.tenor] = +x.yield; });
+    return { fecha: fc, c: m };
+  }
+
+  async function cargar(){
+    const c = db();
+    if(!c){
+      $('spv-sum').innerHTML = '';
+      $('spv-tbody').innerHTML = `<tr><td colspan="12" class="spv-empty">Iniciá sesión como administrador para ver esta vista.</td></tr>`;
+      return;
+    }
+    $('spv-sum').textContent = 'Cargando…';
+    try {
+      if(!fechaMax){
+        const { data, error } = await c.from('bond_analytics').select('fecha').order('fecha', {ascending: false}).limit(1);
+        if(error) throw error;
+        fechaMax = data && data[0] ? data[0].fecha : null;
+        if(!fechaMax){ $('spv-sum').textContent = 'Todavía no hay datos en bond_analytics.'; return; }
+        fechaSel = fechaSel || fechaMax;
+        $('spv-fecha').max = fechaMax;
+      }
+      $('spv-fecha').value = fechaSel;
+      // ~85 bonos por rueda × 10 ruedas queda debajo del tope de 1000 filas de PostgREST.
+      // Viene ordenado desc: si alguna vez se corta, se pierden los días más viejos.
+      const [a, o, cu] = await Promise.all([
+        c.from('bond_analytics').select('*').gte('fecha', restarDias(fechaSel, VENTANA))
+          .lte('fecha', fechaSel).order('fecha', {ascending: false}),
+        c.from('bond_price_override_vigente').select('*'),
+        cargarCurva(c),
+      ]);
+      if(a.error) throw a.error;
+      if(o.error) throw o.error;
+      an = a.data || [];
+      ov = {}; (o.data || []).forEach(x => { if(x.precio_usd != null) ov[x.ticker] = x; });
+      curva = cu;
+      armar(); render();
+    } catch(e){
+      console.error('[SPREADV]', e);
+      $('spv-sum').innerHTML = `<span class="pos">No se pudieron cargar los datos: ${esc(e.message || e)}</span>`;
+    }
+  }
+
+  // ── precio manual ──
+  function editar(tk){
+    editando = tk; render();
+    setTimeout(() => { const i = $('spv-inp-px'); if(i){ i.focus(); i.select(); preview(tk); } }, 0);
+  }
+  function cancelar(){ editando = null; render(); }
+  function preview(tk){
+    const el = $('spv-prev'), i = $('spv-inp-px'); if(!el || !i) return;
+    const x = conPrecio(tk, parseFloat(String(i.value).replace(',', '.')));
+    el.textContent = (x && x.spread != null) ? n2(x.spread, 0) + ' bp' : '—';
+  }
+  async function insertar(tk, precio, nota){
+    const c = db();
+    if(!c){ toast('La sesión venció: volvé a iniciar sesión como admin.'); return false; }
+    const autor = (typeof Catalog !== 'undefined' && Catalog.currentEmail) ? Catalog.currentEmail() : null;
+    const { error } = await c.from('bond_price_override').insert({ ticker: tk, precio_usd: precio, nota: nota || null, autor });
+    if(error){ toast('No se pudo guardar el precio: ' + error.message); return false; }
+    return true;
+  }
+  async function guardar(tk){
+    const p = parseFloat(String(($('spv-inp-px') || {}).value || '').replace(',', '.'));
+    if(!(p > 0)){ toast('Ingresá un precio válido.', 'warn'); return; }
+    const nota = (($('spv-inp-nota') || {}).value || '').trim();
+    if(!await insertar(tk, p, nota)) return;
+    editando = null; await recargarOv();
+    toast(`Precio manual de ${tk} guardado.`, 'ok', 2500);
+  }
+  // Append-only: «quitar» agrega una fila con precio NULL. El bono vuelve al precio de
+  // mercado y queda registrado que hubo un precio manual y hasta cuándo.
+  async function borrar(tk){
+    if(!await insertar(tk, null, 'quitado')) return;
+    editando = null; await recargarOv();
+    toast(`${tk} vuelve al precio de mercado.`, 'ok', 2500);
+  }
+  async function recargarOv(){
+    const c = db(); if(!c) return;
+    const { data, error } = await c.from('bond_price_override_vigente').select('*');
+    if(error){ toast('No se pudieron releer los precios manuales: ' + error.message); return; }
+    ov = {}; (data || []).forEach(x => { if(x.precio_usd != null) ov[x.ticker] = x; });
+    armar(); render();
+  }
+
+  // ── filtros y navegación ──
+  function setFecha(v){
+    if(!v || !fechaMax) return;
+    fechaSel = v > fechaMax ? fechaMax : v;
+    editando = null; cargar();
+  }
+  function paso(d){
+    if(!fechaSel) return;
+    const x = new Date(fechaSel + 'T12:00:00');
+    do { x.setDate(x.getDate() + d); } while(x.getDay() === 0 || x.getDay() === 6);
+    const iso = x.toISOString().slice(0, 10);
+    if(fechaMax && iso > fechaMax) return;
+    setFecha(iso);
+  }
+  function setDur(){
+    const a = parseFloat($('spv-dmin').value), b = parseFloat($('spv-dmax').value);
+    filt.dMin = isNaN(a) ? null : a; filt.dMax = isNaN(b) ? null : b; render();
+  }
+  function setLiq(k, on){ filt.liq[k] = on; render(); }
+  function setMon(k, on){ filt.mon[k] = on; render(); }
+  function setSinOp(on){ filt.sinOp = on; render(); }
+  function setSoloMios(on){ filt.soloMios = on; render(); }
+  function setQ(v){ filt.q = v || ''; render(); }
+  function toggleUmbrales(){ const el = $('spv-umbrales'); el.style.display = el.style.display === 'none' ? 'flex' : 'none'; }
+  function setUmbrales(){
+    const o = parseInt($('spv-u-ops').value, 10), m = parseFloat($('spv-u-monto').value), d = parseFloat($('spv-u-disp').value);
+    if(o > 0) LIQ.minOps = o;
+    if(m >= 0) LIQ.minMonto = m;
+    if(d >= 0) LIQ.maxDisp = d;
+    armar(); render();
+  }
+
+  function show(){
+    if(!inited){
+      inited = true;
+      $('spv-u-ops').value = LIQ.minOps; $('spv-u-monto').value = LIQ.minMonto; $('spv-u-disp').value = LIQ.maxDisp;
+      document.querySelectorAll('#view-spread th[data-c]').forEach(th => th.addEventListener('click', () => {
+        const c = th.dataset.c;
+        if(orden.c === c) orden.dir = -orden.dir;
+        else { orden.c = c; orden.dir = ['tk', 'emisor', 'mon', 'liq'].includes(c) ? 1 : -1; }
+        render();
+      }));
+      if(typeof Catalog !== 'undefined' && Catalog.onAuthChange){
+        Catalog.onAuthChange(logged => {
+          if(!document.body.classList.contains('spread-mode')) return;
+          if(!logged && typeof OPS !== 'undefined') OPS.selectView('calc');   // se cerró la sesión
+          else if(logged) cargar();
+        });
+      }
+    }
+    cargar();
+  }
+
+  return { show, setFecha, paso, setDur, setLiq, setMon, setSinOp, setSoloMios, setQ,
+           toggleUmbrales, setUmbrales, editar, cancelar, preview, guardar, borrar };
+})();
+</script>
+
 </body>
 </html><script>
 // ── CALENDARIO DE PAGOS ─────────────────────────────────────────────────────
