@@ -37,7 +37,8 @@ function linea(src, prefijo) {
 
 const EXPORTA = [
   'buildSchedule', 'activeCallScenarios', 'buildCallCF', 'applySettlement',
-  'calcTIR', 'tirToTNA', 'adjustDate', 'yearFrac', 'callYield', '_rankYTC',
+  'calcTIR', 'tirToTNA', 'tnaBase', 'adjustDate', 'yearFrac', 'callYield', '_rankYTC',
+  'esFinDeMes', 'addMonths', 'primerCupon', 'tnaToTIR', 'setModoTNA',
 ];
 
 export async function cargar() {
@@ -45,18 +46,27 @@ export async function cargar() {
   const partes = [
     'const PERF = null;',
     'let _CF_EPOCH = 0;',
+    // La base de la TNA es un global de la página; acá arranca en el default y los tests la cambian.
+    "let TNA_MODO = 'cupon';",
+    'function setModoTNA(m){ TNA_MODO = m; }',
     linea(src, 'let HOLIDAYS='),
     func(src, 'dkey'),
     'const HOLIDAY_SET = new Set(HOLIDAYS.map(dkey));',
     func(src, 'isHoliday'),
     linea(src, 'function adjustDate(dt){'),
     func(src, 'yearFrac'),
+    func(src, 'esFinDeMes'),
+    func(src, 'addMonths'),
+    func(src, 'primerCupon'),
     func(src, 'buildSchedule'),
     func(src, 'activeCallScenarios'),
     func(src, 'buildCallCF'),
     func(src, 'applySettlement'),
     func(src, 'calcTIR'),
+    func(src, '_tnaModo'),
     func(src, 'tirToTNA'),
+    func(src, 'tnaBase'),
+    func(src, 'tnaToTIR'),
     linea(src, 'const YTC_DIAS_CORTO ='),
     func(src, 'callYield'),
     func(src, '_rankYTC'),

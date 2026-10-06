@@ -632,7 +632,7 @@ window.SUPABASE_CONFIG = {
     <svg class="chart" viewBox="0 0 920 220" height="220" id="ysvg"></svg>
   </div>
   <!-- ── Pestañas tipo bono DL / HD ──────────────────────────────── -->
-  <div id="type-tabs" style="display:flex;gap:6px;padding:10px 18px 6px;background:var(--bg);">
+  <div id="type-tabs" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 18px 6px;background:var(--bg);">
     <button id="typetab-dl" onclick="setTypeTab('DL')" class="typetab" style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.06em;padding:6px 18px;border-radius:20px;cursor:pointer;border:1px solid var(--teal);background:rgba(45,212,191,.12);color:var(--teal);">DL · Dollar Linked</button>
     <button id="typetab-hd" onclick="setTypeTab('HD')" class="typetab" style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.06em;padding:6px 18px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">HD · Hard Dollar</button>
     <!-- Selector de moneda para HD (solo visible en tab HD) -->
@@ -641,6 +641,14 @@ window.SUPABASE_CONFIG = {
       <button id="hdtab-mep"   onclick="setHdCurrencyView('mep')"   style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--teal);background:rgba(45,212,191,.1);color:var(--teal);">USD MEP</button>
       <button id="hdtab-ars"   onclick="setHdCurrencyView('ars')"   style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">ARS</button>
       <button id="hdtab-cable" onclick="setHdCurrencyView('cable')" style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">Cable</button>
+    </div>
+    <!-- Base de la TNA (vale para toda la página; la TIR no cambia) -->
+    <div id="tna-modo-tabs" role="group" aria-label="Base de la TNA" style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+      <span style="font-size:.52rem;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-right:4px;">TNA</span>
+      <button id="tnam-cupon" onclick="setTnaModo('cupon')" title="Según la frecuencia del cupón: semestrales 180/360, trimestrales 90/360" style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">Según cupón</button>
+      <button id="tnam-180" onclick="setTnaModo('180')" title="Todos en 180/360: TNA = 2 × [(1+TIR)^½ − 1]" style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">180/360</button>
+      <button id="tnam-90" onclick="setTnaModo('90')" title="Todos en 90/360: TNA = 4 × [(1+TIR)^¼ − 1]" style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">90/360</button>
+      <button id="tnam-plazo" onclick="setTnaModo('plazo')" title="Tasa al plazo remanente: [(1+TIR)^(d/365) − 1] × 365/d, d = días al vencimiento" style="font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">Plazo remanente</button>
     </div>
   </div>
   <div class="filter-wrap">
@@ -1762,6 +1770,16 @@ function adjustDate(dt){let a=(dt instanceof Date)?new Date(dt):new Date(String(
 let _CF_EPOCH = 0;                  // ++ cuando cambian los feriados
 const _cfCache = new WeakMap();     // bond object -> entry
 
+// ── Base de la TNA (se elige en la barra DL/HD y en Tasa → Precio; queda en el navegador) ──
+//   cupon  según la frecuencia del cupón: semestrales 180/360, trimestrales 90/360 (default)
+//   180    todos en 180/360: TNA = 2 × [(1+TIR)^(1/2) − 1]
+//   90     todos en 90/360:  TNA = 4 × [(1+TIR)^(1/4) − 1]
+//   plazo  plazo remanente:  TNA = [(1+TIR)^(d/365) − 1] × 365/d, d = días al vencimiento
+// La TIR no depende de esta elección. Entra en la firma del cronograma para que los memos
+// de TIR/TNA por precio se rehagan al cambiarla.
+const TNA_MODOS = {cupon:'Según cupón', '180':'180/360', '90':'90/360', plazo:'Plazo remanente'};
+let TNA_MODO = (()=>{ try{ const v=localStorage.getItem('tna_modo_v1'); return (v in TNA_MODOS) ? v : 'cupon'; }catch(_){ return 'cupon'; } })();
+
 function bondCFSig(b){
   const am = (b.amort==='cuotas' && Array.isArray(b.amortSched) && b.amortSched.length)
     ? b.amortSched.map(a=>a.fecha+':'+a.pct).join('|') : '';
@@ -1769,7 +1787,7 @@ function bondCFSig(b){
     ? b.callSched.map(c=>c.desde+':'+c.precio).join('|') : '';
   return [b.venc, b.fecha_emision||'', b.fecha_inicio_int||'', b.cupon, b.periodicidad,
           b.base_dias||'', b.devengo||'', b.amort||'', am, cs,
-          _CF_EPOCH, dkey(new Date())].join('~');
+          _CF_EPOCH, TNA_MODO, dkey(new Date())].join('~');
 }
 
 function buildCFEntry(b, sig){
@@ -1792,11 +1810,7 @@ function buildCFEntry(b, sig){
   let iiD;
   if(b.fecha_inicio_int){ iiD=new Date(b.fecha_inicio_int+'T12:00:00'); }
   else if(per===0){ iiD=new Date(vd); }
-  else {
-    iiD=new Date(vd);
-    while(iiD>emD){ const prev=new Date(iiD); prev.setMonth(prev.getMonth()-per); if(prev<=emD) break; iiD=prev; }
-    if(iiD<=emD){ iiD=new Date(emD); iiD.setMonth(iiD.getMonth()+per); }
-  }
+  else { iiD=primerCupon(emD, vd, per); }
   const amortSchedD=hasAmortSched
     ? b.amortSched.map(a=>({fecha:new Date(a.fecha+'T12:00:00'),pct:a.pct}))
     : [{fecha:vd,pct:100}];
@@ -1996,6 +2010,68 @@ async function loadLastTraded(){
   _lastTraded=map; return map;
 }
 
+// Bono del catálogo por ticker (acepta la forma canónica en O de market_ops).
+let _bptMap=null, _bptSrc=null, _bptLen=-1;
+function bondPorTicker(tk){
+  if(!tk || typeof bonds==='undefined' || !Array.isArray(bonds)) return null;
+  if(_bptSrc!==bonds || _bptLen!==bonds.length){
+    _bptMap=new Map();
+    bonds.forEach(b=>{ if(!b||!b.ticker) return; _bptMap.set(b.ticker,b);
+      const c=b.ticker.slice(0,-1)+'O'; if(!_bptMap.has(c)) _bptMap.set(c,b); });
+    _bptSrc=bonds; _bptLen=bonds.length;
+  }
+  return _bptMap.get(tk) || _bptMap.get(String(tk).slice(0,-1)+'O') || null;
+}
+
+// TNA de una operación guardada en market_ops, en la base elegida. El reporte diario la guarda
+// en la base del cupón; para otra base se re-expresa desde la TIR guardada, con los días al
+// vencimiento contados desde la fecha de la operación. Sin TIR o sin el bono en el catálogo no
+// se puede re-expresar y devuelve null (mejor "—" que un número en otra base).
+function tnaOp(o){
+  const g=(o._tnaCupon!==undefined) ? o._tnaCupon : o.tna;
+  const guardada=(g==null || g==='' || !isFinite(+g)) ? null : +g;
+  if(TNA_MODO==='cupon') return guardada;
+  const tir=(o.tir==null || o.tir==='') ? NaN : +o.tir;
+  const b=bondPorTicker(o.ticker);
+  if(!isFinite(tir) || !b || !b.venc) return null;
+  const e=cfEntry(b);
+  const ref=o.fecha ? new Date(String(o.fecha).slice(0,10)+'T12:00:00') : (e ? e.sett : new Date());
+  const dv=Math.round((new Date(b.venc+'T12:00:00') - ref)/864e5);
+  return tirToTNA(tir, e ? e.per : (b.periodicidad ?? 6), e ? e.diasPeriodo : null, dv);
+}
+
+// Cambia la base de la TNA y recalcula todo lo que la muestra. La TIR no cambia.
+function setTnaModo(m){
+  if(!(m in TNA_MODOS)) m='cupon';
+  TNA_MODO=m;
+  try{ localStorage.setItem('tna_modo_v1', m); }catch(_){}
+  pintarTnaModo();
+  if(typeof bonds!=='undefined' && Array.isArray(bonds)) bonds.forEach(b=>{
+    if(!(b.precio_usd_eq>0)) return;
+    try{ recalcTIR(b); }catch(e){}
+    if(b.priceSrc==='hist' && b.histTir!=null){            // último operado: TIR del día de la op
+      b.tir=b.histTir;
+      const t=tnaOp({ticker:b.ticker, tir:b.histTir, tna:b.histTnaCupon, fecha:b.histDate}); if(t!=null) b.tna=t;
+    }
+  });
+  try{ recalcPuntasHD(); render(); }catch(e){ console.error('[tna]', e); }
+  if(typeof ACTIVE_TK!=='undefined' && ACTIVE_TK){ try{ calcFromPanel(true); }catch(e){} }
+  if(window.BYMAOPS && BYMAOPS.onTnaModo) BYMAOPS.onTnaModo();
+  if(typeof OPS!=='undefined' && OPS.onTnaModo) OPS.onTnaModo();   // const global: no cuelga de window
+}
+function pintarTnaModo(){
+  Object.keys(TNA_MODOS).forEach(k=>{
+    const btn=document.getElementById('tnam-'+k); if(!btn) return;
+    const on=(k===TNA_MODO);
+    btn.style.borderColor=on?'var(--teal)':'var(--border)';
+    btn.style.background=on?'rgba(45,212,191,.1)':'transparent';
+    btn.style.color=on?'var(--teal)':'var(--muted2)';
+    btn.setAttribute('aria-pressed', String(on));
+  });
+  const sel=document.getElementById('byma-tna-modo'); if(sel) sel.value=TNA_MODO;
+}
+pintarTnaModo();     // la barra DL/HD ya está en el DOM; el select de Tasa → Precio se sincroniza al abrirla
+
 function applyLastTradedFallback(){
   const lt=_lastTraded; if(!lt) return 0;
   const a3500Mid=(FX.a3500Bid&&FX.a3500Ask)?(FX.a3500Bid+FX.a3500Ask)/2:(FX.a3500Bid||FX.a3500Ask||null);
@@ -2011,7 +2087,9 @@ function applyLastTradedFallback(){
     if(b.moneda==='DL'){ b.precio_ars=rec.precio; b.precio_usd_eq = a3500Mid ? +(rec.precio/a3500Mid).toFixed(4) : null; }
     else { b.precio_usd_eq = rec.precio; }
     if(b.precio_usd_eq>0){ try{ recalcTIR(b); }catch(e){} }   // recalcTIR solo para la duración
-    b.tir=+rec.tir; if(rec.tna!=null) b.tna=+rec.tna;          // pisar con TIR/TNA correctas del día
+    b.tir=+rec.tir;                                             // pisar con TIR/TNA correctas del día
+    b.histTir=+rec.tir; b.histTnaCupon=rec.tna;                 // para re-expresar si cambia la base de la TNA
+    { const t=tnaOp({ticker:b.ticker, tir:rec.tir, tna:rec.tna, fecha:rec.fecha}); if(t!=null) b.tna=t; }
     b.marketPrecio=b.precio; b.marketVp=null;
     n++;
   });
@@ -2108,7 +2186,7 @@ async function pxPromedioSemanal(bond){
   const canon = bond.ticker.slice(0,-1)+'O';
   const url=cfg.url+'/rest/v1/market_ops?ticker=eq.'+encodeURIComponent(canon)
     +'&moneda=eq.'+encodeURIComponent(m)+'&outlier=eq.false'
-    +'&select=fecha,precio,monto,tna&order=fecha.desc&limit=40';
+    +'&select=fecha,precio,monto,tir,tna&order=fecha.desc&limit=40';
   try{
     const r=await fetch(url,{headers:H}); const j=r.ok?await r.json():[];
     if(!j.length) return null;
@@ -2116,9 +2194,9 @@ async function pxPromedioSemanal(bond){
     const sem=j.filter(x=> new Date(x.fecha) >= lim);
     const dias=new Set(sem.map(x=>x.fecha)).size;
     let sp=0, sw=0, sm=0, nm=0, st=0, stw=0, sti=0, nti=0;
-    sem.forEach(x=>{ const p=+x.precio, w=+x.monto, t=+x.tna;
+    sem.forEach(x=>{ const p=+x.precio, w=+x.monto, t=tnaOp({ticker:canon, tir:x.tir, tna:x.tna, fecha:x.fecha});
       if(p>0){ if(w>0){sp+=p*w; sw+=w;} sm+=p; nm++; }
-      if(x.tna!=null && isFinite(t)){ if(w>0){st+=t*w; stw+=w;} sti+=t; nti++; } });
+      if(t!=null && isFinite(t)){ if(w>0){st+=t*w; stw+=w;} sti+=t; nti++; } });
     const vwap = sw>0 ? sp/sw : (nm? sm/nm : null);
     const tna  = stw>0 ? st/stw : (nti? sti/nti : null);
     return vwap==null?null:{vwap, tna, dias};
@@ -2336,7 +2414,7 @@ function recalcTIR(b){
       const tir=calcTIR(cf,pPrice);
       if(tir!==null){
         b.tir=parseFloat(tir.toFixed(2));
-        b.tna=tirToTNA(tir,per,e.diasPeriodo);
+        b.tna=tirToTNA(tir,per,e.diasPeriodo,cf[cf.length-1].dias);
         const r=tir/100;let sM=0;
         cf.forEach(x=>{const t=x.dias/365,vp=x.total/Math.pow(1+r,t);sM+=t*vp;});
         b.dur=parseFloat((sM/pPrice).toFixed(2));
@@ -2359,12 +2437,12 @@ function recalcTIR(b){
       if(r<-0.9)r=-0.9;if(r>50)r=50;if(Math.abs(delta)<1e-8)break;
     }
     b.tir=parseFloat((r*100).toFixed(2));
-    b.tna=tirToTNA(b.tir,per);   // OJO: usa la TIR REDONDEADA (calcTIRForPrice usa la cruda)
+    b.tna=tirToTNA(b.tir,per,null,diasVtoDe(e));   // OJO: usa la TIR REDONDEADA (calcTIRForPrice usa la cruda)
     b.dur=parseFloat((yrs*0.85).toFixed(2));
   }else{
     // ZC puro: precio descontado a vencimiento
     b.tir=parseFloat(((Math.pow(100/pPrice,365/Math.max(1,(vd-sett)/(24*3600*1000)))-1)*100).toFixed(2));
-    b.tna=b.tir; // ZC: TNA = TIR
+    b.tna=(TNA_MODO==='cupon') ? b.tir : tirToTNA(b.tir,per,null,diasVtoDe(e)); // ZC: en base cupón, TNA = TIR
     b.dur=parseFloat((yrs*0.92).toFixed(2));
   }
   _memoSet(e.memoTir,pPrice,_setYTW(b,e,pPrice,{tir:b.tir,tna:b.tna,dur:b.dur}));
@@ -2408,7 +2486,7 @@ function _setYTW(b, e, pPrice, memo){
       const y=callYield(cc.cf, pPrice); if(!y) return;
       const rank=_rankYTC(y.tir, y.simple);
       if(rank==null || !(rank < wt)) return;
-      wt=rank; wn=(y.tir!=null)?tirToTNA(y.tir, e.per, cc.diasPeriodo):null;
+      wt=rank; wn=(y.tir!=null)?tirToTNA(y.tir, e.per, cc.diasPeriodo, y.dias):null;
       kind='call'; desde=cc.callDateStr||cc.desde; precio=cc.precio; simple=y.simple; dias=y.dias;
     });
   }
@@ -2455,7 +2533,7 @@ function calcTIRForPrice(b, precioInput){
     if(cf && cf.length>0){
       const tir=calcTIR(cf,precio);
       if(tir!==null){
-        const out={tir:parseFloat(tir.toFixed(2)), tna:tirToTNA(tir,per,e.diasPeriodo)};
+        const out={tir:parseFloat(tir.toFixed(2)), tna:tirToTNA(tir,per,e.diasPeriodo,cf[cf.length-1].dias)};
         _memoSet(e.memoPx,precio,out);
         return out;
       }
@@ -2475,12 +2553,12 @@ function calcTIRForPrice(b, precioInput){
       if(r<-0.9)r=-0.9;if(r>50)r=50;if(Math.abs(delta)<1e-8)break;
     }
     // OJO: TNA sobre la TIR CRUDA (recalcTIR la usa redondeada) -> memos separados a propósito.
-    const out={tir:parseFloat((r*100).toFixed(2)), tna:tirToTNA(r*100,per)};
+    const out={tir:parseFloat((r*100).toFixed(2)), tna:tirToTNA(r*100,per,null,diasVtoDe(e))};
     _memoSet(e.memoPx,precio,out);
     return out;
   } else {
     const tir=parseFloat(((Math.pow(100/precio,365/Math.max(1,(vd-sett)/(24*3600*1000)))-1)*100).toFixed(2));
-    const out={tir, tna:tir};
+    const out={tir, tna:(TNA_MODO==='cupon') ? tir : tirToTNA(tir,per,null,diasVtoDe(e))};
     _memoSet(e.memoPx,precio,out);
     return out;
   }
@@ -2835,7 +2913,8 @@ function render(){
     const bw=b.tir?Math.round(b.tir/mx*100):0,tc=b.tir>12?'c-red':b.tir>9?'c-amber':'c-teal',tc2=b.tir>12?'#f87171':b.tir>9?'#fbbf24':'#2dd4bf';
     const vf=b.venc?b.venc.split('-').reverse().join('/'):'—';
     const ef=b.fecha_emision?b.fecha_emision.split('-').reverse().join('/'):'—';
-    const tnaDisp=b.tna!=null?b.tna:(b.tir!=null&&b.periodicidad?tirToTNA(b.tir,b.periodicidad):null);
+    const tnaDisp=b.tna!=null?b.tna:(b.tir!=null&&b.periodicidad?(()=>{ const e=cfEntry(b);
+      return tirToTNA(b.tir,b.periodicidad,e?e.diasPeriodo:null,diasVtoDe(e)); })():null);
     const tr=document.createElement('tr');
     if(ACTIVE_TK===b.ticker) tr.classList.add('active-row');
 
@@ -3338,6 +3417,29 @@ function yearFrac(d1, d2, base){
   return (360*(y2-y1) + 30*(m2-m1) + (a2-a1)) / 360;
 }
 
+// ¿Es el último día de su mes?
+function esFinDeMes(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate() === d.getDate(); }
+
+// Suma `n` meses (negativo resta) SIN el desborde de setMonth: 31/01 + 1 mes daba 03/03, y
+// encadenado arrastraba el corrimiento a todas las fechas siguientes (29/11 + 3 → 01/03 →
+// 01/06 → ...). El día queda en `dia` (por defecto el de `d`), recortado al último del mes
+// destino: con dia=31 cada fecha es fin de mes.
+function addMonths(d, n, dia){
+  const r = new Date(d); r.setDate(1); r.setMonth(r.getMonth() + n);
+  const ult = new Date(r.getFullYear(), r.getMonth()+1, 0).getDate();
+  r.setDate(Math.min(dia != null ? dia : d.getDate(), ult));
+  return r;
+}
+
+// Primer pago de interés de un bono sin fecha_inicio_int: se cuenta hacia atrás desde el
+// vencimiento de a `per` meses y queda la primera fecha posterior a la emisión.
+function primerCupon(emD, vd, per){
+  const dia = vd.getDate();
+  let ii = new Date(vd);
+  for(let k = 1; k < 480; k++){ const p = addMonths(vd, -k*per, dia); if(p <= emD) break; ii = p; }
+  return ii <= emD ? addMonths(emD, per) : ii;
+}
+
 // devengo: 'ajustado' (default) → los días se cuentan entre fechas de pago EFECTIVAS
 //          (ajustadas a día hábil); 'teorico' → entre fechas de cupón teóricas, de modo
 //          que correr un pago a día hábil no devenga interés extra.
@@ -3349,15 +3451,18 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo){
 
   // 1) Fechas de cupón teóricas (raw) — desde inicio_int hasta vencimiento, paso = per meses
   // per===0 → "al vencimiento": un único cupón al final (todo el interés se paga al vencimiento)
+  // Cada fecha se calcula desde inicio_int (k × per meses), no encadenando la anterior, así un
+  // día 29-31 no se corre al pasar por un mes corto. El día ancla es el de inicio_int, salvo que
+  // ese día sea un fin de mes recortado y el vencimiento caiga en uno mayor: 30/09 con vto 31/03
+  // paga los 31/03 (antes daba 30/03 más un stub de un día al 31/03). Con 30/06 y vto 30/06,
+  // o 28/02 y vto 28/02, el ancla sigue siendo el 30 o el 28.
   const couponDatesRaw=[];
   if(per>0){
-    let d=new Date(iiDate);
-    let safety=0;
-    while(d<=vcDate && safety<240){
-      couponDatesRaw.push(new Date(d));
-      d=new Date(d);
-      d.setMonth(d.getMonth()+per);
-      safety++;
+    const dia=(esFinDeMes(iiDate) && vcDate.getDate()>iiDate.getDate()) ? vcDate.getDate() : iiDate.getDate();
+    for(let k=0; k<240; k++){
+      const d=addMonths(iiDate, k*per, dia);
+      if(d>vcDate) break;
+      couponDatesRaw.push(d);
     }
   }
   // Asegurar que la última fecha sea exactamente vcDate (y para per=0 es el único cupón)
@@ -3628,36 +3733,50 @@ function calcPrecioFromTIR(cf,tir){
 }
 function calcMetrics(cf,precio,tir,per){const r=tir/100,n=12/per;let sM=0,sC=0;cf.forEach(x=>{if(x.dias<=0)return;const t=x.dias/365,vp=x.total/Math.pow(1+r,t);sM+=t*vp;sC+=t*(t+1/n)*vp;});return{durMac:sM/precio,durMod:(sM/precio)/(1+r/n),convex:sC/(precio*Math.pow(1+r,2))};}
 
-// TNA con convención 180/360 (mercado argentino):
-// - diasPeriodo >= 180: TNA = 2 × [(1+TIR)^(1/2) - 1]  (base semestral fija)
-// - diasPeriodo < 180:  TNA = n × [(1+TIR)^(1/n) - 1]  donde n = pagos reales por año
+// TNA a partir de la TIR efectiva anual, en la base elegida en TNA_MODO:
+// - cupon: la base de la frecuencia del bono
+//     diasPeriodo >= 180 (semestrales, anuales, al vencimiento): TNA = 2 × [(1+TIR)^(1/2) - 1], 180/360
+//     diasPeriodo < 180:  TNA = n × [(1+TIR)^(1/n) - 1], n = 12/per → trimestrales 90/360, mensuales 30/360
+//   Así un bono a la par en fecha de cupón da TNA ≈ cupón.
+// - 180 / 90: la misma base para todos los bonos (n = 2 o n = 4), comparable entre frecuencias.
+// - plazo: tasa al plazo remanente, [(1+TIR)^(d/365) - 1] × 365/d, d = diasVto (días del settlement
+//   al vencimiento, o al call en un escenario de call). Sin diasVto se usa la base del cupón.
 // diasPeriodo = longitud real del período cupón (días entre dos fechas de pago consecutivas)
-function tirToTNA(tir, per, diasPeriodo){
-  const r = tir / 100;
+function _tnaModo(){ return (typeof TNA_MODO !== 'undefined') ? TNA_MODO : 'cupon'; }
+function tirToTNA(tir, per, diasPeriodo, diasVto){
+  const r = tir / 100, m = _tnaModo();
+  const nom = n => parseFloat((n * (Math.pow(1 + r, 1 / n) - 1) * 100).toFixed(4));
+  if(m === '180') return nom(2);
+  if(m === '90')  return nom(4);
+  if(m === 'plazo' && diasVto > 0)
+    return parseFloat(((Math.pow(1 + r, diasVto / 365) - 1) * 365 / diasVto * 100).toFixed(4));
   // per===0 (al vencimiento): convención semestral 180/360 (evita 12/0)
-  if(per===0) return parseFloat((2 * (Math.pow(1 + r, 0.5) - 1) * 100).toFixed(4));
+  if(per===0) return nom(2);
   const dp = (diasPeriodo != null) ? diasPeriodo : Math.round(per / 12 * 365);
-  if(dp >= 180){
-    return parseFloat((2 * (Math.pow(1 + r, 0.5) - 1) * 100).toFixed(4));
-  } else {
-    const n = 12 / per;
-    return parseFloat((n * (Math.pow(1 + r, 1 / n) - 1) * 100).toFixed(4));
-  }
+  return dp >= 180 ? nom(2) : nom(12 / per);
 }
-// Inversa: TNA → TIR (para calcular precio desde TNA ingresada)
-function tnaToTIR(tna, per, diasPeriodo){
-  // tna en decimal (ej: 0.065 para 6.5%)
-  if(per===0) return (Math.pow(1 + tna / 2, 2) - 1) * 100; // al vencimiento → semestral
+// Base en que queda expresada la TNA (misma regla que tirToTNA), para rotularla.
+function tnaBase(per, diasPeriodo){
+  const m = _tnaModo();
+  if(m === '180') return '180/360';
+  if(m === '90')  return '90/360';
+  if(m === 'plazo') return 'plazo remanente';
   const dp = (diasPeriodo != null) ? diasPeriodo : Math.round(per / 12 * 365);
-  if(dp >= 180){
-    // TNA/2 = tasa semestral → TIR = (1 + TNA/2)^2 - 1
-    return (Math.pow(1 + tna / 2, 2) - 1) * 100;
-  } else {
-    const n = 12 / per;
-    // TNA/n = tasa del período → TIR = (1 + TNA/n)^n - 1
-    return (Math.pow(1 + tna / n, n) - 1) * 100;
-  }
+  return (per === 0 || dp >= 180) ? '180/360' : Math.round(360 * per / 12) + '/360';
 }
+// Inversa: TNA → TIR (para calcular precio desde TNA ingresada). tna en decimal (0.065 = 6,5%).
+function tnaToTIR(tna, per, diasPeriodo, diasVto){
+  const m = _tnaModo();
+  const ef = n => (Math.pow(1 + tna / n, n) - 1) * 100;      // TNA/n = tasa del período
+  if(m === '180') return ef(2);
+  if(m === '90')  return ef(4);
+  if(m === 'plazo' && diasVto > 0) return (Math.pow(1 + tna * diasVto / 365, 365 / diasVto) - 1) * 100;
+  if(per===0) return ef(2);                                  // al vencimiento → semestral
+  const dp = (diasPeriodo != null) ? diasPeriodo : Math.round(per / 12 * 365);
+  return dp >= 180 ? ef(2) : ef(12 / per);
+}
+// Días del settlement al vencimiento de una entrada de cfEntry (base del modo "plazo remanente").
+function diasVtoDe(e){ return (e && e.vd && e.sett) ? Math.max(1, Math.round((e.vd - e.sett) / 864e5)) : null; }
 // Cupón corrido exacto: interés devengado desde el inicio del período en curso hasta el
 // settlement, con las MISMAS fechas y la MISMA base que el cupón (no un período nominal).
 // Sirve igual para per=0 (al vencimiento): ahí el período es emisión→vencimiento.
@@ -4070,8 +4189,7 @@ function generateAmortSchedule(){
   // Generar filas
   const baseDate = new Date(fechaIni + 'T12:00:00');
   for(let i = 0; i < count; i++){
-    const d = new Date(baseDate);
-    d.setMonth(d.getMonth() + periodMonths * i);
+    const d = addMonths(baseDate, periodMonths * i);
     const iso = d.toISOString().substring(0, 10);
     const pct = (i === count - 1) ? lastAdjust : base;
     addAmortRow(iso, pct.toFixed(2));
@@ -4178,7 +4296,7 @@ function renderCallYields(callRows, callable, ctx){
     if(!r||!r.cf||!r.cf.length) return;
     const y=callYield(r.cf,ctx.precioUSD); if(!y) return;
     scen.push({kind:'YTC',label:'Call',fecha:sc.callDate,precio:sc.precio,tir:y.tir,
-               tna:(y.tir!=null)?tirToTNA(y.tir,ctx.per,r.diasPeriodo):null,
+               tna:(y.tir!=null)?tirToTNA(y.tir,ctx.per,r.diasPeriodo,y.dias):null,
                simple:y.simple,dias:y.dias,open:sc.open});
   });
   // Yield to Worst = escenario de menor TIR (peor para el inversor). Mismo criterio que
@@ -4247,9 +4365,7 @@ function calcFromPanel(silent){
     // al vencimiento: un único cupón al final, no hay fechas intermedias
     iiD=new Date(vcD);
   } else {
-    iiD=new Date(vcD);
-    while(iiD>emD){ const prev=new Date(iiD); prev.setMonth(prev.getMonth()-per); if(prev<=emD) break; iiD=prev; }
-    if(iiD<=emD){ iiD=new Date(emD); iiD.setMonth(iiD.getMonth()+per); }
+    iiD=primerCupon(emD, vcD, per);
   }
   const amortS=readAmortSched(vcD);
   const cfRaw=generateCashflows(emD,iiD,vcD,cupon,per,base,amortS,tBase,devengo);
@@ -4289,7 +4405,7 @@ function calcFromPanel(silent){
     const te=document.getElementById('inp-tir');te.value=tir.toFixed(4);te.classList.remove('tir-override');document.getElementById('badge-tir').style.display='none';
   } else if(tnaIsManual){
     const tnaIn=tnaInpVal/100;
-    tir=tnaToTIR(tnaIn, per, diasProxPeriodo, document.getElementById('fi-base-dias').value);
+    tir=tnaToTIR(tnaIn, per, diasProxPeriodo, cf[cf.length-1].dias);
     if(isNaN(tir)||tir===null){if(!silent){toast('TNA inválida.');flagField('inp-tna');}return;}
     precioUSD=parseFloat(calcPrecioFromTIR(cf,tir).toFixed(4));
     precioARS=usdToArs(precioUSD);
@@ -4307,7 +4423,7 @@ function calcFromPanel(silent){
     pe.classList.remove('manual-override');document.getElementById('badge-price').style.display='none';
   }
   const met=calcMetrics(cf,precioUSD,tir,per);
-  const tna=tirToTNA(tir,per,diasProxPeriodo);
+  const tna=tirToTNA(tir,per,diasProxPeriodo,cf[cf.length-1].dias);
   // Corrido exacto sobre el período en curso del cronograma (cubre también per=0).
   const cc=calcCC(cf,cupon,per,base,sett);
   const plUSD=parseFloat((precioUSD-cc).toFixed(4));
@@ -4320,7 +4436,7 @@ function calcFromPanel(silent){
     document.getElementById('btn-reset-tna').classList.remove('visible');
   }
   const tirLbl = isHD ? 'USD · T+1' : 'USD-eq · T+1';
-  const tnaLbl = isHD ? 'nominal USD 180/360' : 'nominal USD-eq 180/360';
+  const tnaLbl = (isHD ? 'nominal USD ' : 'nominal USD-eq ') + tnaBase(per, diasProxPeriodo);
   document.getElementById('res-tir').textContent=tir.toFixed(2)+'%';document.getElementById('res-tir-sub').textContent=tirLbl;
   document.getElementById('res-tna').textContent=tna.toFixed(2)+'%';document.getElementById('res-tna-sub').textContent=tnaLbl;
   if(isHD){
@@ -6494,7 +6610,7 @@ const OPS = (function(){
   document.addEventListener('click', e=>{
     if(!e.target.closest('.ops-col-wrap')) document.getElementById('ops-col-cfg-menu')?.classList.remove('open');
   });
-  let rangeMapped=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
+  let rangeMapped=[], rangeRaw=[], serieSec='hd1', metric='tir', dateFrom=null, dateTo=null, chart=null;
   let _fetchFailed=false;   // distingue 'fallo la request' de 'no hay datos'
   // Estado del grafico de serie. kind: 'load' | 'empty' | 'err' | null (mostrar el grafico).
   function serieState(kind, msg, sub, actLabel, actFn){
@@ -6818,6 +6934,7 @@ const OPS = (function(){
     if(f) path+='&fecha=gte.'+f;
     if(t) path+='&fecha=lte.'+t;
     const rows=await qAll(path);
+    rows.forEach(r=>{ r._tnaCupon=r.tna; r.tna=tnaOp(r); });      // TNA en la base elegida
     dayMapped=rows.map(mapRow);
     // Fecha de vencimiento desde el catálogo de bonos (market_ops solo guarda el año)
     const vmap={};
@@ -6849,7 +6966,9 @@ const OPS = (function(){
     let path='/market_ops?select=fecha,ticker,emisor,tipo,leg,jur,rating,sector,anio_vto,monto,tir,tna,outlier,fuente&order=fecha.asc';
     if(dateFrom) path+='&fecha=gte.'+dateFrom;
     if(dateTo) path+='&fecha=lte.'+dateTo;
-    const rows=await qAll(path); rangeMapped=rows.map(mapRow);
+    const rows=await qAll(path);
+    rows.forEach(r=>{ r._tnaCupon=r.tna; r.tna=tnaOp(r); });      // TNA en la base elegida
+    rangeRaw=rows; rangeMapped=rows.map(mapRow);
     buildSerieSecSelector(); buildFilters(); renderSerie();
   }
 
@@ -6876,6 +6995,13 @@ const OPS = (function(){
       this.toggleMenu(false);
     },
     loadDayRange(){ loadDayRange(); },
+    // Cambió la base de la TNA: re-expresar las operaciones ya cargadas sin volver a pedirlas.
+    onTnaModo(){
+      if(!inited) return;
+      dayRaw.forEach(r=>{ r.tna=tnaOp(r); }); dayMapped=dayRaw.map(mapRow); dayTrees={};
+      rangeRaw.forEach(r=>{ r.tna=tnaOp(r); }); rangeMapped=rangeRaw.map(mapRow);
+      try{ renderResumen(); renderList(); if(rangeRaw.length) renderSerie(); }catch(e){ console.error('[ops tna]', e); }
+    },
     setSerieSec(id){ serieSec=id; filters={rating:null,sector:null,empresa:null,anio:null}; buildFilters(); renderSerie(); },
     setMetric(m){ metric=m; document.getElementById('ops-m-tir').classList.toggle('on',m==='tir'); document.getElementById('ops-m-tna').classList.toggle('on',m==='tna'); renderSerie(); },
     setDates(){ const fi=document.getElementById('ops-from'),to=document.getElementById('ops-to'); dateFrom=fi.value||null; dateTo=to.value||null; loadRange(); },
@@ -7401,6 +7527,8 @@ body.byma-mode #view-byma{display:block}
 #view-byma .byma-h{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:#e2e8f0;margin:6px 0 10px}
 #view-byma .byma-note{color:#94a3b8;font-size:.68rem;margin:2px 0 12px;max-width:840px;line-height:1.5}
 #view-byma .byma-fxbar{display:inline-flex;border:1px solid #1e2d42;border-radius:6px;overflow:hidden;margin-bottom:12px}
+#view-byma .byma-tnam{display:inline-flex;align-items:center;gap:6px;margin:0 0 12px 14px;vertical-align:top;font-size:.68rem;color:#94a3b8}
+#view-byma .byma-tnam select{background:#0a0e14;border:1px solid #1e2d42;color:#e2e8f0;border-radius:4px;padding:3px 6px;font-size:.7rem;font-family:'IBM Plex Mono',monospace}
 #view-byma .byma-fxbar .c{padding:5px 15px;border-right:1px solid #1e2d42;text-align:center;background:#0c1018}
 #view-byma .byma-fxbar .c:last-child{border-right:none}
 #view-byma .byma-fxbar .l{font-size:.5rem;color:#5b6b80;text-transform:uppercase;letter-spacing:.05em}
@@ -7456,7 +7584,14 @@ body.byma-mode #view-byma{display:block}
 <div id="view-byma">
   <h1 class="byma-h">🧾 Tasa → Precio · a partir de la TNA objetivo</h1>
   <div class="byma-fxbar" id="byma-fx"></div>
-  <div class="byma-note">Agregá los tickers, elegí la moneda de cotización y cargá la TNA objetivo: el precio se calcula con el cronograma real del bono (mismo cálculo que la calculadora). El vencimiento se autocompleta desde el catálogo. Los DL se pesifican por A3500; USD MEP/CABLE dividen ese precio por el TC correspondiente.</div>
+  <label class="byma-tnam" for="byma-tna-modo">La TNA está en base
+    <select id="byma-tna-modo" onchange="setTnaModo(this.value)">
+      <option value="cupon">según cupón (180/360 semestrales, 90/360 trimestrales)</option>
+      <option value="180">180/360</option>
+      <option value="90">90/360</option>
+      <option value="plazo">plazo remanente</option>
+    </select></label>
+  <div class="byma-note">Agregá los tickers, elegí la moneda de cotización y cargá la TNA objetivo: el precio se calcula con el cronograma real del bono (mismo cálculo que la calculadora). La base de la TNA es la misma que la elegida en la tabla principal. El vencimiento se autocompleta desde el catálogo. Los DL se pesifican por A3500; USD MEP/CABLE dividen ese precio por el TC correspondiente.</div>
 
   <div class="byma-search" id="byma-search">
     <div class="byma-srch-head" onclick="BYMAOPS.toggleSearch()">
@@ -7525,24 +7660,25 @@ window.BYMAOPS = (function(){
     const e=cfEntry(b); if(!e || e.expired) return null;
     const per=e.per, tna=tnaPct/100;
     if(e.cf && e.cf.length>0){                                   // cronograma real
-      const p=calcPrecioFromTIR(e.cf, tnaToTIR(tna, per, e.diasPeriodo));
+      const p=calcPrecioFromTIR(e.cf, tnaToTIR(tna, per, e.diasPeriodo, e.cf[e.cf.length-1].dias));
       return isFinite(p)?p:null;
     }
     if(b.cupon>0){                                               // cupón>0 sin cronograma (aprox)
-      const tir=tnaToTIR(tna, per)/100;                          // sin diasPeriodo (igual que la rama forward)
+      const tir=tnaToTIR(tna, per, null, diasVtoDe(e))/100;     // sin diasPeriodo (igual que la rama forward)
       const n=Math.max(1,Math.round(e.yrs*(12/per))), cPer=b.cupon/100/(12/per);
       let px=0; for(let i=1;i<=n;i++){ const t=i/(12/per), c=i<n?cPer*100:cPer*100+100; px+=c/Math.pow(1+tir,t); }
       return isFinite(px)?px:null;
     }
-    const dias=Math.max(1,(e.vd-e.sett)/(24*3600*1000));         // ZC puro: TNA = TIR
-    const p=100/Math.pow(1+tna, dias/365);
+    const dias=Math.max(1,(e.vd-e.sett)/(24*3600*1000));         // ZC puro (en base cupón, TNA = TIR)
+    const tirZC=(TNA_MODO==='cupon') ? tna : tnaToTIR(tna, per, null, diasVtoDe(e))/100;
+    const p=100/Math.pow(1+tirZC, dias/365);
     return isFinite(p)?p:null;
   }
   function tirResultante(b, tnaPct){
     const e=cfEntry(b); if(!e) return null; const per=e.per;
-    if(e.cf && e.cf.length>0) return tnaToTIR(tnaPct/100, per, e.diasPeriodo);
-    if(b.cupon>0) return tnaToTIR(tnaPct/100, per);
-    return tnaPct;                                               // ZC: TNA = TIR
+    if(e.cf && e.cf.length>0) return tnaToTIR(tnaPct/100, per, e.diasPeriodo, e.cf[e.cf.length-1].dias);
+    if(b.cupon>0) return tnaToTIR(tnaPct/100, per, null, diasVtoDe(e));
+    return (TNA_MODO==='cupon') ? tnaPct : tnaToTIR(tnaPct/100, per, null, diasVtoDe(e)); // ZC: en base cupón, TNA = TIR
   }
   function precioMoneda(b, tnaPct, mon){
     const P=precioTecnicoUSD(b, tnaPct); if(P==null) return null;
@@ -7792,10 +7928,12 @@ window.BYMAOPS = (function(){
   function recomputeAll(){ const tb=$('byma-tbody'); if(!tb) return; [...tb.children].forEach(tr=>{ if(tr._data&&tr._refs) recompute(tr._data,tr); }); }
 
   function init(){ if(inited) return; inited=true; load(); buildDatalist(); renderAll(); }
-  function show(){ init(); buildDatalist(); showSearch(); updateFXBar(); recomputeAll(); refreshVwapAll(); }
+  function show(){ init(); buildDatalist(); showSearch(); updateFXBar(); pintarTnaModo(); recomputeAll(); refreshVwapAll(); }
   function onFX(){ if(!inited) return; updateFXBar(); recomputeAll(); refreshVwapAll(); }
+  // La TNA cargada se reinterpreta en la nueva base: cambian el precio y la TIR resultantes.
+  function onTnaModo(){ if(!inited) return; recomputeAll(); }
 
-  return { show, onFX, addRow, clearAll, sort, toggleSearch, applyFilters, clearFilters };
+  return { show, onFX, onTnaModo, addRow, clearAll, sort, toggleSearch, applyFilters, clearFilters };
 })();
 </script>
 <!-- ═══════════════ VISTA VALOR RELATIVO (solo administrador) ═══════════════ -->
