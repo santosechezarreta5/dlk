@@ -6983,7 +6983,7 @@ const OPS = (function(){
       if(v==='ops' && !inited){ inited=true; loadDates(); }
       if(v==='fci' && window.FCI){ window.FCI.init(); }
       if(v==='byma' && window.BYMAOPS){ window.BYMAOPS.show(); }
-      if(v==='spread' && window.SPREADV){ window.SPREADV.show(); }
+      if(v==='spread'){ if(window.VALREL) window.VALREL.show(); else if(window.SPREADV) window.SPREADV.show(); }
     },
     toggleMenu(force){
       const open = (force===undefined) ? !document.body.classList.contains('drawer-open') : !!force;
@@ -7958,6 +7958,24 @@ body:not(.admin-mode) #ops-drawer .ditem-admin{display:none !important}
 #view-spread .spv-sum{font-size:.66rem;color:#94a3b8;margin:0 0 8px}
 #view-spread .spv-sum b{color:#cfe0f5}
 #view-spread .spv-wrap{overflow-x:auto;border:1px solid #1e2d42;border-radius:6px}
+#view-spread .spv-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 12px}
+#view-spread .spv-tab{font:inherit;font-size:.7rem;padding:5px 14px;border-radius:20px;border:1px solid #1e2d42;background:transparent;color:#94a3b8;cursor:pointer}
+#view-spread .spv-tab:hover{color:#cfe0f5}
+#view-spread .spv-tab[aria-selected="true"]{border-color:#2dd4bf;background:rgba(45,212,191,.1);color:#2dd4bf}
+#view-spread .cpn-leg{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.65rem;color:#94a3b8;margin:0 0 8px;align-items:center}
+#view-spread .cpn-leg i,#view-spread .cpn-t .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+#view-spread .cpn-leg .sep{color:#5b6b80}
+#view-spread .cpn-t th{white-space:normal;line-height:1.25;vertical-align:bottom;min-width:64px}
+#view-spread .cpn-t td{padding:6px 8px}
+#view-spread .cpn-t td.ok{background:rgba(12,163,12,.16);color:#d8f5d8}
+#view-spread .cpn-t td.mal{background:rgba(208,59,59,.2);color:#fbe0e0}
+#view-spread .cpn-t td.niv{font-weight:700}
+#view-spread .cpn-t td.pend{color:#5b6b80;font-family:'Segoe UI',Arial,sans-serif;font-size:.62rem}
+#view-spread .cpn-t td.em{font-family:'Segoe UI',Arial,sans-serif;font-weight:600;color:#e2e8f0}
+#view-spread .cpn-notas{margin:12px 0 0;color:#94a3b8;font-size:.66rem;line-height:1.55;max-width:920px}
+#view-spread .cpn-notas summary{cursor:pointer;color:#cfe0f5}
+#view-spread .cpn-notas ul{margin:6px 0 0;padding-left:18px}
+#view-spread .cpn-notas li{margin:4px 0}
 #view-spread table{border-collapse:collapse;width:100%;font-size:.7rem}
 #view-spread th{position:sticky;top:0;background:#0c1018;color:#94a3b8;font-weight:600;text-align:right;padding:6px 8px;border-bottom:1px solid #1e2d42;cursor:pointer;white-space:nowrap;user-select:none}
 #view-spread th:hover{color:#cfe0f5}
@@ -7985,6 +8003,39 @@ body:not(.admin-mode) #ops-drawer .ditem-admin{display:none !important}
 </style>
 
 <div id="view-spread">
+  <div class="spv-tabs" role="tablist" aria-label="Valor relativo">
+    <button type="button" class="spv-tab" id="spv-tabbtn-panel" role="tab" onclick="VALREL.setTab('panel')">🏢 Panel de emisores</button>
+    <button type="button" class="spv-tab" id="spv-tabbtn-bonos" role="tab" onclick="VALREL.setTab('bonos')">📐 Spread por bono</button>
+  </div>
+
+  <!-- ── Panel de emisores ── -->
+  <div id="spv-tab-panel" role="tabpanel">
+    <h1 class="spv-h">🏢 Panel de emisores corporativos</h1>
+    <div class="spv-note" id="cpn-sub">Números de cada emisor en los últimos 12 meses, los pagos de sus ONs de los próximos 12 meses y la TIR de sus ONs, de más a menos nivel.</div>
+    <div class="cpn-leg" id="cpn-leg"></div>
+    <div class="spv-sum" id="cpn-sum"></div>
+    <div class="spv-wrap"><table class="cpn-t">
+      <thead><tr id="cpn-head"></tr></thead>
+      <tbody id="cpn-tbody"><tr><td class="spv-empty" colspan="12">Cargando…</td></tr></tbody>
+    </table></div>
+    <details class="cpn-notas">
+      <summary>Qué significa cada columna y qué se toma en cuenta</summary>
+      <ul>
+        <li><b>EBITDA, deuda, caja, intereses y flujo libre:</b> año móvil a junio 2026, en US$ millones, del Resumen Financiero de FIX SCR (<i>Corporates Argentina: Estadísticas Comparativas</i>, 13-oct-2026), armado con los estados contables de cada emisor. FIX convierte a dólares los que reportan en pesos. Pasá el mouse por el emisor para ver la fuente y su calificación local.</li>
+        <li><b>Deuda neta / EBITDA:</b> años de EBITDA para pagar la deuda neta (deuda total menos caja). Menos es mejor.</li>
+        <li><b>EBITDA / intereses:</b> veces que el EBITDA cubre los intereses financieros brutos. Más es mejor.</li>
+        <li><b>Flujo libre / EBITDA:</b> flujo generado por las operaciones (ya neto de intereses e impuestos) menos capex y dividendos, sobre el EBITDA. Negativo: invierte o distribuye más de lo que genera.</li>
+        <li><b>Pagos de ONs a 12 meses:</b> capital más intereses de sus ONs en dólares y dollar-linked que vencen en los próximos 12 meses, con el cronograma de la calculadora y el saldo residual de BYMA (corregido a mano por reaperturas y recompras). No incluye préstamos bancarios.</li>
+        <li><b>Liquidez / pagos de ONs:</b> cuántas veces la caja cubre esos pagos. Menos de 1x: tiene que refinanciar o pagarlos con el flujo.</li>
+        <li><b>TIR de sus ONs:</b> promedio de la TIR de cada ON en el dólar en que paga, ponderado por saldo y duration (una ON corta pesa poco). Última rueda con precio de los 10 días previos.</li>
+        <li><b>Calificación internacional:</b> la más baja de las agencias (Moody's, S&amp;P, Fitch) para sus ONs de ley Nueva York. Sin ON afuera, no tiene.</li>
+        <li><b>Nivel (0 a 100):</b> promedio de las cuatro cualidades. Cada una vale 67 en el umbral bueno y 33 en el malo, lineal en el medio. Umbrales: deuda neta/EBITDA 2x y 4x; EBITDA/intereses 6x y 3x; flujo libre 15% y 0%; liquidez sobre pagos 2x y 1x. Verde = cumple el umbral bueno; rojo = en el umbral malo o peor.</li>
+      </ul>
+    </details>
+  </div>
+
+  <!-- ── Spread por bono ── -->
+  <div id="spv-tab-bonos" role="tabpanel" hidden>
   <h1 class="spv-h">📐 Valor relativo · spread sobre el Tesoro</h1>
   <div class="spv-note">
     Spread = TIR del bono − Tesoro USA interpolado a su duration modificada. Precio sucio por 100 VN,
@@ -8043,6 +8094,7 @@ body:not(.admin-mode) #ops-drawer .ditem-admin{display:none !important}
     </tr></thead>
     <tbody id="spv-tbody"></tbody>
   </table></div>
+  </div>
 </div>
 
 <script>
@@ -8406,6 +8458,167 @@ window.SPREADV = (function(){
 
   return { show, setFecha, paso, setDur, setLiq, setMon, setSinOp, setSoloMios, setQ,
            toggleUmbrales, setUmbrales, editar, cancelar, preview, guardar, borrar };
+})();
+
+// ── Panel de emisores corporativos (solo administrador) ──────────────────────────
+// Lee corp_panel, que arma ons/byma-reporter/panel.py con los balances cargados en
+// corp/data/fundamentos.csv, los pagos de ONs de los próximos 12 meses y la TIR de sus
+// ONs. RLS de lectura solo autenticada, como bond_analytics.
+window.CORPPANEL = (function(){
+  // Umbrales del desk [bueno, malo]: verde si cumple el bueno, rojo si está en el malo o peor.
+  const UMB = { dn_ebitda:[2,4], ebitda_int:[6,3], fcf_ebitda:[0.15,0], liquidez_pagos:[2,1], nivel:[67,33] };
+  const FAM = [
+    [/^oil & gas/i, 'Petróleo y gas', '#3987e5'],
+    [/midstream|infraestructura/i, 'Infraestructura', '#199e70'],
+    [/utility|generaci/i, 'Electricidad y gas', '#9085e9'],
+    [/telecom/i, 'Telecomunicaciones', '#d55181'],
+    [/consumo|agro|real estate/i, 'Consumo, agro y real estate', '#c98500'],
+    [/industria|petroqu|miner/i, 'Industria y materiales', '#8390a4'],
+  ];
+  const $ = id => document.getElementById(id);
+  const db = () => (typeof Catalog !== 'undefined' && Catalog.db) ? Catalog.db() : null;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const num = (v, d) => (v == null || v === '' || isNaN(v)) ? null
+    : (+v).toLocaleString('es-AR', {minimumFractionDigits: d, maximumFractionDigits: d});
+  const dmy = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
+  const fam = sector => FAM.find(f => f[0].test(sector || '')) || [null, 'Otros', '#5b6b80'];
+
+  const COLS = [
+    {k:'nombre',         l:'Emisor',                          t:'txt'},
+    {k:'ebitda_ltm',     l:'EBITDA LTM (US$ M)',              t:'n0', bal:true},
+    {k:'deuda_total',    l:'Deuda total (US$ M)',             t:'n0', bal:true},
+    {k:'caja_inv',       l:'Caja e inv. corrientes (US$ M)',  t:'n0', bal:true},
+    {k:'dn_ebitda',      l:'Deuda neta / EBITDA',             t:'x',  u:'dn_ebitda'},
+    {k:'ebitda_int',     l:'EBITDA / intereses',              t:'x',  u:'ebitda_int'},
+    {k:'fcf_ebitda',     l:'Flujo libre / EBITDA',            t:'pct', u:'fcf_ebitda'},
+    {k:'pagos_12m',      l:'Pagos de ONs 12 meses (US$ M)',   t:'n0'},
+    {k:'liquidez_pagos', l:'Liquidez / pagos de ONs',         t:'x',  u:'liquidez_pagos'},
+    {k:'tir_ons',        l:'TIR de sus ONs',                  t:'tir'},
+    {k:'calificacion',   l:'Calificación internacional',      t:'txt'},
+    {k:'nivel',          l:'Nivel (0 a 100)',                 t:'n0', u:'nivel'},
+  ];
+  let rows = [], orden = {k:'nivel', dir:-1}, inited = false;
+
+  function estado(u, v){
+    if(!u || v == null) return '';
+    const [b, m] = UMB[u], menosMejor = b < m;
+    if(menosMejor ? v <= b : v >= b) return 'ok';
+    if(menosMejor ? v >= m : v <= m) return 'mal';
+    return '';
+  }
+  function txtUmbral(u){
+    const [b, m] = UMB[u], f = u === 'fcf_ebitda' ? (x => num(x*100,0)+'%') : u === 'nivel' ? (x => x) : (x => num(x,1)+'x');
+    return b < m ? `verde si ≤ ${f(b)} · rojo si ≥ ${f(m)}` : `verde si ≥ ${f(b)} · rojo si ≤ ${f(m)}`;
+  }
+  function celda(c, r){
+    const v = r[c.k];
+    if(c.k === 'nombre'){
+      const [, fl, col] = fam(r.sector);
+      const src = (r.fuentes || []).filter(x => x.dato !== 'saldos').map(x => `${x.dato}: ${x.fuente}`).join('\n');
+      const tip = [r.sector, r.periodo ? 'Balance al ' + dmy(r.periodo) : 'Balance pendiente de carga', src,
+                   r.n_ons != null ? `${r.n_ons} ONs en los pagos · ${r.n_ons_tir || 0} con TIR` : '', r.notas]
+                  .filter(Boolean).join('\n');
+      return `<td class="l em" title="${esc(tip)}"><span class="dot" style="background:${col}" aria-label="${esc(fl)}"></span>${esc(v)}</td>`;
+    }
+    if(c.bal && r.ebitda_ltm == null && c.k === 'ebitda_ltm') return `<td class="pend" title="Todavía no cargué el balance de este emisor">pendiente</td>`;
+    let s;
+    if(v == null || v === '') s = '—';
+    else if(c.t === 'n0') s = num(v, 0);
+    else if(c.t === 'x') s = num(v, 1) + 'x';
+    else if(c.t === 'pct') s = num(v * 100, 0) + '%';
+    else if(c.t === 'tir') s = num(v, 2) + '%';
+    else s = esc(v);
+    const e = estado(c.u, v == null ? null : +v);
+    const tip = c.u ? txtUmbral(c.u) : (c.k === 'tir_ons' && r.tir_fecha ? 'TIR al ' + dmy(r.tir_fecha) : '');
+    return `<td class="${[e, c.k === 'nivel' ? 'niv' : ''].filter(Boolean).join(' ')}"${tip ? ` title="${esc(tip)}"` : ''}>${s}</td>`;
+  }
+  function render(){
+    $('cpn-head').innerHTML = COLS.map(c =>
+      `<th class="${c.k === 'nombre' || c.k === 'calificacion' ? 'l' : ''}" data-pc="${c.k}">${esc(c.l)}${orden.k === c.k ? (orden.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`).join('');
+    const k = orden.k, d = orden.dir;
+    const data = rows.slice().sort((a, b) => {
+      const x = a[k], y = b[k];
+      if(x == null && y == null) return (b.pagos_12m || 0) - (a.pagos_12m || 0);
+      if(x == null) return 1;                         // sin dato, siempre al final
+      if(y == null) return -1;
+      return typeof x === 'string' ? d * x.localeCompare(y) : d * (x - y);
+    });
+    $('cpn-tbody').innerHTML = data.length ? data.map(r => `<tr>${COLS.map(c => celda(c, r)).join('')}</tr>`).join('')
+      : `<tr><td class="spv-empty" colspan="${COLS.length}">Todavía no hay emisores en corp_panel: corré ons/byma-reporter/panel.py.</td></tr>`;
+    const conBal = rows.filter(r => r.ebitda_ltm != null), per = [...new Set(conBal.map(r => r.periodo).filter(Boolean))].sort();
+    const tirF = rows.map(r => r.tir_fecha).filter(Boolean).sort().pop();
+    const act = rows.map(r => r.actualizado).filter(Boolean).sort().pop();
+    $('cpn-sum').innerHTML = `${rows.length} emisores · <b>${conBal.length}</b> con balance cargado`
+      + (per.length ? ` (cierre ${per.map(dmy).join(', ')})` : '')
+      + (tirF ? ` · TIR al ${dmy(tirF)}` : '') + (act ? ` · actualizado ${dmy(act.slice(0, 10))}` : '');
+  }
+  function leyenda(){
+    const usadas = [...new Set(rows.map(r => fam(r.sector)[1]))];
+    $('cpn-leg').innerHTML = FAM.filter(f => usadas.includes(f[1]))
+      .map(f => `<span><i style="background:${f[2]}"></i>${esc(f[1])}</span>`).join('')
+      + `<span class="sep">verde = cumple el umbral bueno · rojo = en el umbral malo o peor</span>`;
+  }
+  async function cargar(){
+    const c = db();
+    if(!c){
+      $('cpn-sum').innerHTML = ''; $('cpn-leg').innerHTML = '';
+      $('cpn-tbody').innerHTML = `<tr><td class="spv-empty" colspan="${COLS.length}">Iniciá sesión como administrador para ver esta vista.</td></tr>`;
+      return;
+    }
+    $('cpn-sum').textContent = 'Cargando…';
+    const { data, error } = await c.from('corp_panel').select('*');
+    if(error){
+      $('cpn-sum').textContent = '';
+      $('cpn-tbody').innerHTML = `<tr><td class="spv-empty" colspan="${COLS.length}">No pude leer corp_panel (${esc(error.message || error.code)}). `
+        + `Si la tabla no existe, corré corp/sql/03_panel.sql en Supabase.</td></tr>`;
+      return;
+    }
+    rows = data || [];
+    leyenda(); render();
+  }
+  function show(){
+    if(!inited){
+      inited = true;
+      $('cpn-head').addEventListener('click', ev => {
+        const th = ev.target.closest('th[data-pc]'); if(!th) return;
+        const k = th.dataset.pc;
+        if(orden.k === k) orden.dir = -orden.dir;
+        else orden = {k, dir: (k === 'nombre' || k === 'calificacion' || k === 'dn_ebitda') ? 1 : -1};
+        render();
+      });
+      if(typeof Catalog !== 'undefined' && Catalog.onAuthChange){
+        Catalog.onAuthChange(logged => {
+          if(!document.body.classList.contains('spread-mode')) return;
+          if(!logged && typeof OPS !== 'undefined') OPS.selectView('calc');   // se cerró la sesión
+          else if(logged) cargar();
+        });
+      }
+    }
+    cargar();
+  }
+  return { show };
+})();
+
+// ── Subpestañas de Valor relativo ────────────────────────────────────────────────
+window.VALREL = (function(){
+  const LS = 'valrel_tab_v1';
+  let tab = 'panel';
+  try{ const v = localStorage.getItem(LS); if(v === 'panel' || v === 'bonos') tab = v; }catch(_){}
+  function pintar(){
+    ['panel', 'bonos'].forEach(t => {
+      const b = document.getElementById('spv-tabbtn-' + t), d = document.getElementById('spv-tab-' + t);
+      if(b) b.setAttribute('aria-selected', String(t === tab));
+      if(d) d.hidden = (t !== tab);
+    });
+  }
+  function show(){
+    pintar();
+    if(tab === 'panel'){ if(window.CORPPANEL) CORPPANEL.show(); }
+    else if(window.SPREADV) SPREADV.show();
+  }
+  function setTab(t){ tab = (t === 'bonos') ? 'bonos' : 'panel'; try{ localStorage.setItem(LS, tab); }catch(_){} show(); }
+  return { show, setTab };
 })();
 </script>
 
