@@ -34,8 +34,9 @@ pasando sobre nada:
 buildSchedule · buildCallCF · activeCallScenarios · applySettlement
 calcTIR · tirToTNA · tnaToTIR · tnaBase · _tnaModo · callYield · _rankYTC
 adjustDate · yearFrac · dkey · isHoliday · esFinDeMes · addMonths · primerCupon
-tasaCupon · cuponDe · SOBERANOS · YC_COL · YC_SOB · ajusteLog · tirEnCurva · curvasSoberanas
-spreadSob · ycValor · ycClave · ycGrupos · ycActivos · loessTir · curvaPuntos · esPuntoSano
+tasaCupon · cuponDe · SOBERANOS · YC_COL · YC_SOB · NS_LAMBDAS · nsFactores · valorNS · minCuadPond
+ajusteNS · tirEnCurva · muestrearNS · curvasSoberanas · spreadSob · ycValor · ycClave · ycGrupos
+ycActivos · marcaSVG · esPuntoSano
 ```
 
 ## Qué cubre
@@ -51,7 +52,7 @@ spreadSob · ycValor · ycClave · ycGrupos · ycActivos · loessTir · curvaPun
 | **escenarios de call vigentes** | ventana futura vs. abierta, condiciones superadas, condiciones inválidas |
 | **fechas en días 29-31** ([fechas.test.mjs](fechas.test.mjs)) | sumar meses no desborda (31/01 + 1 → 28/02), un cupón del 29 no queda corrido después de febrero, 30/09 con vto 31/03 paga los 31/03 sin stub de un día, y un ancla del 28 o del 30 se respeta |
 | **soberanos** ([soberanos.test.mjs](soberanos.test.mjs)) | cupones step-up (cada tasa rige desde su fecha, sobre el capital que queda), cuotas iguales que suman 100, ley y jurisdicción de cada familia, AN29 semestral y AO mensuales. Los flujos coinciden con los de MAE |
-| **curva TIR vs duration** ([curva.test.mjs](curva.test.mjs)) | ajuste TIR = a + b·ln(dur), sin extrapolar el logaritmo fuera del tramo con bonos, spread contra el soberano de la misma legislación, grupos combinados, colores que no cambian al filtrar ni al prender y apagar grupos, y qué curva se usa según cuántos bonos tiene el grupo |
+| **curva TIR vs duration** ([curva.test.mjs](curva.test.mjs)) | el ajuste Nelson-Siegel recupera una curva conocida, un bono que se aparta no la mueve (ajuste robusto), la joroba solo se usa si se gana el lugar y con pocos bonos la curva es monótona, no se extrapola fuera del tramo con bonos, spread contra el soberano de la misma legislación, grupos combinados, hasta 5 curvas con colores que no cambian al filtrar ni al prender y apagar grupos |
 | **base de la TNA** ([tna.test.mjs](tna.test.mjs)) | "según cupón" da lo mismo que antes del selector, 180/360 y 90/360 igualan frecuencias, plazo remanente = [(1+TIR)^(d/365) − 1] × 365/d, y cada base es su propia inversa (TNA → TIR → TNA) |
 
 ## Si un test falla

@@ -640,7 +640,7 @@ window.SUPABASE_CONFIG = {
   </div>
   <div class="chart-panel">
     <div class="cp-head">
-      <div><div class="cp-title">Curva de Rendimientos · TIR vs Duration</div><div class="cp-sub" id="yc-sub">LOESS · color por sector · arrastrar: zona de zoom · doble clic: reset · clic en punto: abrir bono</div></div>
+      <div><div class="cp-title">Curva de Rendimientos · TIR vs Duration</div><div class="cp-sub" id="yc-sub">Nelson-Siegel · color por sector · arrastrar: zona de zoom · doble clic: reset · clic en punto: abrir bono</div></div>
       <div style="display:flex;align-items:center;gap:8px;">
         <div class="cp-legend" id="chart-legend"></div>
         <button class="btn-png" onclick="exportYieldPNG()" title="Exportar gráfico a PNG">⤓ PNG</button>
@@ -3325,13 +3325,16 @@ function exportYieldPNG(){
 
 // ── Curva TIR vs duration: curvas por segmento y curva soberana ──────────────────────────
 // "Curvas por" arma una curva por grupo combinando sector, crédito, legislación y
-// jurisdicción. Se pintan hasta 3 grupos a la vez: es lo que aguanta la paleta para que los
-// colores se distingan también con daltonismo (puntos y líneas se comparan todos contra
-// todos). Los demás grupos quedan en gris de contexto y se prenden desde la leyenda.
-// La curva soberana ajusta TIR = a + b·ln(duration) sobre los Globales (ley NY) y sobre los
-// Bonares (ley local); el spread de cada ON se mide contra la de su misma legislación.
+// jurisdicción. Se pintan hasta 5 grupos a la vez, cada uno con su color y su forma de punto
+// (los 5 colores se distinguen también con daltonismo, comparados todos contra todos); los
+// demás quedan en gris de contexto y se prenden desde la leyenda.
+// Todas las curvas, las de las ONs y las soberanas (Globales ley NY y Bonares ley local), son
+// un ajuste Nelson-Siegel (ver ajusteNS). El spread de cada ON se mide contra la curva
+// soberana de su misma legislación.
 const YC_DIMS = {sector:'Sector', rating:'Crédito', leg:'Legislación', jur:'Jurisdicción'};
-const YC_COL  = ['#3987e5','#d95926','#199e70'];   // azul, naranja, verde agua: validados todos contra todos sobre #0c1018
+// azul, naranja, verde agua, violeta, bordó: pasan el validador de dataviz todos contra todos
+// sobre #0c1018 (daltonismo ΔE ≥ 9,4; visión normal ≥ 15,1)
+const YC_COL  = ['#3987e5','#d95926','#199e70','#7a4aba','#a24466'];
 const YC_GRIS = '#475569';
 const YC_SOB  = {
   NY:{label:'Globales · ley NY',   corto:'Globales', color:'#e2e8f0', dash:'7 4'},
@@ -3354,31 +3357,101 @@ function esPuntoSano(b){
 }
 function familiaSob(b){ return b.leg==='Nueva York' ? 'NY' : 'AR'; }
 
-// TIR = a + b·ln(duration) por mínimos cuadrados. Sin dos durations distintas no hay ajuste.
-function ajusteLog(pts){
-  const p=pts.filter(x=>x.dur>0 && isFinite(x.tir));
-  if(p.length<2) return null;
-  const n=p.length, lx=p.map(x=>Math.log(x.dur));
-  const mx=lx.reduce((s,v)=>s+v,0)/n, my=p.reduce((s,x)=>s+x.tir,0)/n;
-  let sxx=0, sxy=0;
-  p.forEach((x,i)=>{ sxx+=(lx[i]-mx)**2; sxy+=(lx[i]-mx)*(x.tir-my); });
-  if(sxx<1e-12) return null;
-  const b=sxy/sxx;
-  return {a:my-b*mx, b, min:Math.min(...p.map(x=>x.dur)), max:Math.max(...p.map(x=>x.dur)), n};
+// ── Ajuste de la curva: Nelson-Siegel robusto ─────────────────────────────────────────────
+// TIR(τ) = β0 + β1·f1(τ/λ) + β2·f2(τ/λ), con f1 = (1−e^−x)/x y f2 = f1 − e^−x: nivel, pendiente
+// y joroba, el modelo estándar de curvas de rendimiento. λ sale de una grilla y los β, por
+// mínimos cuadrados.
+// Con 6 bonos o más el ajuste es robusto: se repite pesando cada bono con la bisquare de Tukey
+// sobre su residuo, así uno que se aparta mucho (un precio raro, un bono con una demanda
+// particular) deja de tirar de toda la curva. Con 2 a 5 no se repesa: con tan pocos no hay
+// forma de saber cuál es el raro.
+// La joroba (β2) tiene que ganarse el lugar: se usa solo si deja menos de la cuarta parte del
+// error cuadrático de la curva sin joroba, medido sobre los bonos que el ajuste robusto sin
+// joroba considera normales. Las curvas soberanas la usan (con datos del 23/10/2026, el error baja
+// al 8-9%); los grupos de ONs dispersos, no, porque ahí solo serviría para perseguir puntos.
+const NS_LAMBDAS = Array.from({length:32}, (_,i)=>0.4*Math.pow(25, i/31));    // de 0,4 a 10 años
+function nsFactores(t, lam){ const x=t/lam, e=Math.exp(-x), f1=(1-e)/x; return [1, f1, f1-e]; }
+function valorNS(f, t){ const F=nsFactores(t, f.lam); return f.b[0]+f.b[1]*F[1]+f.b[2]*F[2]; }
+// Mínimos cuadrados ponderados por ecuaciones normales, con un ridge mínimo para que los
+// factores casi colineales (λ grande frente a las durations) no exploten.
+function minCuadPond(X, y, w){
+  const k=X[0].length, A=Array.from({length:k},()=>new Array(k).fill(0)), v=new Array(k).fill(0);
+  X.forEach((r,i)=>{ for(let a=0;a<k;a++){ v[a]+=w[i]*r[a]*y[i]; for(let c=0;c<k;c++) A[a][c]+=w[i]*r[a]*r[c]; } });
+  const tr=A.reduce((s,r,i)=>s+r[i],0)||1;
+  for(let a=0;a<k;a++) A[a][a]+=1e-9*tr;
+  for(let c=0;c<k;c++){
+    let p=c; for(let r=c+1;r<k;r++) if(Math.abs(A[r][c])>Math.abs(A[p][c])) p=r;
+    [A[c],A[p]]=[A[p],A[c]]; [v[c],v[p]]=[v[p],v[c]];
+    if(Math.abs(A[c][c])<1e-14) return null;
+    for(let r=c+1;r<k;r++){ const f=A[r][c]/A[c][c]; for(let q=c;q<k;q++) A[r][q]-=f*A[c][q]; v[r]-=f*v[c]; }
+  }
+  const b=new Array(k).fill(0);
+  for(let i=k-1;i>=0;i--){ let t=v[i]; for(let j=i+1;j<k;j++) t-=A[i][j]*b[j]; b[i]=t/A[i][i]; }
+  return b.every(isFinite) ? b : null;
 }
-// TIR de la curva en una duration. Fuera del tramo con bonos no se extrapola el logaritmo
-// (en el corto se va a −∞): se toma el extremo y se marca.
+// Un ajuste con k factores (2: nivel y pendiente; 3: con joroba). Devuelve también los pesos
+// finales del ajuste robusto.
+function ajustarNS(p, k, robusto){
+  const n=p.length, y=p.map(x=>x.tir);
+  let w=p.map(()=>1), mejor=null;
+  for(let it=0; it<(robusto?6:1); it++){
+    mejor=null;
+    for(const lam of NS_LAMBDAS){
+      const X=p.map(x=>nsFactores(x.dur,lam).slice(0,k));
+      const b=minCuadPond(X,y,w); if(!b) continue;
+      let sse=0; X.forEach((r,i)=>{ const e=y[i]-r.reduce((t,v,j)=>t+v*b[j],0); sse+=w[i]*e*e; });
+      if(!mejor || sse<mejor.sse) mejor={b:[...b,0].slice(0,3), lam, sse, w};
+    }
+    if(!mejor || !robusto) break;
+    // Bisquare con escala = 6 × la mediana de los residuos absolutos (piso de 10 pb)
+    const res=p.map(x=>x.tir-valorNS(mejor,x.dur));
+    const mad=res.map(Math.abs).sort((a,b)=>a-b)[Math.floor(n/2)];
+    const esc=6*Math.max(mad,0.1);
+    const nw=res.map(r=>{ const u=r/esc; return Math.abs(u)<1 ? (1-u*u)**2 : 0; });
+    if(nw.filter(x=>x>0).length < k+2) break;      // nunca dejar el ajuste sin bonos
+    w=nw;
+  }
+  return mejor;
+}
+// Ajuste a una lista de {dur, tir}: {b:[β0,β1,β2], lam, min, max, n} o null.
+function ajusteNS(pts){
+  const p=pts.filter(x=>x.dur>0 && isFinite(x.tir)), n=p.length;
+  if(n<2) return null;
+  const min=Math.min(...p.map(x=>x.dur)), max=Math.max(...p.map(x=>x.dur));
+  if(max-min<1e-6) return null;
+  const robusto=n>=6, f2=ajustarNS(p, 2, robusto);
+  let f=f2;
+  if(n>=6){
+    const f3=ajustarNS(p, 3, true);
+    if(f3){
+      // Los pesos salen de la curva sin joroba: los de la otra favorecerían a la joroba,
+      // que baja el peso justo de los puntos que no persigue.
+      const w=f2 ? f2.w : f3.w, err=g=>p.reduce((s,x,i)=>s+w[i]*(x.tir-valorNS(g,x.dur))**2, 0);
+      if(!f2 || err(f3) < 0.25*err(f2)) f=f3;
+    }
+  }
+  return f ? {b:f.b, lam:f.lam, min, max, n} : null;
+}
+// TIR de la curva en una duration. Fuera del tramo con bonos no se extrapola: se toma el
+// extremo y se marca.
 function tirEnCurva(f, dur){
   if(!f || !(dur>0)) return null;
   const d=Math.min(f.max, Math.max(f.min, dur));
-  return {tir:f.a+f.b*Math.log(d), extrapolado:d!==dur};
+  return {tir:valorNS(f,d), extrapolado:d!==dur};
+}
+// Puntos {dur, tir} para dibujar una curva ajustada: grilla de 60, más densa en el corto,
+// que es donde dobla.
+function muestrearNS(f){
+  const out=[];
+  for(let i=0;i<=60;i++){ const d=f.min*Math.pow(f.max/f.min,i/60); out.push({dur:d, tir:valorNS(f,d)}); }
+  return out;
 }
 // Curvas soberanas de una lista de bonos: {NY:{f, pts}, AR:{f, pts}}, solo las que ajustan.
 function curvasSoberanas(lista){
   const out={};
   ['NY','AR'].forEach(k=>{
     const pts=lista.filter(b=>b.soberano && familiaSob(b)===k && esPuntoSano(b));
-    const f=ajusteLog(pts);
+    const f=ajusteNS(pts);
     if(f) out[k]={f, pts};
   });
   return out;
@@ -3426,7 +3499,7 @@ function ycToggleGrupo(clave){
   if(clave in act) delete act[clave];
   else {
     const libre=YC_COL.findIndex((_,i)=>!Object.values(act).includes(i));
-    if(libre<0){ toast('Se ven hasta 3 curvas a la vez: apagá una en la leyenda antes de sumar otra.','warn',4000); return; }
+    if(libre<0){ toast('Se ven hasta 5 curvas a la vez: apagá una en la leyenda antes de sumar otra.','warn',4000); return; }
     act[clave]=libre;
   }
   YC.activos=act; if(_lastYieldData) drawYield(_lastYieldData);
@@ -3444,76 +3517,19 @@ function pintarYcCtrl(){
     leg.addEventListener('click',e=>{ const t=e.target.closest('[data-yc]'); if(t) ycToggleGrupo(t.dataset.yc); }); }
 }
 
-// LOESS: ajuste cuadrático ponderado (pesos tricúbicos) alrededor de xq; bw = fracción de la
-// distancia máxima que cuenta como "local".
-function loessTir(xq, points, bw){
-  const dists=points.map(p=>Math.abs(p.dur-xq));
-  const maxD=Math.max(...dists)*bw;
-  if(maxD===0) return points[0].tir;
-  const ws=points.map(p=>{const u=Math.abs(p.dur-xq)/maxD;return u<1?Math.pow(1-u*u*u,3):0;});
-  const sw=ws.reduce((a,b)=>a+b,0);
-  if(sw===0) return null;
-  let s0=0,s1=0,s2=0,s3=0,s4=0,t0=0,t1=0,t2=0;
-  points.forEach((p,i)=>{
-    const w=ws[i],x=p.dur;
-    s0+=w; s1+=w*x; s2+=w*x*x; s3+=w*x*x*x; s4+=w*x*x*x*x;
-    t0+=w*p.tir; t1+=w*x*p.tir; t2+=w*x*x*p.tir;
-  });
-  // Sistema 3x3 para [a,b,c] en a+b*x+c*x² por eliminación gaussiana
-  const A=[[s0,s1,s2],[s1,s2,s3],[s2,s3,s4]];
-  const B=[t0,t1,t2];
-  for(let col=0;col<3;col++){
-    let pivot=col;
-    for(let row=col+1;row<3;row++) if(Math.abs(A[row][col])>Math.abs(A[pivot][col])) pivot=row;
-    [A[col],A[pivot]]=[A[pivot],A[col]];[B[col],B[pivot]]=[B[pivot],B[col]];
-    if(Math.abs(A[col][col])<1e-10) continue;
-    for(let row=col+1;row<3;row++){
-      const f=A[row][col]/A[col][col];
-      B[row]-=f*B[col];
-      for(let k=col;k<3;k++) A[row][k]-=f*A[col][k];
-    }
+// Marca de un punto con la forma de su grupo (índice de color): círculo, cuadrado, triángulo,
+// triángulo invertido y cruz, así los grupos se distinguen también por forma. El rombo queda
+// para los soberanos.
+function marcaSVG(i, cx, cy, r, attrs, contenido=''){
+  const q=v=>v.toFixed(1);
+  switch(i){
+    case 1: { const s=r*0.9; return `<rect x="${q(cx-s)}" y="${q(cy-s)}" width="${q(2*s)}" height="${q(2*s)}" ${attrs}>${contenido}</rect>`; }
+    case 2: return `<path d="M${q(cx)},${q(cy-1.25*r)} L${q(cx+1.15*r)},${q(cy+0.8*r)} L${q(cx-1.15*r)},${q(cy+0.8*r)} Z" ${attrs}>${contenido}</path>`;
+    case 3: return `<path d="M${q(cx)},${q(cy+1.25*r)} L${q(cx+1.15*r)},${q(cy-0.8*r)} L${q(cx-1.15*r)},${q(cy-0.8*r)} Z" ${attrs}>${contenido}</path>`;
+    case 4: { const a=r*0.42, l=r*1.2;
+      return `<path d="M${q(cx-a)},${q(cy-l)} h${q(2*a)} v${q(l-a)} h${q(l-a)} v${q(2*a)} h${q(a-l)} v${q(l-a)} h${q(-2*a)} v${q(a-l)} h${q(a-l)} v${q(-2*a)} h${q(l-a)} Z" ${attrs}>${contenido}</path>`; }
+    default: return `<circle cx="${q(cx)}" cy="${q(cy)}" r="${q(r)}" ${attrs}>${contenido}</circle>`;
   }
-  const coef=[0,0,0];
-  for(let i=2;i>=0;i--){
-    coef[i]=B[i];
-    for(let j=i+1;j<3;j++) coef[i]-=A[i][j]*coef[j];
-    coef[i]/=A[i][i]||1;
-  }
-  return coef[0]+coef[1]*xq+coef[2]*xq*xq;
-}
-// Curva de un grupo ordenado por duration, como puntos {dur, tir, gap}:
-//   curva única: hasta 5 puntos, línea entre los puntos; con más, LOESS;
-//   en "Curvas por": menos de 3 bonos, sin curva; de 3 a 9, ajuste logarítmico (un LOESS
-//   con tan pocos puntos sobreajusta y hace puntas); 10 o más, LOESS.
-// El LOESS va en una grilla de 80 y no cruza huecos grandes del eje X (más de 0,8 años y
-// más del 30% del rango).
-function curvaPuntos(sorted, porGrupo){
-  const n=sorted.length;
-  if(n<2 || (porGrupo && n<3)) return [];
-  if(!porGrupo && n<=5) return sorted.map(p=>({dur:p.dur, tir:p.tir, gap:false}));
-  if(porGrupo && n<10){
-    const f=ajusteLog(sorted); if(!f) return [];
-    const out=[]; for(let i=0;i<=40;i++){ const d=f.min*Math.pow(f.max/f.min,i/40); out.push({dur:d, tir:f.a+f.b*Math.log(d), gap:false}); }
-    return out;
-  }
-  const nCurve=80, bandwidth=0.5, out=[];
-  const durMin=sorted[0].dur, durMax=sorted[n-1].dur, durRange=durMax-durMin;
-  const gapThreshold=Math.max(0.8, durRange*0.30);
-  const clusters=[[]];
-  sorted.forEach((p,i)=>{
-    if(i>0 && (p.dur-sorted[i-1].dur) > gapThreshold) clusters.push([]);
-    clusters[clusters.length-1].push(p);
-  });
-  clusters.forEach((cluster,ci)=>{
-    const cMin=cluster[0].dur, cMax=cluster[cluster.length-1].dur;
-    const steps=Math.max(2,Math.round(nCurve*(cMax-cMin)/Math.max(durRange,0.01)));
-    for(let i=0;i<=steps;i++){
-      const dur=cMin+(cMax-cMin)*i/steps;
-      const tir=loessTir(dur,sorted,bandwidth);
-      if(tir!=null) out.push({dur, tir, gap:i===0&&ci>0});
-    }
-  });
-  return out;
 }
 
 // Texto del tooltip de un punto (SVG <title>, sin HTML).
@@ -3534,20 +3550,25 @@ function drawYield(data){
   _lastYieldData=data; initYieldZoom(svg);
   pintarYcCtrl();
   const enSob=activeType==='SOB';
-  const allPts=data.filter(esPuntoSano);
-  // ── Filtro de outliers de las ONs: solo con más de 10 puntos ───────────────
-  // Con pocos puntos el recorte descarta datos legítimos
-  let pts=allPts;
-  if(!enSob && allPts.length>10){
-    const sorted_tir=allPts.map(b=>b.tir).sort((a,b)=>a-b);
-    const trim=Math.floor(sorted_tir.length*0.10);
-    const trimmed=sorted_tir.slice(trim, sorted_tir.length-trim);
-    const meanTir=trimmed.length ? trimmed.reduce((s,v)=>s+v,0)/trimmed.length : 0;
-    const loLim=meanTir*(1-0.25), hiLim=meanTir*(1+0.25);
-    const filtered=allPts.filter(b=>b.tir>=loLim&&b.tir<=hiLim);
-    // Solo usar el filtro si no descarta demasiados puntos
-    if(filtered.length>=Math.max(2,allPts.length*0.5)) pts=filtered;
+  // Se muestran todos los bonos. Antes se recortaba lo que quedaba a más de ±25% del promedio
+  // de TIR, y eso escondía segmentos enteros (casi todos los A+(arg), que rinden 7% a 11,5%).
+  // El ajuste es robusto (ver ajusteNS): el bono que se aparta ya no tira de la curva.
+  const pts=data.filter(esPuntoSano);
+  // Fuera de escala: los bonos que quedan lejísimo de la curva de todos (más de 8 veces el
+  // desvío típico y al menos 4 puntos), como una TIR de −15% por un precio sin sentido cerca
+  // del vencimiento. Se dibujan contra el borde con una flecha, no entran en los ajustes y no
+  // definen la escala, que si no aplastan todo lo demás.
+  const fuera=new Set();
+  if(!enSob && pts.length>=8){
+    const fT=ajusteNS(pts);
+    if(fT){
+      const res=pts.map(b=>b.tir-valorNS(fT,b.dur));
+      const mad=res.map(Math.abs).sort((a,b)=>a-b)[Math.floor(res.length/2)];
+      const lim=Math.max(8*mad, 4);
+      pts.forEach((b,i)=>{ if(Math.abs(res[i])>lim) fuera.add(b); });
+    }
   }
+  const enEscala=pts.filter(b=>!fuera.has(b));
   // Curvas soberanas: en la pestaña SOB salen de los puntos del gráfico; sobre las ONs, de
   // todos los soberanos con precio (no dependen de los filtros de la tabla).
   const curvas=curvasSoberanas(enSob ? pts : bonds);
@@ -3568,12 +3589,14 @@ function drawYield(data){
     const i=act[ycClave(b,dims)]; return i==null ? null : YC_COL[i];
   };
   const leyenda={enSob, dims, grupos, act, sobVer, anyHist:pts.some(b=>b.priceSrc==='hist'),
-                 sectores:[...new Set(pts.map(b=>b.sector))]};
+                 sectores:[...new Set(pts.map(b=>b.sector))], fuera:[...fuera]};
   pintarSubYC(enSob, dims);
-  if(pts.length+sobPts.length<2){svg.innerHTML=`<text x="${W/2}" y="${H/2}" fill="var(--muted2)" font-size="12" text-anchor="middle" font-family="IBM Plex Mono,monospace">Sin suficientes datos (${allPts.length} con TIR)</text>`;updateLegend(leyenda);return;}
-  const todos=[...pts, ...sobPts];
-  const xs=todos.map(b=>b.dur),ys=todos.map(b=>b.tir);
-  let x0=Math.max(0,Math.min(...xs)-.3),x1=Math.max(...xs)+.4,y0=Math.min(...ys)*.92,y1=Math.max(...ys)*1.08;
+  if(pts.length+sobPts.length<2){svg.innerHTML=`<text x="${W/2}" y="${H/2}" fill="var(--muted2)" font-size="12" text-anchor="middle" font-family="IBM Plex Mono,monospace">Sin suficientes datos (${pts.length} con TIR)</text>`;updateLegend(leyenda);return;}
+  const todos=[...enEscala, ...sobPts];
+  const xs=[...todos, ...fuera].map(b=>b.dur),ys=todos.map(b=>b.tir);
+  // Más aire arriba que abajo: las etiquetas van sobre los puntos
+  const yMin=Math.min(...ys), yMax=Math.max(...ys), ySpan=Math.max(yMax-yMin,0.5);
+  let x0=Math.max(0,Math.min(...xs)-.3),x1=Math.max(...xs)+.4,y0=yMin-ySpan*0.08,y1=yMax+ySpan*0.16;
   if(yieldView){ x0=yieldView.x0; x1=yieldView.x1; y0=yieldView.y0; y1=yieldView.y1; }
   _yv={x0,x1,y0,y1};
   const px=x=>pd.l+(x-x0)/(x1-x0)*(W-pd.l-pd.r),py=y=>H-pd.b-(y-y0)/(y1-y0)*(H-pd.t-pd.b);
@@ -3608,29 +3631,27 @@ function drawYield(data){
 
   // ── Curvas de las ONs ──────────────────────────────────────────────────────
   if(!enSob && !dims.length){
-    // Una sola: la de siempre, con el degradé y el área bajo el primer tramo continuo
-    const curvePts=curvaPuntos([...pts].sort((a,b)=>a.dur-b.dur), false);
-    if(curvePts.length>=2){
-      const base2=H-pd.b;
-      out+=`<path d="${trazo(curvePts)}" stroke="url(#lg)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>`;
-      const firstGap=curvePts.findIndex((p,i)=>i>0&&p.gap);
-      const firstSeg=firstGap>0 ? curvePts.slice(0,firstGap) : curvePts;
-      if(firstSeg.length>=2)
-        out+=`<path d="${trazo(firstSeg)} L${px(firstSeg[firstSeg.length-1].dur).toFixed(1)},${base2} L${px(firstSeg[0].dur).toFixed(1)},${base2} Z" fill="url(#cg)"/>`;
+    // Una sola: con el degradé y el área bajo la curva, como siempre
+    const f=ajusteNS(enEscala);
+    if(f){
+      const cp=muestrearNS(f), base2=H-pd.b;
+      out+=`<path d="${trazo(cp)}" stroke="url(#lg)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>`;
+      out+=`<path d="${trazo(cp)} L${px(cp[cp.length-1].dur).toFixed(1)},${base2} L${px(cp[0].dur).toFixed(1)},${base2} Z" fill="url(#cg)"/>`;
     }
   } else if(!enSob){
     grupos.forEach(g=>{
       const i=act[g.clave]; if(i==null) return;
-      const cp=curvaPuntos(pts.filter(b=>ycClave(b,dims)===g.clave).sort((a,b)=>a.dur-b.dur), true);
-      if(cp.length<2) return;
+      const gp=enEscala.filter(b=>ycClave(b,dims)===g.clave);
+      const f=gp.length>=3 ? ajusteNS(gp) : null;      // con menos de 3 bonos, solo los puntos
+      if(!f) return;
+      const cp=muestrearNS(f);
       out+=`<path d="${trazo(cp)}" stroke="${YC_COL[i]}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>`;
       finales.push({...cp[cp.length-1], txt:g.clave, color:YC_COL[i]});
     });
   }
   // ── Curvas soberanas (punteadas, en grises: son la referencia, no compiten con los grupos)
   sobVer.forEach(k=>{
-    const f=curvas[k].f, s=YC_SOB[k], cp=[];
-    for(let i=0;i<=40;i++){ const d=f.min*Math.pow(f.max/f.min,i/40); cp.push({dur:d, tir:f.a+f.b*Math.log(d)}); }
+    const s=YC_SOB[k], cp=muestrearNS(curvas[k].f);
     out+=`<path d="${trazo(cp)}" stroke="${s.color}" stroke-width="2" stroke-dasharray="${s.dash}" fill="none" opacity=".85"/>`;
     finales.push({...cp[cp.length-1], txt:s.corto, color:s.color, sob:true});
   });
@@ -3638,19 +3659,29 @@ function drawYield(data){
   // ── Puntos ─────────────────────────────────────────────────────────────────
   const rombo=(b,r)=>{ const cx=px(b.dur), cy=py(b.tir), c=YC_SOB[familiaSob(b)].color;
     return `<path data-tk="${b.ticker}" style="cursor:pointer" d="M${cx},${cy-r} L${cx+r},${cy} L${cx},${cy+r} L${cx-r},${cy} Z" fill="var(--s1)" stroke="${c}" stroke-width="1.6"><title>${tipPunto(b,curvas)}</title></path>`; };
-  pts.forEach(b=>{
+  enEscala.forEach(b=>{
     const activo=b.ticker===ACTIVE_TK;
     if(b.soberano){ out+=rombo(b, activo?7:5); return; }
     const cx=px(b.dur),cy=py(b.tir),col=colorDe(b),fondo=col==null,c=fondo?YC_GRIS:col;
     const r=activo?7:(fondo?3.5:4.5);
-    if(b.priceSrc==='hist'){
+    const forma=(dims.length && !fondo) ? act[ycClave(b,dims)] : 0;
+    const base=`data-tk="${b.ticker}" style="cursor:pointer"`, tip=`<title>${tipPunto(b,curvas)}</title>`;
+    out+= b.priceSrc==='hist'
       // Sin bid/offer: último operado → marcador hueco punteado
-      out+=`<circle data-tk="${b.ticker}" style="cursor:pointer" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c}" stroke-width="1.6" stroke-dasharray="2.4 1.8" opacity="${fondo?.6:.95}"><title>${tipPunto(b,curvas)}</title></circle>`;
-    } else {
-      out+=`<circle data-tk="${b.ticker}" style="cursor:pointer" cx="${cx}" cy="${cy}" r="${r}" fill="${c}" opacity="${fondo?.55:.9}" stroke="var(--bg)" stroke-width="${r>5?2:1.5}"><title>${tipPunto(b,curvas)}</title></circle>`;
-    }
+      ? marcaSVG(forma,cx,cy,r,`${base} fill="none" stroke="${c}" stroke-width="1.6" stroke-dasharray="2.4 1.8" opacity="${fondo?.6:.95}"`,tip)
+      : marcaSVG(forma,cx,cy,r,`${base} fill="${c}" opacity="${fondo?.55:.9}" stroke="var(--bg)" stroke-width="${r>5?2:1.5}"`,tip);
   });
   sobPts.forEach(b=>{ out+=rombo(b, b.ticker===ACTIVE_TK?7:4.5); });
+  // Fuera de escala: flecha gris contra el borde, apuntando hacia donde está el bono
+  const bordes=[];
+  fuera.forEach(b=>{
+    const cx=px(b.dur), abajo=b.tir<y0;
+    if(b.tir>=y0 && b.tir<=y1){ out+=marcaSVG(0,cx,py(b.tir),3.5,`data-tk="${b.ticker}" style="cursor:pointer" fill="${YC_GRIS}" opacity=".7"`,`<title>${tipPunto(b,curvas)}</title>`); return; }
+    const y=abajo ? H-pd.b-6 : pd.t+6, r=5;
+    out+=`<path data-tk="${b.ticker}" style="cursor:pointer" d="M${cx-r},${abajo?y-r*.6:y+r*.6} L${cx+r},${abajo?y-r*.6:y+r*.6} L${cx},${abajo?y+r*.6:y-r*.6} Z" fill="var(--muted2)" opacity=".8"><title>${tipPunto(b,curvas)}
+fuera de escala</title></path>`;
+    bordes.push({b, x:cx, y:abajo ? y-10 : y+14});
+  });
 
   // ── Etiquetas ──────────────────────────────────────────────────────────────
   // Colocación con detección de colisión sobre la caja real del texto. Prioridad: primero
@@ -3673,9 +3704,16 @@ function drawYield(data){
       break;
     }
   });
-  const tirsOrd=pts.map(b=>b.tir).sort((a,b)=>a-b);
+  const tirsOrd=enEscala.map(b=>b.tir).sort((a,b)=>a-b);
   const tMed=tirsOrd.length?tirsOrd[Math.floor(tirsOrd.length/2)]:0;
-  const conEtiqueta=[...pts.filter(b=>colorDe(b)!=null), ...sobPts];
+  // Ticker de los que están fuera de escala, junto a su flecha
+  bordes.forEach(e=>{
+    const hw=e.b.ticker.length*8*CW/2, hh=8*0.62;
+    if(!libre(e.x,e.y,hw,hh)) return;
+    placed.push({x:e.x,y:e.y,hw,hh});
+    out+=`<text x="${e.x}" y="${e.y}" font-size="8" fill="var(--muted2)" text-anchor="middle" font-family="IBM Plex Mono,monospace" pointer-events="none">${e.b.ticker} ${e.b.tir.toFixed(1)}%</text>`;
+  });
+  const conEtiqueta=[...enEscala.filter(b=>colorDe(b)!=null), ...sobPts];
   const labeled=conEtiqueta.sort((a,b)=>{
     if(a.ticker===ACTIVE_TK) return -1;
     if(b.ticker===ACTIVE_TK) return 1;
@@ -3708,9 +3746,9 @@ function drawYield(data){
 function pintarSubYC(enSob, dims){
   const el=document.getElementById('yc-sub'); if(!el) return;
   const ayuda=' · arrastrar: zona de zoom · doble clic: reset · clic en punto: abrir bono';
-  el.textContent = enSob ? 'Curva soberana por legislación: TIR = a + b·ln(duration)'+ayuda
-    : dims.length ? 'Una curva por '+dims.map(d=>YC_DIMS[d].toLowerCase()).join(' y ')+' · hasta 3 a la vez, se eligen en la leyenda'+ayuda
-    : 'LOESS · color por sector'+ayuda;
+  el.textContent = enSob ? 'Curva soberana por legislación · Nelson-Siegel'+ayuda
+    : dims.length ? 'Una curva por '+dims.map(d=>YC_DIMS[d].toLowerCase()).join(' y ')+' · Nelson-Siegel · hasta 5 a la vez, se eligen en la leyenda'+ayuda
+    : 'Nelson-Siegel · color por sector'+ayuda;
 }
 function updateLegend(o){
   const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -3719,13 +3757,16 @@ function updateLegend(o){
     const MAX=12;
     h+=o.grupos.slice(0,MAX).map(g=>{ const i=o.act[g.clave], on=i!=null;
       return `<button type="button" class="leg-item leg-btn${on?' on':''}" data-yc="${esc(g.clave)}" aria-pressed="${on}" title="${on?'Apagar':'Prender'} la curva">`
-        +`<span class="leg-dot" style="${on?'background:'+YC_COL[i]:'background:transparent;border:1.4px solid '+YC_GRIS}"></span>${esc(g.clave)} <span class="leg-n">${g.n}</span></button>`; }).join('');
+        +`<svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">${marcaSVG(on?i:0,5.5,5.5,3.6,on?`fill="${YC_COL[i]}"`:`fill="none" stroke="${YC_GRIS}" stroke-width="1.4"`)}</svg>${esc(g.clave)} <span class="leg-n">${g.n}</span></button>`; }).join('');
     if(o.grupos.length>MAX) h+=`<span class="leg-item">+${o.grupos.length-MAX} más</span>`;
   } else if(!o.enSob){
     h+=o.sectores.map(s=>`<div class="leg-item"><div class="leg-dot" style="background:${SCOL[s]||'#94a3b8'}"></div>${esc(s||'Sin sector')}</div>`).join('');
   }
   (o.sobVer||[]).forEach(k=>{ const s=YC_SOB[k];
     h+=`<div class="leg-item"><svg width="18" height="8" aria-hidden="true"><line x1="0" y1="4" x2="18" y2="4" stroke="${s.color}" stroke-width="2" stroke-dasharray="${s.dash}"/></svg>${s.label}</div>`; });
+  if(o.fuera && o.fuera.length)
+    h+=`<div class="leg-item" title="${esc(o.fuera.map(b=>b.ticker+' '+b.tir.toFixed(2)+'%').join(' · '))}: muy lejos de la curva de todos, se dibujan contra el borde y no entran en los ajustes">`
+      +`<svg width="10" height="8" aria-hidden="true"><path d="M0,1 L10,1 L5,7 Z" fill="var(--muted2)"/></svg>${o.fuera.length} fuera de escala</div>`;
   if(o.anyHist) h+=`<div class="leg-item" title="Sin bid/offer: se usa el último precio operado"><div class="leg-dot" style="background:transparent;border:1.4px dashed var(--muted2)"></div>últ. operado</div>`;
   document.getElementById('chart-legend').innerHTML=h;
 }

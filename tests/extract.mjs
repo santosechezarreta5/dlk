@@ -63,8 +63,8 @@ const EXPORTA = [
   'esFinDeMes', 'addMonths', 'primerCupon', 'tnaToTIR', 'setModoTNA', 'tasaCupon',
   'SOBERANOS', 'cuponDe',
   // curva TIR vs duration
-  'YC_COL', 'YC_SOB', 'esPuntoSano', 'familiaSob', 'ajusteLog', 'tirEnCurva', 'curvasSoberanas',
-  'spreadSob', 'ycClave', 'ycGrupos', 'ycActivos', 'curvaPuntos',
+  'YC_COL', 'YC_SOB', 'NS_LAMBDAS', 'esPuntoSano', 'familiaSob', 'nsFactores', 'valorNS', 'ajusteNS',
+  'tirEnCurva', 'muestrearNS', 'curvasSoberanas', 'spreadSob', 'ycClave', 'ycGrupos', 'ycActivos', 'marcaSVG',
 ];
 
 export async function cargar() {
@@ -90,8 +90,10 @@ export async function cargar() {
     func(src, 'buildSchedule'),
     linea(src, 'const YC_COL'),
     objeto(src, 'YC_SOB'),
-    ...['esPuntoSano', 'familiaSob', 'ajusteLog', 'tirEnCurva', 'curvasSoberanas', 'spreadSob',
-        'ycValor', 'ycClave', 'ycGrupos', 'ycActivos', 'loessTir', 'curvaPuntos'].map(n => func(src, n)),
+    linea(src, 'const NS_LAMBDAS'),
+    ...['esPuntoSano', 'familiaSob', 'nsFactores', 'valorNS', 'minCuadPond', 'ajustarNS', 'ajusteNS', 'tirEnCurva',
+        'muestrearNS', 'curvasSoberanas', 'spreadSob', 'ycValor', 'ycClave', 'ycGrupos', 'ycActivos',
+        'marcaSVG'].map(n => func(src, n)),
     func(src, 'activeCallScenarios'),
     func(src, 'buildCallCF'),
     func(src, 'applySettlement'),
