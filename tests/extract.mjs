@@ -28,6 +28,28 @@ function func(src, nombre) {
   throw new Error(`extract: llaves sin balancear en ${nombre}()`);
 }
 
+/** Recorta `const nombre = (()=>{...})();` contando paréntesis hasta balancear (constantes armadas con una IIFE). */
+function constante(src, nombre) {
+  const i = src.indexOf('const ' + nombre + ' = (');
+  if (i < 0) throw new Error(`extract: no encontré la constante ${nombre} en index.html`);
+  for (let j = src.indexOf('(', i), prof = 0; j < src.length; j++) {
+    if (src[j] === '(') prof++;
+    else if (src[j] === ')' && --prof === 0) return src.slice(i, src.indexOf(';', j) + 1);   // incluye el () de la IIFE
+  }
+  throw new Error(`extract: paréntesis sin balancear en ${nombre}`);
+}
+
+/** Recorta `const nombre = {...};` contando llaves (objetos de varias líneas). */
+function objeto(src, nombre) {
+  const m = new RegExp('^const ' + nombre + '\\s*=\\s*\\{', 'm').exec(src);
+  if (!m) throw new Error(`extract: no encontré el objeto ${nombre} en index.html`);
+  for (let j = src.indexOf('{', m.index), prof = 0; j < src.length; j++) {
+    if (src[j] === '{') prof++;
+    else if (src[j] === '}' && --prof === 0) return src.slice(m.index, src.indexOf(';', j) + 1);
+  }
+  throw new Error(`extract: llaves sin balancear en ${nombre}`);
+}
+
 /** Primera línea que empieza con `prefijo` (para one-liners y constantes). */
 function linea(src, prefijo) {
   const l = src.split('\n').find(x => x.startsWith(prefijo));
@@ -38,7 +60,11 @@ function linea(src, prefijo) {
 const EXPORTA = [
   'buildSchedule', 'activeCallScenarios', 'buildCallCF', 'applySettlement',
   'calcTIR', 'tirToTNA', 'tnaBase', 'adjustDate', 'yearFrac', 'callYield', '_rankYTC',
-  'esFinDeMes', 'addMonths', 'primerCupon', 'tnaToTIR', 'setModoTNA',
+  'esFinDeMes', 'addMonths', 'primerCupon', 'tnaToTIR', 'setModoTNA', 'tasaCupon',
+  'SOBERANOS', 'cuponDe',
+  // curva TIR vs duration
+  'YC_COL', 'YC_SOB', 'esPuntoSano', 'familiaSob', 'ajusteLog', 'tirEnCurva', 'curvasSoberanas',
+  'spreadSob', 'ycClave', 'ycGrupos', 'ycActivos', 'curvaPuntos',
 ];
 
 export async function cargar() {
@@ -58,7 +84,14 @@ export async function cargar() {
     func(src, 'esFinDeMes'),
     func(src, 'addMonths'),
     func(src, 'primerCupon'),
+    func(src, 'tasaCupon'),
+    func(src, 'cuponDe'),
+    constante(src, 'SOBERANOS'),
     func(src, 'buildSchedule'),
+    linea(src, 'const YC_COL'),
+    objeto(src, 'YC_SOB'),
+    ...['esPuntoSano', 'familiaSob', 'ajusteLog', 'tirEnCurva', 'curvasSoberanas', 'spreadSob',
+        'ycValor', 'ycClave', 'ycGrupos', 'ycActivos', 'loessTir', 'curvaPuntos'].map(n => func(src, n)),
     func(src, 'activeCallScenarios'),
     func(src, 'buildCallCF'),
     func(src, 'applySettlement'),

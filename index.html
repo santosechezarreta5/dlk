@@ -200,7 +200,20 @@ td{padding:9px 11px;white-space:nowrap;color:var(--text2);}
 .chip-clr{font-family:'IBM Plex Mono',monospace;font-size:.56rem;color:var(--muted2);background:none;border:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px;padding:3px 4px;}
 .chip-clr:hover{color:var(--red);}
 /* ── Gráfico colapsable ── */
-.chart-panel.collapsed .chart,.chart-panel.collapsed .cp-sub,.chart-panel.collapsed .cp-legend{display:none;}
+.chart-panel.collapsed .chart,.chart-panel.collapsed .cp-sub,.chart-panel.collapsed .cp-legend,.chart-panel.collapsed .yc-ctrl{display:none;}
+/* Curva: segmentación y soberano */
+.yc-ctrl{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;margin:-4px 0 8px;}
+.yc-ctrl[hidden]{display:none;}
+.yc-g{display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
+.yc-l{font-size:.52rem;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-right:4px;}
+.ycb{font-family:'IBM Plex Mono',monospace;font-size:.57rem;padding:3px 10px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);}
+.ycb:hover:not(:disabled){border-color:var(--border2);color:var(--text2);}
+.ycb.on{border-color:var(--teal);background:rgba(45,212,191,.1);color:var(--teal);}
+.ycb:disabled{opacity:.35;cursor:not-allowed;}
+.leg-btn{background:none;border:1px solid transparent;border-radius:12px;padding:2px 7px;cursor:pointer;font-family:inherit;}
+.leg-btn:hover{border-color:var(--border2);}
+.leg-btn:not(.on){opacity:.6;}
+.leg-n{color:var(--muted2);opacity:.7;font-size:.5rem;}
 .tk-n{font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;letter-spacing:-.01em;}
 .badge{display:inline-flex;align-items:center;padding:2px 6px;border-radius:20px;font-size:.5rem;letter-spacing:.04em;font-weight:500;}
 .b-usd{background:rgba(59,130,246,.12);color:var(--blue-l);border:1px solid rgba(59,130,246,.2);}
@@ -211,6 +224,11 @@ td{padding:9px 11px;white-space:nowrap;color:var(--text2);}
 .s-f{background:rgba(59,130,246,.08);color:var(--blue-l);border:1px solid rgba(59,130,246,.15);}
 .s-i{background:rgba(129,140,248,.08);color:var(--indigo);border:1px solid rgba(129,140,248,.15);}
 .s-c{background:rgba(45,212,191,.08);color:var(--teal);border:1px solid rgba(45,212,191,.15);}
+.s-sob{background:rgba(226,232,240,.06);color:var(--text2);border:1px solid rgba(226,232,240,.18);}
+/* Soberanos: condiciones fijas (SOBERANOS en el código), no se editan ni se borran del catálogo */
+#calc-panel.soberano .btn-edit-bond{display:none!important;}
+.cupon-steps{font-size:.5rem;color:var(--muted2);margin-top:3px;line-height:1.45;}
+.cupon-steps b{color:var(--text2);font-weight:600;}
 .call-badge{display:inline-flex;align-items:center;padding:2px 6px;border-radius:20px;font-size:.49rem;}
 .call-yes{background:rgba(56,189,248,.1);color:var(--sky);border:1px solid rgba(56,189,248,.2);}
 .call-no{background:rgba(30,45,66,.5);color:var(--muted2);border:1px solid var(--border);}
@@ -622,11 +640,26 @@ window.SUPABASE_CONFIG = {
   </div>
   <div class="chart-panel">
     <div class="cp-head">
-      <div><div class="cp-title">Curva de Rendimientos · TIR vs Duration</div><div class="cp-sub">LOESS · color por sector · arrastrar: zona de zoom · doble clic: reset · clic en punto: abrir bono</div></div>
+      <div><div class="cp-title">Curva de Rendimientos · TIR vs Duration</div><div class="cp-sub" id="yc-sub">LOESS · color por sector · arrastrar: zona de zoom · doble clic: reset · clic en punto: abrir bono</div></div>
       <div style="display:flex;align-items:center;gap:8px;">
         <div class="cp-legend" id="chart-legend"></div>
         <button class="btn-png" onclick="exportYieldPNG()" title="Exportar gráfico a PNG">⤓ PNG</button>
         <button class="btn-png" id="chart-toggle" onclick="toggleChart()" title="Contraer / expandir el gráfico" aria-label="Contraer o expandir el gráfico" aria-expanded="true">▾</button>
+      </div>
+    </div>
+    <div class="yc-ctrl" id="yc-ctrl">
+      <div class="yc-g" role="group" aria-label="Curvas por">
+        <span class="yc-l">Curvas por</span>
+        <button type="button" class="ycb" data-g="" onclick="ycSetDim('')">Una sola</button>
+        <button type="button" class="ycb" data-g="sector" onclick="ycSetDim('sector')">Sector</button>
+        <button type="button" class="ycb" data-g="rating" onclick="ycSetDim('rating')">Crédito</button>
+        <button type="button" class="ycb" data-g="leg" onclick="ycSetDim('leg')" title="En DL todas son ley argentina">Legislación</button>
+        <button type="button" class="ycb" data-g="jur" onclick="ycSetDim('jur')" title="En DL todas pagan en Argentina">Jurisdicción</button>
+      </div>
+      <div class="yc-g" role="group" aria-label="Curva soberana">
+        <span class="yc-l">vs soberano</span>
+        <button type="button" class="ycb" data-s="NY" onclick="ycToggleSob('NY')" title="Globales GD29 a GD46, ley Nueva York">Globales · ley NY</button>
+        <button type="button" class="ycb" data-s="AR" onclick="ycToggleSob('AR')" title="Bonares AL29 a AL41, AE38, AN29 y AO27 a AO29, ley local">Bonares · ley local</button>
       </div>
     </div>
     <svg class="chart" viewBox="0 0 920 220" height="220" id="ysvg"></svg>
@@ -635,6 +668,7 @@ window.SUPABASE_CONFIG = {
   <div id="type-tabs" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 18px 6px;background:var(--bg);">
     <button id="typetab-dl" onclick="setTypeTab('DL')" class="typetab" style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.06em;padding:6px 18px;border-radius:20px;cursor:pointer;border:1px solid var(--teal);background:rgba(45,212,191,.12);color:var(--teal);">DL · Dollar Linked</button>
     <button id="typetab-hd" onclick="setTypeTab('HD')" class="typetab" style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.06em;padding:6px 18px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">HD · Hard Dollar</button>
+    <button id="typetab-sob" onclick="setTypeTab('SOB')" class="typetab" title="Bonares y Globales del Tesoro Nacional en dólares" style="font-family:'IBM Plex Mono',monospace;font-size:.62rem;font-weight:700;letter-spacing:.06em;padding:6px 18px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted2);">SOB · Soberanos</button>
     <!-- Selector de moneda para HD (solo visible en tab HD) -->
     <div id="hd-currency-tabs" style="display:none;margin-left:12px;display:none;align-items:center;gap:4px;">
       <span style="font-size:.52rem;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-right:4px;">Ver en</span>
@@ -652,7 +686,7 @@ window.SUPABASE_CONFIG = {
     </div>
   </div>
   <div class="filter-wrap">
-    <div class="filter-row"><span class="fl">Emisor</span>
+    <div class="filter-row" id="filter-row-emisor"><span class="fl">Emisor</span>
       <div class="emisor-dd" id="emisor-dd">
         <div class="emisor-trigger" id="emisor-trigger" onclick="toggleEmisorMenu()">
           <span id="emisor-label">Todos</span>
@@ -665,7 +699,7 @@ window.SUPABASE_CONFIG = {
         </div>
       </div>
     </div>
-    <div class="filter-row"><span class="fl">Sector</span>
+    <div class="filter-row" id="filter-row-sector"><span class="fl">Sector</span>
       <button class="fb on" data-f="sector" data-v="all">Todos</button>
       <button class="fb" data-f="sector" data-v="Energía">Energía</button>
       <button class="fb" data-f="sector" data-v="Energía (otros)">Energía (otros)</button>
@@ -681,7 +715,7 @@ window.SUPABASE_CONFIG = {
       <button class="fb" data-f="anio" data-v="2029">2029</button>
       <button class="fb" data-f="anio" data-v="2030+">2030+</button>
     </div>
-    <div class="filter-row"><span class="fl">Callable</span>
+    <div class="filter-row" id="filter-row-call"><span class="fl">Callable</span>
       <button class="fb on" data-f="call" data-v="all">Todos</button>
       <button class="fb" data-f="call" data-v="Si">Callable</button>
       <button class="fb" data-f="call" data-v="No">No callable</button>
@@ -872,7 +906,8 @@ window.SUPABASE_CONFIG = {
               <option value="cer">CER + spread</option><option value="otro">Otro variable</option>
             </select></div>
           <div class="form-group"><label class="form-label" for="fi-cupon">Tasa / Spread (%)</label>
-            <input class="form-input panel-readonly" id="fi-cupon" type="number" step="0.01" placeholder="ej: 8.5" readonly></div>
+            <input class="form-input panel-readonly" id="fi-cupon" type="number" step="0.01" placeholder="ej: 8.5" readonly>
+            <div id="fi-cupon-steps" class="cupon-steps" hidden></div></div>
           <div class="form-group"><label class="form-label" for="fi-tasa-base">Tasa base (%) <span id="lbl-base" style="display:none;color:var(--sky);font-size:.49rem"></span></label>
             <input class="form-input panel-readonly" id="fi-tasa-base" type="number" step="0.01" placeholder="solo si variable" disabled></div>
           <div class="form-group"><label class="form-label" for="fi-periodicidad">Periodicidad</label>
@@ -1653,7 +1688,80 @@ async function loadFeriadosIntoMemory(){
 
 const MON_OV={}; // moneda ya embebida en BASE_META — se mantiene por compatibilidad
 const SCOL={'Energía':'#fbbf24','Energía (otros)':'#d97706','Finanzas':'#60a5fa','Infraestructura':'#818cf8','Consumo':'#2dd4bf'};
-const SCLS={'Energía':'s-e','Energía (otros)':'s-eo','Finanzas':'s-f','Infraestructura':'s-i','Consumo':'s-c'};
+const SCLS={'Energía':'s-e','Energía (otros)':'s-eo','Finanzas':'s-f','Infraestructura':'s-i','Consumo':'s-c','Soberano':'s-sob'};
+
+// ── Soberanos en dólares (Tesoro Nacional) ───────────────────────────────────────────────
+// No van en la tabla `bonds` de Supabase, que es el catálogo de ONs que también leen los
+// procesos de Python: sus condiciones son públicas y fijas. Salen de la ficha técnica de BYMA
+// y de las resoluciones del Boletín Oficial (AN29: RC 62/2025; AO28: RC 16/2026; AO29:
+// RC 44/2026). En data912 /live/arg_bonds cotizan con el ticker en pesos (GD30) y los
+// sufijos D (MEP) y C (cable).
+// Todos devengan 30/360 hasta la fecha de pago teórica: si cae en día inhábil (el 9 de julio
+// siempre lo es) se paga el hábil siguiente sin devengar de más. Los AO pagan un día fijado
+// en su resolución, casi siempre el último hábil del mes; acá van a fin de mes, lo que mueve
+// cada pago de 0,5 un par de días y la TIR menos de 1 pb.
+const SOBERANOS = (()=>{
+  // n cuotas semestrales iguales, el 9 de enero y el 9 de julio, desde `primera`. La última
+  // absorbe el redondeo para que sumen 100.
+  const cuotas = (primera, n) => {
+    let [y, m] = primera.split('-').map(Number); const out = [], pct = +(100/n).toFixed(4);
+    for(let i = 0; i < n; i++){
+      out.push({fecha: `${y}-${m<10?'0'+m:m}-09`, pct: i < n-1 ? pct : +(100 - pct*(n-1)).toFixed(4)});
+      m += 6; if(m > 12){ m -= 12; y++; }
+    }
+    return out;
+  };
+  const tramos = t => t.map(([desde, tasa]) => ({desde, tasa}));
+  const S = {
+    29: tramos([['2020-09-04', 1]]),
+    30: tramos([['2020-09-04', .125], ['2021-07-09', .5], ['2023-07-09', .75], ['2027-07-09', 1.75]]),
+    35: tramos([['2020-09-04', .125], ['2021-07-09', 1.125], ['2022-07-09', 1.5], ['2023-07-09', 3.625],
+                ['2024-07-09', 4.125], ['2027-07-09', 4.75], ['2028-07-09', 5]]),
+    38: tramos([['2020-09-04', .125], ['2021-07-09', 2], ['2022-07-09', 3.875], ['2023-07-09', 4.25],
+                ['2024-07-09', 5]]),
+    41: tramos([['2020-09-04', .125], ['2021-07-09', 2.5], ['2022-07-09', 3.5], ['2029-07-09', 4.875]]),
+    46: tramos([['2020-09-04', .125], ['2021-07-09', 1.125], ['2022-07-09', 1.5], ['2023-07-09', 3.625],
+                ['2024-07-09', 4.125], ['2027-07-09', 4.375], ['2028-07-09', 5]]),
+  };
+  const A = {
+    29: cuotas('2025-01-09', 10),
+    30: [{fecha:'2024-07-09', pct:4}, ...cuotas('2025-01-09', 12).map(a => ({...a, pct:8}))],
+    35: cuotas('2031-01-09', 10),
+    38: cuotas('2027-07-09', 22),
+    41: cuotas('2028-01-09', 28),
+    46: cuotas('2025-01-09', 44),
+  };
+  const VTO = {29:'2029-07-09', 30:'2030-07-09', 35:'2035-07-09', 38:'2038-01-09', 41:'2041-07-09', 46:'2046-07-09'};
+  const NY = {leg:'Nueva York', jur:'Estados Unidos'}, AR = {leg:'Argentina', jur:'Argentina'};
+  const reestr = (tk, n, ley, isin) => ({ticker:tk, ...ley, isin, fecha_emision:'2020-09-04',
+    fecha_inicio_int:'2021-07-09', venc:VTO[n], cuponSched:S[n], periodicidad:6, amortSched:A[n]});
+  const lista = [
+    reestr('GD29', 29, NY, 'US040114HX11'), reestr('GD30', 30, NY, 'US040114HS26'),
+    reestr('GD35', 35, NY, 'US040114HT09'), reestr('GD38', 38, NY, 'US040114HU71'),
+    reestr('GD41', 41, NY, 'US040114HV54'), reestr('GD46', 46, NY, 'US040114HW38'),
+    reestr('AL29', 29, AR, 'ARARGE3209Y4'), reestr('AL30', 30, AR, 'ARARGE3209S6'),
+    reestr('AL35', 35, AR, 'ARARGE3209T4'), reestr('AE38', 38, AR, 'ARARGE3209U2'),
+    reestr('AL41', 41, AR, 'ARARGE3209V0'),
+    {ticker:'AN29', ...AR, isin:'AR0963787574', fecha_emision:'2025-12-12', fecha_inicio_int:'2026-05-30',
+     venc:'2029-11-30', cupon:6.5, periodicidad:6},
+    {ticker:'AO27', ...AR, isin:'AR0676997536', fecha_emision:'2026-02-27', fecha_inicio_int:'2026-03-31',
+     venc:'2027-10-29', cupon:6, periodicidad:1},
+    {ticker:'AO28', ...AR, isin:'AR0474258297', fecha_emision:'2026-03-31', fecha_inicio_int:'2026-04-30',
+     venc:'2028-10-31', cupon:6, periodicidad:1},
+    {ticker:'AO29', ...AR, isin:'AR0550263393', fecha_emision:'2026-07-17', fecha_inicio_int:'2026-08-31',
+     venc:'2029-10-31', cupon:6, periodicidad:1},
+  ];
+  const hoy = new Date(); hoy.setHours(12,0,0,0);
+  return lista.map(o => {
+    const amortSched = o.amortSched || [];
+    return {emisor:'Tesoro Nacional', sector:'Soberano', tipo_cupon:'fijo', base_dias:'30_360',
+      devengo:'teorico', callable:'No', moneda:'USD', valor_residual:1, callSched:[], soberano:true,
+      ...o,
+      // La tasa que rige hoy, para mostrar; el cronograma usa cuponSched (ver cuponDe).
+      cupon: o.cuponSched ? Math.round(tasaCupon(o.cuponSched)(hoy)*1e6)/1e4 : o.cupon,
+      amort: amortSched.length ? 'cuotas' : 'bullet', amortSched};
+  });
+})();
 
 // ── User bond registry — tickers agregados manualmente (permanente, independiente de BASE_META)
 const LS_USER_BONDS = 'bonoscorp_user_bonds_v1';
@@ -1692,7 +1800,7 @@ async function reloadCatalog(opts){
   }
   const catalog = await Catalog.loadAll();
   const today = new Date(); today.setHours(0,0,0,0);
-  bonds = catalog
+  bonds = catalog.concat(SOBERANOS)          // los soberanos no están en Supabase (ver SOBERANOS)
     .map(m => ({
       ticker: m.ticker, ...m,
       amortSched: Array.isArray(m.amortSched) ? m.amortSched.map(a=>({...a})) : [],
@@ -1780,12 +1888,16 @@ const _cfCache = new WeakMap();     // bond object -> entry
 const TNA_MODOS = {cupon:'Según cupón', '180':'180/360', '90':'90/360', plazo:'Plazo remanente'};
 let TNA_MODO = (()=>{ try{ const v=localStorage.getItem('tna_modo_v1'); return (v in TNA_MODOS) ? v : 'cupon'; }catch(_){ return 'cupon'; } })();
 
+// Cupón con el que se arma el cronograma: la tasa fija o, si el bono es step-up, su cronograma.
+function cuponDe(b){ return (Array.isArray(b.cuponSched) && b.cuponSched.length) ? b.cuponSched : b.cupon; }
+
 function bondCFSig(b){
   const am = (b.amort==='cuotas' && Array.isArray(b.amortSched) && b.amortSched.length)
     ? b.amortSched.map(a=>a.fecha+':'+a.pct).join('|') : '';
   const cs = (Array.isArray(b.callSched) && b.callSched.length)
     ? b.callSched.map(c=>c.desde+':'+c.precio).join('|') : '';
-  return [b.venc, b.fecha_emision||'', b.fecha_inicio_int||'', b.cupon, b.periodicidad,
+  const cp = Array.isArray(b.cuponSched) ? b.cuponSched.map(s=>s.desde+':'+s.tasa).join('|') : b.cupon;
+  return [b.venc, b.fecha_emision||'', b.fecha_inicio_int||'', cp, b.periodicidad,
           b.base_dias||'', b.devengo||'', b.amort||'', am, cs,
           _CF_EPOCH, TNA_MODO, dkey(new Date())].join('~');
 }
@@ -1817,7 +1929,7 @@ function buildCFEntry(b, sig){
   // Cronograma a vencimiento (YTM): se arma para TODO bono con cupón (o que amortiza). Los cupón-0
   // bullet usan la rama ZC exacta de recalcTIR/calcTIRForPrice (si no, daban TIR disparatadas).
   if(hasAmortSched || b.cupon>0){
-    const cfRaw=generateCashflows(emD,iiD,vd,b.cupon,per,baseD,amortSchedD,0,b.devengo);
+    const cfRaw=generateCashflows(emD,iiD,vd,cuponDe(b),per,baseD,amortSchedD,0,b.devengo);
     const cf=applySettlement(cfRaw,sett);
     if(cf.length>0){
       e.cf=cf;                                          // sólo lectura: nadie muta estos objetos
@@ -1830,9 +1942,9 @@ function buildCFEntry(b, sig){
   // La ventana de una condición sigue "abierta" aunque su fecha de inicio ya haya pasado: en ese caso
   // el rescate más temprano posible es el próximo cupón (ver activeCallScenarios).
   if(Array.isArray(b.callSched) && b.callSched.length){
-    const couponDates = buildSchedule(emD,iiD,vd,b.cupon,per,baseD,amortSchedD,b.devengo).map(x=>x.fecha);
+    const couponDates = buildSchedule(emD,iiD,vd,cuponDe(b),per,baseD,amortSchedD,b.devengo).map(x=>x.fecha);
     activeCallScenarios(b.callSched, couponDates, sett, vd).forEach(sc=>{
-      const r=buildCallCF(emD,iiD,sc.callDate,b.cupon,per,baseD,amortSchedD,b.devengo,sc.precio,sett);
+      const r=buildCallCF(emD,iiD,sc.callDate,cuponDe(b),per,baseD,amortSchedD,b.devengo,sc.precio,sett);
       if(r && r.cf && r.cf.length) e.callCFs.push({desde:sc.desde, precio:sc.precio, callDate:sc.callDate,
                                                    callDateStr:sc.callDateStr, cf:r.cf, diasPeriodo:r.diasPeriodo});
     });
@@ -1865,7 +1977,11 @@ async function fetchAll(){
     hideAlerts();
 
     // data912 devuelve todo en un solo array desde /api/bonos/usd (proxy lo redirige)
-    const raw=await fetch(`${DATA912}/arg_corp`).then(r=>r.json()).catch(e=>{console.error('[fetchAll] error:',e);return null;});
+    // Los soberanos vienen de otro panel (arg_bonds). Si ese falla, las ONs siguen igual.
+    const [raw, rawSob]=await Promise.all([
+      fetch(`${DATA912}/arg_corp`).then(r=>r.json()).catch(e=>{console.error('[fetchAll] error:',e);return null;}),
+      fetch(`${DATA912}/arg_bonds`).then(r=>r.json()).catch(e=>{console.error('[fetchAll] soberanos:',e);return null;}),
+    ]);
     console.log('[fetchAll] raw type:', Array.isArray(raw)?'array['+raw.length+']':typeof raw);
 
     const allItems = Array.isArray(raw) ? raw : (raw?.data||raw?.content||[]);
@@ -1879,12 +1995,20 @@ async function fetchAll(){
       if(t) map[t]=it;
     });
 
+    const mapSob={};
+    (Array.isArray(rawSob)?rawSob:[]).forEach(it=>{
+      const t=(it.symbol||'').trim().toUpperCase();
+      if(t) mapSob[t]=it;
+    });
+
     let hits=0;
     bonds.forEach(b=>{
-      const base = b.ticker.slice(0,-1);
-      const itO  = map[base+'O'];
+      // ONs: YMCIO (pesos), YMCID (MEP), YMCIC (cable). Soberanos: GD30, GD30D, GD30C.
+      const m    = b.soberano ? mapSob : map;
+      const base = b.soberano ? b.ticker : b.ticker.slice(0,-1);
+      const itO  = b.soberano ? m[base] : m[base+'O'];
 
-      if(b.manualOverride){ if(itO||map[base+'D']) hits++; return; }
+      if(b.manualOverride){ if(itO||m[base+'D']) hits++; return; }
 
       if(b.moneda==='DL'){
         // ── DOLLAR LINKED: cotiza en ARS, se convierte a USD-eq con A3500 ──────
@@ -1917,8 +2041,8 @@ async function fetchAll(){
 
       } else {
         // ── HARD DOLLAR: cotiza en USD, usa sufijos D (MEP), O (ARS), C (Cable) ─
-        const itD = map[base+'D'];
-        const itC = map[base+'C'];
+        const itD = m[base+'D'];
+        const itC = m[base+'C'];
         if(!itD && !itO) return;
         hits++;
         b.prevPrecio=b.precio; b.loaded=true;
@@ -2010,6 +2134,10 @@ async function loadLastTraded(){
   _lastTraded=map; return map;
 }
 
+// Ticker con el que el bono figura en market_ops y fci_tenencias: la especie en pesos. En
+// las ONs es la forma en O (YMCID → YMCIO); en los soberanos, el ticker sin sufijo (GD30).
+function canonTk(b){ return b.soberano ? b.ticker : b.ticker.slice(0,-1)+'O'; }
+
 // Bono del catálogo por ticker (acepta la forma canónica en O de market_ops).
 let _bptMap=null, _bptSrc=null, _bptLen=-1;
 function bondPorTicker(tk){
@@ -2017,7 +2145,7 @@ function bondPorTicker(tk){
   if(_bptSrc!==bonds || _bptLen!==bonds.length){
     _bptMap=new Map();
     bonds.forEach(b=>{ if(!b||!b.ticker) return; _bptMap.set(b.ticker,b);
-      const c=b.ticker.slice(0,-1)+'O'; if(!_bptMap.has(c)) _bptMap.set(c,b); });
+      const c=canonTk(b); if(!_bptMap.has(c)) _bptMap.set(c,b); });
     _bptSrc=bonds; _bptLen=bonds.length;
   }
   return _bptMap.get(tk) || _bptMap.get(String(tk).slice(0,-1)+'O') || null;
@@ -2079,7 +2207,7 @@ function applyLastTradedFallback(){
   bonds.forEach(b=>{
     if(b.manualOverride) return;
     if(b.precio>0) return;                       // ya tiene cotización (bid/offer)
-    const key=b.ticker.slice(0,-1)+'O';          // ticker canónico (forma O)
+    const key=canonTk(b);                        // ticker canónico (forma O en las ONs)
     const moneda = b.moneda==='DL' ? 'ARS' : 'USD MEP';
     const rec = lt[key] && lt[key][moneda];
     if(!rec || rec.tir==null) return;
@@ -2116,7 +2244,7 @@ async function getFirstDataDate(){
 async function lastOpFor(bond){
   const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders(); if(!cfg.url||!H) return null;
   const m = bond.moneda!=='DL' ? 'USD MEP' : 'ARS';
-  const canon = bond.ticker.slice(0,-1)+'O';
+  const canon = canonTk(bond);
   const url=cfg.url+'/rest/v1/market_ops?ticker=eq.'+encodeURIComponent(canon)
             +'&moneda=eq.'+encodeURIComponent(m)+'&outlier=eq.false'
             +'&select=fecha,precio,tir&order=fecha.desc&limit=1';
@@ -2183,7 +2311,7 @@ async function topTenedoresFci(canon){
 async function pxPromedioSemanal(bond){
   const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders(); if(!cfg.url||!H) return null;
   const m = bond.moneda!=='DL' ? 'USD MEP' : 'ARS';
-  const canon = bond.ticker.slice(0,-1)+'O';
+  const canon = canonTk(bond);
   const url=cfg.url+'/rest/v1/market_ops?ticker=eq.'+encodeURIComponent(canon)
     +'&moneda=eq.'+encodeURIComponent(m)+'&outlier=eq.false'
     +'&select=fecha,precio,monto,tir,tna&order=fecha.desc&limit=40';
@@ -2207,7 +2335,7 @@ async function loadBondExtras(bond){
   const el=document.getElementById('cp-extras'); if(!el) return;
   el.style.display='none'; el.innerHTML='';
   if(!bond||!bond.ticker) return;
-  const canon=bond.ticker.slice(0,-1)+'O', isHD=bond.moneda!=='DL';
+  const canon=canonTk(bond), isHD=bond.moneda!=='DL';
   const [px, ten]=await Promise.all([pxPromedioSemanal(bond), topTenedoresFci(canon)]);
   if(ACTIVE_TK!==bond.ticker) return;            // cambió de bono mientras cargaba
   let html='';
@@ -2614,6 +2742,7 @@ function buildRatingsDraft(){
   const draft = {};
   Object.entries(RATINGS).forEach(([k,v])=>{ draft[k]={label:v.label||k, rating:v.rating||'', sector:v.sector||''}; });
   (bonds||[]).forEach(b=>{
+    if(b.soberano) return;               // el editor es de emisores corporativos
     const k = emisorKey(b);
     if(!k) return;
     if(!draft[k]) draft[k] = { label:(ISSUER_LABELS[k]||b.emisor||k), rating:'', sector:'' };
@@ -2721,12 +2850,18 @@ function fMatch(set, val){
   return set.has(val);
 }
 
+// ¿El bono va en la pestaña `t`? DL y HD son ONs; SOB, los soberanos en dólares.
+function esDelTipo(b, t=activeType){
+  if(t==='SOB') return !!b.soberano;
+  if(b.soberano) return false;
+  return t==='DL' ? b.moneda==='DL' : b.moneda!=='DL';
+}
+
 function visible(){
   const q=document.getElementById('srch').value.toLowerCase();
   return bonds.filter(b=>{
-    if(activeType==='DL' && b.moneda!=='DL') return false;
-    if(activeType==='HD' && b.moneda==='DL') return false;
-    if(activeType==='HD'){
+    if(!esDelTipo(b)) return false;
+    if(activeType!=='DL'){
       if(!fMatch(F.leg, b.leg)) return false;
       if(!fMatch(F.jur, b.jur)) return false;
     }
@@ -2759,7 +2894,7 @@ function visible(){
 // Filtro de Crédito: botones dinámicos con los ratings realmente presentes en el tab activo
 function buildRatingFilter(){
   const wrap=document.getElementById('rating-fb-wrap'); if(!wrap) return;
-  const typeBonds=bonds.filter(b=> activeType==='DL'? b.moneda==='DL' : b.moneda!=='DL');
+  const typeBonds=bonds.filter(b=>esDelTipo(b));
   const present=new Set(typeBonds.map(b=>b.rating).filter(Boolean));
   const ordered=RATING_OPTIONS.filter(r=>present.has(r));
   let html=`<button class="fb ${F.rating.has('all')?'on':''}" onclick="onRatingFb('all')">Todos</button>`;
@@ -2797,10 +2932,13 @@ function setTypeTab(type){
     b.classList.toggle('on', b.dataset.v==='all');
   });
   document.getElementById('srch').value='';
-  // Show/hide HD-specific filter rows
-  const isHD=type==='HD';
+  // Filas de filtros según la pestaña: legislación y jurisdicción solo en dólar (HD y
+  // soberanos); emisor, sector, callable y crédito no aplican a los soberanos.
+  const isHD=type!=='DL', isSob=type==='SOB';
   document.getElementById('filter-row-leg').style.display=isHD?'':'none';
   document.getElementById('filter-row-jur').style.display=isHD?'':'none';
+  ['emisor','sector','call','rating'].forEach(k=>{
+    const r=document.getElementById('filter-row-'+k); if(r) r.style.display=isSob?'none':''; });
   // Style type tab buttons
   document.querySelectorAll('.typetab').forEach(b=>{
     const active=b.id==='typetab-'+type.toLowerCase();
@@ -2903,7 +3041,7 @@ function render(){
   const wt=data.filter(b=>b.tir!=null),wp=data.filter(b=>b.precio!=null),wv=data.filter(b=>b.vol!=null);
   document.getElementById('cnt').textContent=data.length;
   document.getElementById('s0').textContent=data.length;
-  const typeBondsCount=activeType==='DL'?bonds.filter(b=>b.moneda==='DL').length:bonds.filter(b=>b.moneda!=='DL').length;
+  const typeBondsCount=bonds.filter(b=>esDelTipo(b)).length;
   document.getElementById('bond-count').textContent=typeBondsCount;
   document.getElementById('total-count').textContent=typeBondsCount;
   const mx=Math.max(...data.map(b=>b.tir||0),1);
@@ -2958,7 +3096,7 @@ function render(){
 
     // ── Build tds in COL_DEFS order ───────────────────────────────────────────
     const cells={
-      ticker:   `<div class="tk-n" style="display:flex;align-items:center;gap:3px;">${b.ticker}${b.isUserBond?`<span class="user-bond-dot" title="Bono propio"></span>`:''}<button class="btn-del-bond" title="Eliminar bono" onclick="event.stopPropagation();deleteUserBond('${b.ticker}')">✕</button></div>`,
+      ticker:   `<div class="tk-n" style="display:flex;align-items:center;gap:3px;">${b.ticker}${b.isUserBond?`<span class="user-bond-dot" title="Bono propio"></span>`:''}${b.soberano?'':`<button class="btn-del-bond" title="Eliminar bono" onclick="event.stopPropagation();deleteUserBond('${b.ticker}')">✕</button>`}</div>`,
       emisor:   `<span style="color:var(--text2);font-size:.65rem">${b.emisor}</span>`,
       sector:   `<span class="badge ${sc}">${b.sector}</span>`,
       bid:      bidAskCell(showBid, bidCalc, '#34d399'),
@@ -3185,18 +3323,222 @@ function exportYieldPNG(){
   img.src=url;
 }
 
+// ── Curva TIR vs duration: curvas por segmento y curva soberana ──────────────────────────
+// "Curvas por" arma una curva por grupo combinando sector, crédito, legislación y
+// jurisdicción. Se pintan hasta 3 grupos a la vez: es lo que aguanta la paleta para que los
+// colores se distingan también con daltonismo (puntos y líneas se comparan todos contra
+// todos). Los demás grupos quedan en gris de contexto y se prenden desde la leyenda.
+// La curva soberana ajusta TIR = a + b·ln(duration) sobre los Globales (ley NY) y sobre los
+// Bonares (ley local); el spread de cada ON se mide contra la de su misma legislación.
+const YC_DIMS = {sector:'Sector', rating:'Crédito', leg:'Legislación', jur:'Jurisdicción'};
+const YC_COL  = ['#3987e5','#d95926','#199e70'];   // azul, naranja, verde agua: validados todos contra todos sobre #0c1018
+const YC_GRIS = '#475569';
+const YC_SOB  = {
+  NY:{label:'Globales · ley NY',   corto:'Globales', color:'#e2e8f0', dash:'7 4'},
+  AR:{label:'Bonares · ley local', corto:'Bonares',  color:'#94a3b8', dash:'2 3'},
+};
+let YC = (()=>{
+  try{ const v=JSON.parse(localStorage.getItem('curva_cfg_v1')||'{}');
+       return {dims:(v.dims||[]).filter(d=>d in YC_DIMS), sob:(v.sob||[]).filter(k=>k in YC_SOB), activos:null, firma:''}; }
+  catch(_){ return {dims:[], sob:[], activos:null, firma:''}; }
+})();
+function ycGuardar(){ try{ localStorage.setItem('curva_cfg_v1', JSON.stringify({dims:YC.dims, sob:YC.sob})); }catch(_){} }
+// En DL todas las ONs son ley y pago Argentina: segmentar por eso no separa nada.
+function ycDims(){ return YC.dims.filter(d=> !(activeType==='DL' && (d==='leg'||d==='jur'))); }
+
+// Solo puntos con valores sanos: descarta TIR/duration no finitos o absurdos (un precio
+// glitch cerca del vencimiento puede dar una TIR astronómica y reventar el gráfico).
+function esPuntoSano(b){
+  return b.tir!=null && b.dur!=null && b.dur>0 && isFinite(b.tir) && isFinite(b.dur)
+      && b.tir>-50 && b.tir<150 && b.dur<60;
+}
+function familiaSob(b){ return b.leg==='Nueva York' ? 'NY' : 'AR'; }
+
+// TIR = a + b·ln(duration) por mínimos cuadrados. Sin dos durations distintas no hay ajuste.
+function ajusteLog(pts){
+  const p=pts.filter(x=>x.dur>0 && isFinite(x.tir));
+  if(p.length<2) return null;
+  const n=p.length, lx=p.map(x=>Math.log(x.dur));
+  const mx=lx.reduce((s,v)=>s+v,0)/n, my=p.reduce((s,x)=>s+x.tir,0)/n;
+  let sxx=0, sxy=0;
+  p.forEach((x,i)=>{ sxx+=(lx[i]-mx)**2; sxy+=(lx[i]-mx)*(x.tir-my); });
+  if(sxx<1e-12) return null;
+  const b=sxy/sxx;
+  return {a:my-b*mx, b, min:Math.min(...p.map(x=>x.dur)), max:Math.max(...p.map(x=>x.dur)), n};
+}
+// TIR de la curva en una duration. Fuera del tramo con bonos no se extrapola el logaritmo
+// (en el corto se va a −∞): se toma el extremo y se marca.
+function tirEnCurva(f, dur){
+  if(!f || !(dur>0)) return null;
+  const d=Math.min(f.max, Math.max(f.min, dur));
+  return {tir:f.a+f.b*Math.log(d), extrapolado:d!==dur};
+}
+// Curvas soberanas de una lista de bonos: {NY:{f, pts}, AR:{f, pts}}, solo las que ajustan.
+function curvasSoberanas(lista){
+  const out={};
+  ['NY','AR'].forEach(k=>{
+    const pts=lista.filter(b=>b.soberano && familiaSob(b)===k && esPuntoSano(b));
+    const f=ajusteLog(pts);
+    if(f) out[k]={f, pts};
+  });
+  return out;
+}
+// Spread de una ON contra la curva soberana de su legislación, en puntos básicos.
+function spreadSob(b, curvas){
+  const k=familiaSob(b), c=curvas[k]; if(!c || b.tir==null) return null;
+  const r=tirEnCurva(c.f, b.dur); if(!r) return null;
+  return {k, pb:Math.round((b.tir-r.tir)*100), extrapolado:r.extrapolado};
+}
+
+function ycValor(b, d){
+  if(d==='sector') return b.sector || 'Sin sector';
+  if(d==='rating') return b.rating || 'Sin calificación';
+  if(d==='leg')    return b.leg || 'Argentina';
+  return b.jur || 'Argentina';
+}
+function ycClave(b, dims){ return dims.map(d=>ycValor(b,d)).join(' · '); }
+// Grupos sobre el universo de la pestaña y no sobre lo filtrado, así filtrar no cambia los
+// colores. De más a menos bonos.
+function ycGrupos(universo, dims){
+  const n={}; universo.forEach(b=>{ const k=ycClave(b,dims); n[k]=(n[k]||0)+1; });
+  return Object.entries(n).map(([clave,n])=>({clave,n})).sort((a,b)=>b.n-a.n || a.clave.localeCompare(b.clave));
+}
+// Grupos pintados → índice de color. Los que ya estaban conservan el suyo; la primera vez
+// (prev null) se pintan los más grandes.
+function ycActivos(prev, grupos){
+  const out={};
+  if(prev==null){ grupos.slice(0, YC_COL.length).forEach((g,i)=>{ out[g.clave]=i; }); return out; }
+  const hay=new Set(grupos.map(g=>g.clave));
+  Object.entries(prev).forEach(([k,i])=>{ if(hay.has(k)) out[k]=i; });
+  return out;
+}
+
+function ycSetDim(d){
+  YC.dims = !d ? [] : (YC.dims.includes(d) ? YC.dims.filter(x=>x!==d) : [...YC.dims, d]);
+  ycGuardar(); if(_lastYieldData) drawYield(_lastYieldData);
+}
+function ycToggleSob(k){
+  YC.sob = YC.sob.includes(k) ? YC.sob.filter(x=>x!==k) : [...YC.sob, k];
+  ycGuardar(); if(_lastYieldData) drawYield(_lastYieldData);
+}
+function ycToggleGrupo(clave){
+  const act=YC.activos||{};
+  if(clave in act) delete act[clave];
+  else {
+    const libre=YC_COL.findIndex((_,i)=>!Object.values(act).includes(i));
+    if(libre<0){ toast('Se ven hasta 3 curvas a la vez: apagá una en la leyenda antes de sumar otra.','warn',4000); return; }
+    act[clave]=libre;
+  }
+  YC.activos=act; if(_lastYieldData) drawYield(_lastYieldData);
+}
+function pintarYcCtrl(){
+  const el=document.getElementById('yc-ctrl'); if(!el) return;
+  el.hidden = activeType==='SOB';              // ahí los puntos y las curvas ya son los soberanos
+  const dims=ycDims();
+  el.querySelectorAll('[data-g]').forEach(b=>{ const g=b.dataset.g;
+    b.disabled = activeType==='DL' && (g==='leg'||g==='jur');
+    b.classList.toggle('on', g==='' ? !dims.length : dims.includes(g)); });
+  el.querySelectorAll('[data-s]').forEach(b=>b.classList.toggle('on', YC.sob.includes(b.dataset.s)));
+  const leg=document.getElementById('chart-legend');
+  if(leg && !leg._yc){ leg._yc=true;           // la leyenda prende y apaga grupos
+    leg.addEventListener('click',e=>{ const t=e.target.closest('[data-yc]'); if(t) ycToggleGrupo(t.dataset.yc); }); }
+}
+
+// LOESS: ajuste cuadrático ponderado (pesos tricúbicos) alrededor de xq; bw = fracción de la
+// distancia máxima que cuenta como "local".
+function loessTir(xq, points, bw){
+  const dists=points.map(p=>Math.abs(p.dur-xq));
+  const maxD=Math.max(...dists)*bw;
+  if(maxD===0) return points[0].tir;
+  const ws=points.map(p=>{const u=Math.abs(p.dur-xq)/maxD;return u<1?Math.pow(1-u*u*u,3):0;});
+  const sw=ws.reduce((a,b)=>a+b,0);
+  if(sw===0) return null;
+  let s0=0,s1=0,s2=0,s3=0,s4=0,t0=0,t1=0,t2=0;
+  points.forEach((p,i)=>{
+    const w=ws[i],x=p.dur;
+    s0+=w; s1+=w*x; s2+=w*x*x; s3+=w*x*x*x; s4+=w*x*x*x*x;
+    t0+=w*p.tir; t1+=w*x*p.tir; t2+=w*x*x*p.tir;
+  });
+  // Sistema 3x3 para [a,b,c] en a+b*x+c*x² por eliminación gaussiana
+  const A=[[s0,s1,s2],[s1,s2,s3],[s2,s3,s4]];
+  const B=[t0,t1,t2];
+  for(let col=0;col<3;col++){
+    let pivot=col;
+    for(let row=col+1;row<3;row++) if(Math.abs(A[row][col])>Math.abs(A[pivot][col])) pivot=row;
+    [A[col],A[pivot]]=[A[pivot],A[col]];[B[col],B[pivot]]=[B[pivot],B[col]];
+    if(Math.abs(A[col][col])<1e-10) continue;
+    for(let row=col+1;row<3;row++){
+      const f=A[row][col]/A[col][col];
+      B[row]-=f*B[col];
+      for(let k=col;k<3;k++) A[row][k]-=f*A[col][k];
+    }
+  }
+  const coef=[0,0,0];
+  for(let i=2;i>=0;i--){
+    coef[i]=B[i];
+    for(let j=i+1;j<3;j++) coef[i]-=A[i][j]*coef[j];
+    coef[i]/=A[i][i]||1;
+  }
+  return coef[0]+coef[1]*xq+coef[2]*xq*xq;
+}
+// Curva de un grupo ordenado por duration, como puntos {dur, tir, gap}:
+//   curva única: hasta 5 puntos, línea entre los puntos; con más, LOESS;
+//   en "Curvas por": menos de 3 bonos, sin curva; de 3 a 9, ajuste logarítmico (un LOESS
+//   con tan pocos puntos sobreajusta y hace puntas); 10 o más, LOESS.
+// El LOESS va en una grilla de 80 y no cruza huecos grandes del eje X (más de 0,8 años y
+// más del 30% del rango).
+function curvaPuntos(sorted, porGrupo){
+  const n=sorted.length;
+  if(n<2 || (porGrupo && n<3)) return [];
+  if(!porGrupo && n<=5) return sorted.map(p=>({dur:p.dur, tir:p.tir, gap:false}));
+  if(porGrupo && n<10){
+    const f=ajusteLog(sorted); if(!f) return [];
+    const out=[]; for(let i=0;i<=40;i++){ const d=f.min*Math.pow(f.max/f.min,i/40); out.push({dur:d, tir:f.a+f.b*Math.log(d), gap:false}); }
+    return out;
+  }
+  const nCurve=80, bandwidth=0.5, out=[];
+  const durMin=sorted[0].dur, durMax=sorted[n-1].dur, durRange=durMax-durMin;
+  const gapThreshold=Math.max(0.8, durRange*0.30);
+  const clusters=[[]];
+  sorted.forEach((p,i)=>{
+    if(i>0 && (p.dur-sorted[i-1].dur) > gapThreshold) clusters.push([]);
+    clusters[clusters.length-1].push(p);
+  });
+  clusters.forEach((cluster,ci)=>{
+    const cMin=cluster[0].dur, cMax=cluster[cluster.length-1].dur;
+    const steps=Math.max(2,Math.round(nCurve*(cMax-cMin)/Math.max(durRange,0.01)));
+    for(let i=0;i<=steps;i++){
+      const dur=cMin+(cMax-cMin)*i/steps;
+      const tir=loessTir(dur,sorted,bandwidth);
+      if(tir!=null) out.push({dur, tir, gap:i===0&&ci>0});
+    }
+  });
+  return out;
+}
+
+// Texto del tooltip de un punto (SVG <title>, sin HTML).
+function tipPunto(b, curvas){
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let t=`${b.ticker} · ${b.emisor}`;
+  if(b.priceSrc==='hist') t+=` (último operado ${b.histDate||''}, sin bid/offer)`;
+  t+=`\nTIR: ${b.tir.toFixed(2)}%  Dur: ${b.dur.toFixed(2)}a\nVenc: ${b.venc}`;
+  if(!b.soberano){
+    const s=spreadSob(b, curvas);
+    if(s) t+=`\nvs ${YC_SOB[s.k].corto}: ${s.pb>=0?'+':''}${s.pb} pb${s.extrapolado?' (fuera del tramo soberano)':''}`;
+  }
+  return esc(t)+'\n(clic para abrir)';
+}
+
 function drawYield(data){
   const svg=document.getElementById('ysvg'),W=920,H=220,pd={l:50,r:24,t:20,b:38};
   _lastYieldData=data; initYieldZoom(svg);
-  // Solo puntos con valores sanos: descarta TIR/duration no finitos o absurdos
-  // (un precio glitch cerca del venc puede dar TIR astronómica y reventar el gráfico)
-  const allPts=data.filter(b=>b.tir!=null&&b.dur!=null&&b.dur>0
-    && isFinite(b.tir)&&isFinite(b.dur)
-    && b.tir>-50&&b.tir<150&&b.dur<60);
-  // ── Filtro de outliers: solo aplicar si hay suficientes puntos (>10) ────────
+  pintarYcCtrl();
+  const enSob=activeType==='SOB';
+  const allPts=data.filter(esPuntoSano);
+  // ── Filtro de outliers de las ONs: solo con más de 10 puntos ───────────────
   // Con pocos puntos el recorte descarta datos legítimos
   let pts=allPts;
-  if(allPts.length>10){
+  if(!enSob && allPts.length>10){
     const sorted_tir=allPts.map(b=>b.tir).sort((a,b)=>a-b);
     const trim=Math.floor(sorted_tir.length*0.10);
     const trimmed=sorted_tir.slice(trim, sorted_tir.length-trim);
@@ -3206,8 +3548,31 @@ function drawYield(data){
     // Solo usar el filtro si no descarta demasiados puntos
     if(filtered.length>=Math.max(2,allPts.length*0.5)) pts=filtered;
   }
-  if(pts.length<2){svg.innerHTML=`<text x="${W/2}" y="${H/2}" fill="var(--muted2)" font-size="12" text-anchor="middle" font-family="IBM Plex Mono,monospace">Sin suficientes datos (${allPts.length} con TIR)</text>`;updateLegend([]);return;}
-  const xs=pts.map(b=>b.dur),ys=pts.map(b=>b.tir);
+  // Curvas soberanas: en la pestaña SOB salen de los puntos del gráfico; sobre las ONs, de
+  // todos los soberanos con precio (no dependen de los filtros de la tabla).
+  const curvas=curvasSoberanas(enSob ? pts : bonds);
+  const sobVer=enSob ? Object.keys(curvas) : YC.sob.filter(k=>curvas[k]);
+  const sobPts=enSob ? [] : sobVer.flatMap(k=>curvas[k].pts);
+  const dims=enSob ? [] : ycDims();
+  let grupos=[], act={};
+  if(dims.length){
+    const firma=activeType+'|'+dims.join(',');
+    if(YC.firma!==firma){ YC.firma=firma; YC.activos=null; }
+    grupos=ycGrupos(bonds.filter(b=>esDelTipo(b) && esPuntoSano(b)), dims);
+    act=YC.activos=ycActivos(YC.activos, grupos);
+  }
+  // Color de un punto; null = grupo apagado (gris de contexto, sin etiqueta)
+  const colorDe=b=>{
+    if(b.soberano) return YC_SOB[familiaSob(b)].color;
+    if(!dims.length) return SCOL[b.sector]||'#94a3b8';
+    const i=act[ycClave(b,dims)]; return i==null ? null : YC_COL[i];
+  };
+  const leyenda={enSob, dims, grupos, act, sobVer, anyHist:pts.some(b=>b.priceSrc==='hist'),
+                 sectores:[...new Set(pts.map(b=>b.sector))]};
+  pintarSubYC(enSob, dims);
+  if(pts.length+sobPts.length<2){svg.innerHTML=`<text x="${W/2}" y="${H/2}" fill="var(--muted2)" font-size="12" text-anchor="middle" font-family="IBM Plex Mono,monospace">Sin suficientes datos (${allPts.length} con TIR)</text>`;updateLegend(leyenda);return;}
+  const todos=[...pts, ...sobPts];
+  const xs=todos.map(b=>b.dur),ys=todos.map(b=>b.tir);
   let x0=Math.max(0,Math.min(...xs)-.3),x1=Math.max(...xs)+.4,y0=Math.min(...ys)*.92,y1=Math.max(...ys)*1.08;
   if(yieldView){ x0=yieldView.x0; x1=yieldView.x1; y0=yieldView.y0; y1=yieldView.y1; }
   _yv={x0,x1,y0,y1};
@@ -3238,129 +3603,83 @@ function drawYield(data){
   let _xg=0;
   for(let xv=Math.ceil(x0/xs2)*xs2;xv<=x1+.01 && _xg<500;xv=parseFloat((xv+xs2).toFixed(4))){_xg++;const xx=px(xv);out+=`<line x1="${xx}" y1="${pd.t}" x2="${xx}" y2="${H-pd.b}" stroke="rgba(30,45,66,.4)" stroke-width="1"/><text x="${xx}" y="${H-pd.b+14}" font-size="9" fill="var(--muted2)" text-anchor="middle" font-family="IBM Plex Mono,monospace">${xv.toFixed(1)}a</text>`;}
   out+='<g clip-path="url(#yclip)">';   // recortar la capa de datos al área del plot (zoom)
-  // ── Curva suavizada (no pasa por cada punto, muestra tendencia) ──────────
-  // Usamos regresión polinómica local (LOESS) sobre la nube de puntos.
-  // Generamos N puntos de la curva evaluando un ajuste cuadrático ponderado
-  // en cada x del rango, pesando más los puntos más cercanos.
-  const sorted=[...pts].sort((a,b)=>a.dur-b.dur);
-  const cpts=sorted.map(b=>({x:px(b.dur),y:py(b.tir),dur:b.dur,tir:b.tir}));
+  const trazo=ps=>ps.map((p,i)=>((i===0||p.gap)?'M':'L')+px(p.dur).toFixed(1)+','+py(p.tir).toFixed(1)).join(' ');
+  const finales=[];   // etiqueta directa al final de cada curva
 
-  // LOESS: para cada x de la grilla, ajuste cuadrático ponderado
-  function loessPoint(xq, points, bw){
-    // bw = ancho de banda en unidades de x (duración)
-    const dists=points.map(p=>Math.abs(p.dur-xq));
-    const maxD=Math.max(...dists)*bw;
-    if(maxD===0) return points[0].tir;
-    // Pesos tricúbicos
-    const ws=points.map(p=>{const u=Math.abs(p.dur-xq)/maxD;return u<1?Math.pow(1-u*u*u,3):0;});
-    const sw=ws.reduce((a,b)=>a+b,0);
-    if(sw===0) return null;
-    // Ajuste cuadrático ponderado (mínimos cuadrados)
-    let s0=0,s1=0,s2=0,s3=0,s4=0,t0=0,t1=0,t2=0;
-    points.forEach((p,i)=>{
-      const w=ws[i],x=p.dur;
-      s0+=w; s1+=w*x; s2+=w*x*x; s3+=w*x*x*x; s4+=w*x*x*x*x;
-      t0+=w*p.tir; t1+=w*x*p.tir; t2+=w*x*x*p.tir;
-    });
-    // Resolver sistema 3x3 para [a,b,c] en a+b*x+c*x² via eliminación gaussiana
-    const A=[[s0,s1,s2],[s1,s2,s3],[s2,s3,s4]];
-    const B=[t0,t1,t2];
-    for(let col=0;col<3;col++){
-      let pivot=col;
-      for(let row=col+1;row<3;row++) if(Math.abs(A[row][col])>Math.abs(A[pivot][col])) pivot=row;
-      [A[col],A[pivot]]=[A[pivot],A[col]];[B[col],B[pivot]]=[B[pivot],B[col]];
-      if(Math.abs(A[col][col])<1e-10) continue;
-      for(let row=col+1;row<3;row++){
-        const f=A[row][col]/A[col][col];
-        B[row]-=f*B[col];
-        for(let k=col;k<3;k++) A[row][k]-=f*A[col][k];
-      }
+  // ── Curvas de las ONs ──────────────────────────────────────────────────────
+  if(!enSob && !dims.length){
+    // Una sola: la de siempre, con el degradé y el área bajo el primer tramo continuo
+    const curvePts=curvaPuntos([...pts].sort((a,b)=>a.dur-b.dur), false);
+    if(curvePts.length>=2){
+      const base2=H-pd.b;
+      out+=`<path d="${trazo(curvePts)}" stroke="url(#lg)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>`;
+      const firstGap=curvePts.findIndex((p,i)=>i>0&&p.gap);
+      const firstSeg=firstGap>0 ? curvePts.slice(0,firstGap) : curvePts;
+      if(firstSeg.length>=2)
+        out+=`<path d="${trazo(firstSeg)} L${px(firstSeg[firstSeg.length-1].dur).toFixed(1)},${base2} L${px(firstSeg[0].dur).toFixed(1)},${base2} Z" fill="url(#cg)"/>`;
     }
-    const coef=[0,0,0];
-    for(let i=2;i>=0;i--){
-      coef[i]=B[i];
-      for(let j=i+1;j<3;j++) coef[i]-=A[i][j]*coef[j];
-      coef[i]/=A[i][i]||1;
-    }
-    return coef[0]+coef[1]*xq+coef[2]*xq*xq;
-  }
-
-  // Generar la curva en 80 puntos equiespaciados en el rango de duración
-  const nCurve=80;
-  const durMin=Math.min(...sorted.map(p=>p.dur));
-  const durMax=Math.max(...sorted.map(p=>p.dur));
-  const bandwidth=0.5; // 50% de los datos se consideran "locales"
-  const curvePts=[];
-  // Con pocos puntos LOESS no tiene sentido — usar línea recta entre puntos ordenados
-  if(pts.length<=5){
-    sorted.forEach(p=>curvePts.push({x:px(p.dur),y:py(p.tir),gap:false}));
-  } else {
-    // Detectar gaps en el eje X: si dos puntos consecutivos tienen más de 0.8a de separación
-    // y ese gap es > 30% del rango total, no trazar la curva a través de ese hueco
-    const durRange=durMax-durMin;
-    const gapThreshold=Math.max(0.8, durRange*0.30);
-    // Dividir sorted en clusters sin gaps
-    const clusters=[[]];
-    sorted.forEach((p,i)=>{
-      if(i>0 && (p.dur-sorted[i-1].dur) > gapThreshold) clusters.push([]);
-      clusters[clusters.length-1].push(p);
-    });
-    clusters.forEach((cluster,ci)=>{
-      if(cluster.length<1) return;
-      const cMin=cluster[0].dur, cMax=cluster[cluster.length-1].dur;
-      const steps=Math.max(2,Math.round(nCurve*(cMax-cMin)/Math.max(durRange,0.01)));
-      for(let i=0;i<=steps;i++){
-        const dur=cMin+(cMax-cMin)*i/steps;
-        const tir=loessPoint(dur,sorted,bandwidth);
-        if(tir!=null) curvePts.push({x:px(dur),y:py(tir),gap:i===0&&ci>0});
-      }
+  } else if(!enSob){
+    grupos.forEach(g=>{
+      const i=act[g.clave]; if(i==null) return;
+      const cp=curvaPuntos(pts.filter(b=>ycClave(b,dims)===g.clave).sort((a,b)=>a.dur-b.dur), true);
+      if(cp.length<2) return;
+      out+=`<path d="${trazo(cp)}" stroke="${YC_COL[i]}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>`;
+      finales.push({...cp[cp.length-1], txt:g.clave, color:YC_COL[i]});
     });
   }
+  // ── Curvas soberanas (punteadas, en grises: son la referencia, no compiten con los grupos)
+  sobVer.forEach(k=>{
+    const f=curvas[k].f, s=YC_SOB[k], cp=[];
+    for(let i=0;i<=40;i++){ const d=f.min*Math.pow(f.max/f.min,i/40); cp.push({dur:d, tir:f.a+f.b*Math.log(d)}); }
+    out+=`<path d="${trazo(cp)}" stroke="${s.color}" stroke-width="2" stroke-dasharray="${s.dash}" fill="none" opacity=".85"/>`;
+    finales.push({...cp[cp.length-1], txt:s.corto, color:s.color, sob:true});
+  });
 
-  // Dibujar área bajo curva y línea suavizada
-  if(curvePts.length>=2){
-    const base2=H-pd.b;
-    // Línea suavizada — usa M (moveto) en gaps para no trazar a través de huecos
-    const lineD=curvePts.map((p,i)=>{
-      if(i===0||p.gap) return `M${p.x.toFixed(1)},${p.y.toFixed(1)}`;
-      return `L${p.x.toFixed(1)},${p.y.toFixed(1)}`;
-    }).join(' ');
-    out+=`<path d="${lineD}" stroke="url(#lg)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>`;
-    // Área: solo para el primer segmento continuo (sin gaps) para no llenar huecos
-    const firstGap=curvePts.findIndex((p,i)=>i>0&&p.gap);
-    const firstSeg=firstGap>0 ? curvePts.slice(0,firstGap) : curvePts;
-    if(firstSeg.length>=2){
-      const areaD=`M${firstSeg[0].x.toFixed(1)},${firstSeg[0].y.toFixed(1)} `+
-        firstSeg.slice(1).map(p=>`L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')+
-        ` L${firstSeg[firstSeg.length-1].x.toFixed(1)},${base2} L${firstSeg[0].x.toFixed(1)},${base2} Z`;
-      out+=`<path d="${areaD}" fill="url(#cg)"/>`;
-    }
-  }
-  // Puntos + etiquetas de ticker con anti-solapamiento simple
-  // Primero todos los círculos
+  // ── Puntos ─────────────────────────────────────────────────────────────────
+  const rombo=(b,r)=>{ const cx=px(b.dur), cy=py(b.tir), c=YC_SOB[familiaSob(b)].color;
+    return `<path data-tk="${b.ticker}" style="cursor:pointer" d="M${cx},${cy-r} L${cx+r},${cy} L${cx},${cy+r} L${cx-r},${cy} Z" fill="var(--s1)" stroke="${c}" stroke-width="1.6"><title>${tipPunto(b,curvas)}</title></path>`; };
   pts.forEach(b=>{
-    const cx=px(b.dur),cy=py(b.tir),c=SCOL[b.sector]||'#94a3b8',r=b.ticker===ACTIVE_TK?7:4.5;
+    const activo=b.ticker===ACTIVE_TK;
+    if(b.soberano){ out+=rombo(b, activo?7:5); return; }
+    const cx=px(b.dur),cy=py(b.tir),col=colorDe(b),fondo=col==null,c=fondo?YC_GRIS:col;
+    const r=activo?7:(fondo?3.5:4.5);
     if(b.priceSrc==='hist'){
       // Sin bid/offer: último operado → marcador hueco punteado
-      out+=`<circle data-tk="${b.ticker}" style="cursor:pointer" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c}" stroke-width="1.6" stroke-dasharray="2.4 1.8" opacity=".95"><title>${b.ticker} · ${b.emisor} (último operado ${b.histDate||''}, sin bid/offer)\nTIR: ${b.tir.toFixed(2)}%  Dur: ${b.dur.toFixed(2)}a\nVenc: ${b.venc}\n(clic para abrir)</title></circle>`;
+      out+=`<circle data-tk="${b.ticker}" style="cursor:pointer" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c}" stroke-width="1.6" stroke-dasharray="2.4 1.8" opacity="${fondo?.6:.95}"><title>${tipPunto(b,curvas)}</title></circle>`;
     } else {
-      out+=`<circle data-tk="${b.ticker}" style="cursor:pointer" cx="${cx}" cy="${cy}" r="${r}" fill="${c}" opacity=".9" stroke="var(--bg)" stroke-width="${r>5?2:1.5}"><title>${b.ticker} · ${b.emisor}\nTIR: ${b.tir.toFixed(2)}%  Dur: ${b.dur.toFixed(2)}a\nVenc: ${b.venc}\n(clic para abrir)</title></circle>`;
+      out+=`<circle data-tk="${b.ticker}" style="cursor:pointer" cx="${cx}" cy="${cy}" r="${r}" fill="${c}" opacity="${fondo?.55:.9}" stroke="var(--bg)" stroke-width="${r>5?2:1.5}"><title>${tipPunto(b,curvas)}</title></circle>`;
     }
   });
-  // Etiquetas — colocación con detección de colisión sobre la caja real del texto.
-  // Antes se pisaban en la zona densa por dos motivos: el comparador de orden
-  // (Math.abs(b.tir-a.tir)) nunca devolvía negativos, así que la prioridad era
-  // arbitraria; y las 4 posiciones candidatas compartían las mismas coordenadas de
-  // colisión (sólo cambiaba el anchor), con lo que en realidad había 2, no 4.
+  sobPts.forEach(b=>{ out+=rombo(b, b.ticker===ACTIVE_TK?7:4.5); });
+
+  // ── Etiquetas ──────────────────────────────────────────────────────────────
+  // Colocación con detección de colisión sobre la caja real del texto. Prioridad: primero
+  // el nombre de cada curva, después el bono abierto, los soberanos y los extremos de TIR
+  // (los que más aportan a leer la curva); los del centro denso ceden el lugar. Los puntos
+  // de grupos apagados no llevan etiqueta.
   const placed=[];
   const CW=0.62;                                   // ancho de carácter de IBM Plex Mono, en ems
-  // Prioridad: primero el bono abierto, después los extremos de TIR (los que más
-  // aportan a leer la curva). Los del centro denso ceden el lugar.
+  const libre=(lx,ly,hw,hh)=>!placed.some(p=>Math.abs(p.x-lx)<(p.hw+hw+3) && Math.abs(p.y-ly)<(p.hh+hh+3));
+  finales.forEach(e=>{
+    const fs=8.5, w=e.txt.length*fs*CW, sw=e.sob?0:12, ex=px(e.dur), ey=py(e.tir);
+    // Anclado a la derecha, arriba o abajo del final de la curva, sin salirse del plot
+    const xr=Math.min(ex, W-pd.r-2), xl=Math.max(pd.l+2+sw+w, xr);
+    for(const dy of [-7, 12, -18, 23]){
+      const lx=xl-w/2, ly=Math.min(H-pd.b-4, Math.max(pd.t+fs, ey+dy)), hw=w/2+sw/2, hh=fs*0.62;
+      if(!libre(lx,ly,hw,hh) && dy!==23) continue;
+      placed.push({x:lx,y:ly,hw,hh});
+      if(sw) out+=`<line x1="${xl-w-sw}" y1="${ly-3}" x2="${xl-w-3}" y2="${ly-3}" stroke="${e.color}" stroke-width="2" pointer-events="none"/>`;
+      out+=`<text x="${xl}" y="${ly}" font-size="${fs}" fill="${e.sob?e.color:'var(--text2)'}" font-weight="600" text-anchor="end" font-family="IBM Plex Mono,monospace" pointer-events="none">${e.txt.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</text>`;
+      break;
+    }
+  });
   const tirsOrd=pts.map(b=>b.tir).sort((a,b)=>a-b);
   const tMed=tirsOrd.length?tirsOrd[Math.floor(tirsOrd.length/2)]:0;
-  const labeled=[...pts].sort((a,b)=>{
+  const conEtiqueta=[...pts.filter(b=>colorDe(b)!=null), ...sobPts];
+  const labeled=conEtiqueta.sort((a,b)=>{
     if(a.ticker===ACTIVE_TK) return -1;
     if(b.ticker===ACTIVE_TK) return 1;
+    if(a.soberano!==b.soberano) return a.soberano?-1:1;
     return Math.abs(b.tir-tMed)-Math.abs(a.tir-tMed);
   });
   labeled.forEach(b=>{
@@ -3372,12 +3691,10 @@ function drawYield(data){
     // Cuatro candidatas que SÍ difieren en posición: arriba, abajo, derecha, izquierda.
     for(const [dx,dy] of [[0,-9],[0,11],[hw+7,3],[-(hw+7),3]]){
       const lx=cx+dx, ly=cy+dy;
-      // Solapamiento de cajas (con 3px de aire), no de puntos.
-      const collide=placed.some(p=>Math.abs(p.x-lx)<(p.hw+hw+3) && Math.abs(p.y-ly)<(p.hh+hh+3));
-      if(!collide||isActive){
+      if(libre(lx,ly,hw,hh)||isActive){
         placed.push({x:lx,y:ly,hw,hh});
-        const fill=isActive?'#e2e8f0':'rgba(148,163,184,.75)';
-        const fw=isActive?'600':'400';
+        const fill=isActive?'#e2e8f0':b.soberano?YC_SOB[familiaSob(b)].color:'rgba(148,163,184,.75)';
+        const fw=isActive||b.soberano?'600':'400';
         out+=`<text x="${lx}" y="${ly}" font-size="${fs}" fill="${fill}" font-weight="${fw}" text-anchor="middle" font-family="IBM Plex Mono,monospace" pointer-events="none">${b.ticker}</text>`;
         break;
       }
@@ -3385,11 +3702,31 @@ function drawYield(data){
   });
   out+='</g>';   // fin capa de datos clipeada
   out+=`<text x="${pd.l+10}" y="${H-5}" font-size="9" fill="var(--muted2)" font-family="IBM Plex Mono,monospace">Duration (años) →</text>`;
-  svg.innerHTML=out;updateLegend([...new Set(pts.map(b=>b.sector))], pts.some(b=>b.priceSrc==='hist'));
+  svg.innerHTML=out; updateLegend(leyenda);
 }
-function updateLegend(sectors, anyHist){
-  let h=sectors.map(s=>`<div class="leg-item"><div class="leg-dot" style="background:${SCOL[s]||'#94a3b8'}"></div>${s}</div>`).join('');
-  if(anyHist) h+=`<div class="leg-item" title="Sin bid/offer: se usa el último precio operado"><div class="leg-dot" style="background:transparent;border:1.4px dashed var(--muted2)"></div>últ. operado</div>`;
+// Subtítulo del gráfico según lo que muestra
+function pintarSubYC(enSob, dims){
+  const el=document.getElementById('yc-sub'); if(!el) return;
+  const ayuda=' · arrastrar: zona de zoom · doble clic: reset · clic en punto: abrir bono';
+  el.textContent = enSob ? 'Curva soberana por legislación: TIR = a + b·ln(duration)'+ayuda
+    : dims.length ? 'Una curva por '+dims.map(d=>YC_DIMS[d].toLowerCase()).join(' y ')+' · hasta 3 a la vez, se eligen en la leyenda'+ayuda
+    : 'LOESS · color por sector'+ayuda;
+}
+function updateLegend(o){
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let h='';
+  if(o.dims && o.dims.length){
+    const MAX=12;
+    h+=o.grupos.slice(0,MAX).map(g=>{ const i=o.act[g.clave], on=i!=null;
+      return `<button type="button" class="leg-item leg-btn${on?' on':''}" data-yc="${esc(g.clave)}" aria-pressed="${on}" title="${on?'Apagar':'Prender'} la curva">`
+        +`<span class="leg-dot" style="${on?'background:'+YC_COL[i]:'background:transparent;border:1.4px solid '+YC_GRIS}"></span>${esc(g.clave)} <span class="leg-n">${g.n}</span></button>`; }).join('');
+    if(o.grupos.length>MAX) h+=`<span class="leg-item">+${o.grupos.length-MAX} más</span>`;
+  } else if(!o.enSob){
+    h+=o.sectores.map(s=>`<div class="leg-item"><div class="leg-dot" style="background:${SCOL[s]||'#94a3b8'}"></div>${esc(s||'Sin sector')}</div>`).join('');
+  }
+  (o.sobVer||[]).forEach(k=>{ const s=YC_SOB[k];
+    h+=`<div class="leg-item"><svg width="18" height="8" aria-hidden="true"><line x1="0" y1="4" x2="18" y2="4" stroke="${s.color}" stroke-width="2" stroke-dasharray="${s.dash}"/></svg>${s.label}</div>`; });
+  if(o.anyHist) h+=`<div class="leg-item" title="Sin bid/offer: se usa el último precio operado"><div class="leg-dot" style="background:transparent;border:1.4px dashed var(--muted2)"></div>últ. operado</div>`;
   document.getElementById('chart-legend').innerHTML=h;
 }
 function srt(k){SK===k?SD*=-1:(SK=k,SD=1);document.querySelectorAll('th').forEach(t=>t.classList.remove('asc','desc'));const th=document.querySelector(`th[data-col]`);render();}
@@ -3440,12 +3777,24 @@ function primerCupon(emD, vd, per){
   return ii <= emD ? addMonths(emD, per) : ii;
 }
 
+// Tasa del cupón vigente en una fecha, en fracción (0.0175 = 1,75%). `cupon` es la tasa anual
+// en % o, en un bono step-up, un cronograma [{desde:'AAAA-MM-DD', tasa}] en el que cada tasa
+// rige desde su fecha inclusive. Los soberanos cambian de tasa en una fecha de cupón, así que
+// alcanza con mirar la tasa al inicio de cada tramo devengado.
+function tasaCupon(cupon){
+  if(!Array.isArray(cupon)){ const t=(parseFloat(cupon)||0)/100; return ()=>t; }
+  const pasos=cupon.map(s=>({desde:(s.desde instanceof Date)?s.desde:new Date(String(s.desde).substring(0,10)+'T12:00:00'),
+                             tasa:(parseFloat(s.tasa)||0)/100})).sort((a,b)=>a.desde-b.desde);
+  return d=>{ let t=pasos.length?pasos[0].tasa:0; for(const s of pasos){ if(s.desde<=d) t=s.tasa; else break; } return t; };
+}
+
 // devengo: 'ajustado' (default) → los días se cuentan entre fechas de pago EFECTIVAS
 //          (ajustadas a día hábil); 'teorico' → entre fechas de cupón teóricas, de modo
 //          que correr un pago a día hábil no devenga interés extra.
+// cupon: tasa anual en %, o cronograma step-up (ver tasaCupon).
 function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo){
   if(PERF) PERF.buildSchedule++;
-  const tasa=(cupon||0)/100;
+  const tasaEn=tasaCupon(cupon);
   if(!iiDate||isNaN(iiDate)||!vcDate||isNaN(vcDate)) return [];
   if(!emDate||isNaN(emDate)) emDate = new Date(iiDate);
 
@@ -3541,7 +3890,7 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo){
       desde = new Date(prevCouponDate);
       // Ultimo tramo: desde el ultimo corte de capital hasta este cupon.
       const db = Math.max(0, yearFrac(segDesde, fAcc, base));
-      interes = devengado + tasa * db * capVig;
+      interes = devengado + tasaEn(segDesde) * db * capVig;
       devengado = 0;
       amort = ev.amortPct;
       // Si es el último evento de cupón Y el capital remanente no se amortiza por completo
@@ -3555,7 +3904,7 @@ function buildSchedule(emDate,iiDate,vcDate,cupon,per,base,amortSched,devengo){
     } else {
       // amort_only: no paga interes, pero CIERRA el tramo de capital. Lo devengado hasta
       // aca corresponde al capital viejo y se cobra en el proximo cupon.
-      devengado += tasa * Math.max(0, yearFrac(segDesde, ev.fecha, base)) * capVig;
+      devengado += tasaEn(segDesde) * Math.max(0, yearFrac(segDesde, ev.fecha, base)) * capVig;
       segDesde = new Date(ev.fecha);
       amort = ev.amortPct;
     }
@@ -3786,7 +4135,7 @@ function calcCC(cf,cupon,per,base,sett){
   if(!pf) return 0;
   const s = new Date(sett); s.setHours(12,0,0,0);
   if(s <= pf.desde) return 0;                // el período todavía no arrancó
-  let cc = (cupon/100) * yearFrac(pf.desde, s, base||'act365') * (pf.capital||100);
+  let cc = tasaCupon(cupon)(pf.desde) * yearFrac(pf.desde, s, base||'act365') * (pf.capital||100);
   if(pf.interes > 0) cc = Math.min(cc, pf.interes);   // nunca más que el cupón del período
   return cc > 0 ? parseFloat(cc.toFixed(4)) : 0;
 }
@@ -3973,6 +4322,19 @@ function restoreState(tk, bond) {
   if(typeof updateDLEquiv==='function') updateDLEquiv();
 }
 
+// Debajo de la tasa del panel, los tramos que le quedan a un bono step-up:
+// "Step-up: 0,75% hasta 09/07/2027 · 1,75% después".
+function pintarTramosCupon(bond){
+  const el=document.getElementById('fi-cupon-steps'); if(!el) return;
+  const st=Array.isArray(bond.cuponSched)?bond.cuponSched:[], hoy=dkey(new Date());
+  const quedan=st.filter((x,i)=> i===st.length-1 || st[i+1].desde>hoy);   // el vigente y los que vienen
+  if(quedan.length<2){ el.hidden=true; el.innerHTML=''; return; }
+  const f=d=>d.split('-').reverse().join('/'), pc=t=>t.toLocaleString('es-AR',{maximumFractionDigits:3})+'%';
+  el.innerHTML='Step-up: '+quedan.map((x,i)=> (i===0?'<b>'+pc(x.tasa)+'</b>':pc(x.tasa))
+    +(i<quedan.length-1?' hasta '+f(quedan[i+1].desde):' después')).join(' · ');
+  el.hidden=false;
+}
+
 function openPanel(bond) {
   // Si hay un bono abierto, guardar estado y salir del modo edición
   if (ACTIVE_TK && ACTIVE_TK !== bond.ticker) saveState(ACTIVE_TK);
@@ -3982,6 +4344,8 @@ function openPanel(bond) {
   panelDirty = false;
   document.getElementById('cp-title').textContent = bond.emisor;
   document.getElementById('cp-sub').textContent   = bond.ticker + ' · ' + bond.sector + ' · ' + bond.moneda;
+  document.getElementById('calc-panel').classList.toggle('soberano', !!bond.soberano);
+  pintarTramosCupon(bond);
   // Bono sin bid/offer: mostrar la última operación (fecha · precio · tasa)
   showLastOp(bond);
   // Arriba del panel: top 5 tenedores FCI (US$) + px promedio operado semanal
@@ -4354,6 +4718,10 @@ function calcFromPanel(silent){
   const devengo=(document.getElementById('fi-devengo')||{}).value||'ajustado';
   const tBase=tipo!=='fijo'?(parseFloat(document.getElementById('fi-tasa-base').value)||0):0;
   if(!vcS||isNaN(cupon)){if(!silent){toast('Completá al menos el vencimiento.');flagField('fi-venc');}return;}
+  // Bono step-up (soberanos): con la tasa del panel sin tocar, el cronograma usa los tramos del
+  // bono; si se escribe otra tasa, se calcula a esa tasa fija.
+  const bAct=ACTIVE_TK?bonds.find(b=>b.ticker===ACTIVE_TK):null;
+  const cuponCF=(bAct && Array.isArray(bAct.cuponSched) && bAct.cuponSched.length && cupon===bAct.cupon) ? bAct.cuponSched : cupon;
   const today=new Date();today.setHours(0,0,0,0);
   const sett=nextBusinessDay(today); // T+1 hábil
   const vcD=new Date(vcS+'T12:00:00');
@@ -4368,7 +4736,7 @@ function calcFromPanel(silent){
     iiD=primerCupon(emD, vcD, per);
   }
   const amortS=readAmortSched(vcD);
-  const cfRaw=generateCashflows(emD,iiD,vcD,cupon,per,base,amortS,tBase,devengo);
+  const cfRaw=generateCashflows(emD,iiD,vcD,cuponCF,per,base,amortS,tBase,devengo);
   if(!cfRaw.length){if(!silent)toast('No hay flujos futuros. Verificá las fechas.');return;}
   const cf=applySettlement(cfRaw,sett);
   if(!cf.length){if(!silent)toast('No hay flujos futuros con liquidación T+1.');return;}
@@ -4425,7 +4793,7 @@ function calcFromPanel(silent){
   const met=calcMetrics(cf,precioUSD,tir,per);
   const tna=tirToTNA(tir,per,diasProxPeriodo,cf[cf.length-1].dias);
   // Corrido exacto sobre el período en curso del cronograma (cubre también per=0).
-  const cc=calcCC(cf,cupon,per,base,sett);
+  const cc=calcCC(cf,cuponCF,per,base,sett);
   const plUSD=parseFloat((precioUSD-cc).toFixed(4));
   const lbl={6:'semestral',3:'trimestral',1:'mensual',12:'anual',0:'al vencimiento'};
   if(!tnaIsManual){
@@ -4454,7 +4822,7 @@ function calcFromPanel(silent){
   renderCallYields(
     (typeof readCallRows==='function'?readCallRows():[]),
     document.getElementById('fi-callable').value==='Si',
-    {emD,iiD,vcD,cupon,per,base,amortS,devengo,sett,precioUSD,ytmTir:tir,ytmTna:tna}
+    {emD,iiD,vcD,cupon:cuponCF,per,base,amortS,devengo,sett,precioUSD,ytmTir:tir,ytmTna:tna}
   );
   // Tabla de Flujos de Caja: TODOS los pagos del bono (pasados en gris).
   // Los pagos futuros se descuentan con la TIR; los pasados solo se listan.
@@ -4468,7 +4836,7 @@ function calcFromPanel(silent){
   cf.forEach(x => { futMap[x.fecha.toISOString().substring(0,10)] = x; });
 
   // generateScheduleAll devuelve TODOS los pagos sin filtro temporal
-  const allFlows = generateScheduleAll(emD,iiD,vcD,cupon,per,base,amortS,tBase,devengo);
+  const allFlows = generateScheduleAll(emD,iiD,vcD,cuponCF,per,base,amortS,tBase,devengo);
 
   allFlows.forEach(x => {
     // Saltear flujos sin movimiento (cupón=0 sin amort en esa fecha)
@@ -4980,8 +5348,9 @@ const LS_BONDS='bonoscorp_bonds_v1';
 const LS_CALC ='bonoscorp_calc_v1';
 
 function persistBonds(){
-  // Solo guarda los campos de metadata (no precios de mercado efímeros)
-  const toSave=bonds.map(b=>({
+  // Solo guarda los campos de metadata (no precios de mercado efímeros). Los soberanos no:
+  // salen siempre de SOBERANOS.
+  const toSave=bonds.filter(b=>!b.soberano).map(b=>({
     ticker:b.ticker,emisor:b.emisor,sector:b.sector,moneda:b.moneda,
     leg:b.leg,jur:b.jur,venc:b.venc,callable:b.callable,
     cupon:b.cupon,tipo_cupon:b.tipo_cupon,periodicidad:b.periodicidad,
@@ -5022,7 +5391,7 @@ function buildEmisorOpts(filter=''){
   const container=document.getElementById('emisor-opts');
   if(!container)return;
   // Get sorted unique emisors from bonds of current tab
-  const typeBonds = activeType==='DL' ? bonds.filter(b=>b.moneda==='DL') : bonds.filter(b=>b.moneda!=='DL');
+  const typeBonds = bonds.filter(b=>esDelTipo(b));
   const all=[...new Set(typeBonds.map(b=>b.emisor).filter(Boolean))].sort();
   const q=filter.toLowerCase();
   const filtered=q?all.filter(e=>e.toLowerCase().includes(q)):all;
@@ -5159,6 +5528,7 @@ async function saveBondChanges(){
   if(!ACTIVE_TK)return;
   const b=bonds.find(x=>x.ticker===ACTIVE_TK);
   if(!b){return;}
+  if(b.soberano){ exitEditMode(); return; }   // condiciones fijas: no van a la tabla de ONs
   // Leer todos los campos del formulario y actualizar el bond object
   b.emisor        = document.getElementById('fi-emisor').value.trim()||b.emisor;
   b.fecha_emision = document.getElementById('fi-emision').value||b.fecha_emision||'';
@@ -8642,6 +9012,7 @@ function getAllFlows(){
   const flows = []; // {fecha, ticker, emisor, tipo:'CPN'|'AMT', pct, vn_mm}
 
   bonds.forEach(b => {
+    if(b.soberano) return;                 // el calendario de pagos es de las ONs
     if(!b.venc || !b.fecha_inicio_int) return;
     const emD  = b.fecha_emision   ? new Date(b.fecha_emision+'T12:00:00')   : new Date(b.fecha_inicio_int+'T12:00:00');
     const iiD  = new Date(b.fecha_inicio_int+'T12:00:00');
