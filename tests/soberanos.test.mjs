@@ -1,4 +1,4 @@
-// Soberanos en dólares: cupones step-up y cronogramas de amortización.
+// Soberanos: cupones step-up y cronogramas de amortización de los de dólar, y los dollar linked.
 //
 // Correr:  node --test "tests/**/*.test.mjs"      (desde web/)
 //
@@ -91,7 +91,22 @@ test('Ley y jurisdicción: Globales en NY, Bonares locales', () => {
   for (const tk of ['AL29', 'AL30', 'AL35', 'AE38', 'AL41', 'AN29', 'AO27', 'AO28', 'AO29']) {
     assert.equal(sob(tk).leg, 'Argentina'); assert.equal(sob(tk).jur, 'Argentina');
   }
-  assert.ok(B.SOBERANOS.every(b => b.soberano && b.moneda === 'USD' && b.base_dias === '30_360'));
+  for (const tk of ['D30N6', 'D15E7', 'D31M7', 'D10Y7', 'TZV27', 'TZV28', 'TZVD8']) {
+    assert.equal(sob(tk).leg, 'Argentina'); assert.equal(sob(tk).moneda, 'DL');
+  }
+  assert.ok(B.SOBERANOS.every(b => b.soberano && (b.moneda === 'USD' || b.moneda === 'DL')));
+  assert.ok(B.SOBERANOS.filter(b => b.moneda === 'USD').every(b => b.base_dias === '30_360'));
+});
+
+test('dollar linked: cero cupón, un único pago del 100% al vencimiento', () => {
+  for (const tk of ['D30N6', 'D10Y7', 'TZV28', 'TZVD8']) {
+    const cf = cronograma(tk);
+    assert.equal(cf.length, 1, `${tk}: un solo flujo`);
+    casi(cf[0].interes, 0); casi(cf[0].amort, 100);
+    assert.equal(iso(cf[0].fecha), iso(B.adjustDate(D(sob(tk).venc))));
+  }
+  assert.equal(sob('TZV27').venc, '2027-06-30');
+  assert.equal(sob('TZVD8').venc, '2028-12-15');
 });
 
 test('AN29: 6,5% semestral los 30/05 y 30/11', () => {

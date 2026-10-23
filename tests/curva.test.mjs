@@ -69,6 +69,23 @@ test('el spread de una ON se mide contra el soberano de su misma legislación', 
   assert.equal(B.spreadSob(on('X', { leg: 'Nueva York', dur: 1, tir: 7 }), {}), null, 'sin curva no hay spread');
 });
 
+test('las ONs dollar linked se comparan con los dollar linked del Tesoro, no con Globales ni Bonares', () => {
+  const dl = (tk, dur, tir) => on(tk, { soberano: true, moneda: 'DL', leg: 'Argentina', dur, tir });
+  const curvas = B.curvasSoberanas([sob('AL30', 'Argentina', 1, 9), sob('AE38', 'Argentina', 4, 12),
+                                    dl('D31M7', 0.5, 3), dl('TZV28', 1.7, 11)]);
+  assert.deepEqual(Object.keys(curvas).sort(), ['AR', 'DL']);
+  const s = B.spreadSob(on('YMCIO', { moneda: 'DL', leg: 'Argentina', dur: 1.7, tir: 10 }), curvas);
+  assert.deepEqual(s, { k: 'DL', pb: -100, extrapolado: false });
+  assert.equal(B.familiaSob(on('YMCXO', { moneda: 'USD', leg: 'Argentina' })), 'AR');
+});
+
+test('la curva soberana deja afuera lo que vence en menos de 30 días', () => {
+  const vto = d => new Date(Date.now() + d * 864e5).toISOString().slice(0, 10);
+  const dl = (tk, dias, dur, tir) => ({ ...on(tk, { soberano: true, moneda: 'DL', leg: 'Argentina', dur, tir }), venc: vto(dias) });
+  const c = B.curvasSoberanas([dl('D30O6', 7, 0.02, -40), dl('D30N6', 38, 0.1, 3), dl('D31M7', 160, 0.44, 3.2), dl('TZV28', 615, 1.7, 11)]);
+  assert.deepEqual(c.DL.pts.map(b => b.ticker), ['D30N6', 'D31M7', 'TZV28']);
+});
+
 test('curvasSoberanas ignora las ONs y los puntos sin TIR o con TIR absurda', () => {
   const c = B.curvasSoberanas([sob('GD30', 'Nueva York', 1, 8), sob('GD35', 'Nueva York', 5, 11),
     sob('GD41', 'Nueva York', 6, 900), sob('GD46', 'Nueva York', null, 9), on('YMCXO', { leg: 'Nueva York', dur: 3, tir: 2 })]);

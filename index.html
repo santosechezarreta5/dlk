@@ -660,6 +660,7 @@ window.SUPABASE_CONFIG = {
         <span class="yc-l">vs soberano</span>
         <button type="button" class="ycb" data-s="NY" onclick="ycToggleSob('NY')" title="Globales GD29 a GD46, ley Nueva York">Globales · ley NY</button>
         <button type="button" class="ycb" data-s="AR" onclick="ycToggleSob('AR')" title="Bonares AL29 a AL41, AE38, AN29 y AO27 a AO29, ley local">Bonares · ley local</button>
+        <button type="button" class="ycb" data-s="DL" onclick="ycToggleSob('DL')" title="Letras D y bonos TZV del Tesoro, vinculados al dólar (cero cupón)">Dollar linked · Tesoro</button>
       </div>
     </div>
     <svg class="chart" viewBox="0 0 920 220" height="220" id="ysvg"></svg>
@@ -1695,11 +1696,15 @@ const SCLS={'Energía':'s-e','Energía (otros)':'s-eo','Finanzas':'s-f','Infraes
 // procesos de Python: sus condiciones son públicas y fijas. Salen de la ficha técnica de BYMA
 // y de las resoluciones del Boletín Oficial (AN29: RC 62/2025; AO28: RC 16/2026; AO29:
 // RC 44/2026). En data912 /live/arg_bonds cotizan con el ticker en pesos (GD30) y los
-// sufijos D (MEP) y C (cable).
-// Todos devengan 30/360 hasta la fecha de pago teórica: si cae en día inhábil (el 9 de julio
+// sufijos D (MEP) y C (cable); las Letras dollar linked, en /live/arg_notes.
+// Los de dólar devengan 30/360 hasta la fecha de pago teórica: si cae en día inhábil (el 9 de julio
 // siempre lo es) se paga el hábil siguiente sin devengar de más. Los AO pagan un día fijado
 // en su resolución, casi siempre el último hábil del mes; acá van a fin de mes, lo que mueve
 // cada pago de 0,5 un par de días y la TIR menos de 1 pb.
+// Los dollar linked (Letras D y bonos TZV) son cero cupón: pagan en pesos el valor nominal al
+// A3500 del tercer día hábil previo al vencimiento, igual que las ONs DL. Se cargan como un
+// único pago del 100% al vencimiento, así la duration es exacta (el plazo). Quedan afuera los
+// duales TAMAR/dollar linked (TMVE8), que tienen una opción.
 const SOBERANOS = (()=>{
   // n cuotas semestrales iguales, el 9 de enero y el 9 de julio, desde `primera`. La última
   // absorbe el redondeo para que sumen 100.
@@ -1750,6 +1755,12 @@ const SOBERANOS = (()=>{
      venc:'2028-10-31', cupon:6, periodicidad:1},
     {ticker:'AO29', ...AR, isin:'AR0550263393', fecha_emision:'2026-07-17', fecha_inicio_int:'2026-08-31',
      venc:'2029-10-31', cupon:6, periodicidad:1},
+    ...[['D30O6','AR0540625909','2026-08-14','2026-10-30'], ['D30N6','AR0747244991','2026-09-15','2026-11-30'],
+        ['D15E7','AR0420048891','2026-07-31','2027-01-15'], ['D31M7','AR0637963668','2026-05-29','2027-03-31'],
+        ['D10Y7','AR0804842737','2026-07-16','2027-05-10'], ['TZV27','AR0668642587','2026-02-27','2027-06-30'],
+        ['TZV28','AR0691226150','2026-03-31','2028-06-30'], ['TZVD8','AR0781107484','2026-06-12','2028-12-15']]
+      .map(([ticker, isin, fecha_emision, venc]) => ({ticker, ...AR, isin, moneda:'DL', fecha_emision,
+        fecha_inicio_int:venc, venc, cupon:0, periodicidad:0, amortSched:[{fecha:venc, pct:100}]})),
   ];
   const hoy = new Date(); hoy.setHours(12,0,0,0);
   return lista.map(o => {
@@ -1977,10 +1988,12 @@ async function fetchAll(){
     hideAlerts();
 
     // data912 devuelve todo en un solo array desde /api/bonos/usd (proxy lo redirige)
-    // Los soberanos vienen de otro panel (arg_bonds). Si ese falla, las ONs siguen igual.
-    const [raw, rawSob]=await Promise.all([
+    // Los soberanos vienen de otros paneles: bonos en arg_bonds y Letras en arg_notes. Si
+    // fallan, las ONs siguen igual.
+    const [raw, rawSob, rawLetras]=await Promise.all([
       fetch(`${DATA912}/arg_corp`).then(r=>r.json()).catch(e=>{console.error('[fetchAll] error:',e);return null;}),
       fetch(`${DATA912}/arg_bonds`).then(r=>r.json()).catch(e=>{console.error('[fetchAll] soberanos:',e);return null;}),
+      fetch(`${DATA912}/arg_notes`).then(r=>r.json()).catch(e=>{console.error('[fetchAll] letras:',e);return null;}),
     ]);
     console.log('[fetchAll] raw type:', Array.isArray(raw)?'array['+raw.length+']':typeof raw);
 
@@ -1996,7 +2009,7 @@ async function fetchAll(){
     });
 
     const mapSob={};
-    (Array.isArray(rawSob)?rawSob:[]).forEach(it=>{
+    [...(Array.isArray(rawSob)?rawSob:[]), ...(Array.isArray(rawLetras)?rawLetras:[])].forEach(it=>{
       const t=(it.symbol||'').trim().toUpperCase();
       if(t) mapSob[t]=it;
     });
@@ -3328,9 +3341,9 @@ function exportYieldPNG(){
 // jurisdicción. Se pintan hasta 5 grupos a la vez, cada uno con su color y su forma de punto
 // (los 5 colores se distinguen también con daltonismo, comparados todos contra todos); los
 // demás quedan en gris de contexto y se prenden desde la leyenda.
-// Todas las curvas, las de las ONs y las soberanas (Globales ley NY y Bonares ley local), son
-// un ajuste Nelson-Siegel (ver ajusteNS). El spread de cada ON se mide contra la curva
-// soberana de su misma legislación.
+// Todas las curvas, las de las ONs y las soberanas, son un ajuste Nelson-Siegel (ver ajusteNS).
+// Las ONs en dólares se comparan con los Globales (ley NY) o los Bonares (ley local), según su
+// legislación; las dollar linked, con los dollar linked del Tesoro.
 const YC_DIMS = {sector:'Sector', rating:'Crédito', leg:'Legislación', jur:'Jurisdicción'};
 // azul, naranja, verde agua, violeta, bordó: pasan el validador de dataviz todos contra todos
 // sobre #0c1018 (daltonismo ΔE ≥ 9,4; visión normal ≥ 15,1)
@@ -3339,7 +3352,10 @@ const YC_GRIS = '#475569';
 const YC_SOB  = {
   NY:{label:'Globales · ley NY',   corto:'Globales', color:'#e2e8f0', dash:'7 4'},
   AR:{label:'Bonares · ley local', corto:'Bonares',  color:'#94a3b8', dash:'2 3'},
+  DL:{label:'Dollar linked · Tesoro', corto:'DL Tesoro', color:'#cbd5e1', dash:'9 3 2 3'},
 };
+// Curvas soberanas que se ofrecen sobre cada pestaña de ONs
+function ycSobDisponibles(){ return activeType==='DL' ? ['DL'] : ['NY','AR']; }
 let YC = (()=>{
   try{ const v=JSON.parse(localStorage.getItem('curva_cfg_v1')||'{}');
        return {dims:(v.dims||[]).filter(d=>d in YC_DIMS), sob:(v.sob||[]).filter(k=>k in YC_SOB), activos:null, firma:''}; }
@@ -3355,7 +3371,9 @@ function esPuntoSano(b){
   return b.tir!=null && b.dur!=null && b.dur>0 && isFinite(b.tir) && isFinite(b.dur)
       && b.tir>-50 && b.tir<150 && b.dur<60;
 }
-function familiaSob(b){ return b.leg==='Nueva York' ? 'NY' : 'AR'; }
+// Curva soberana contra la que se compara un bono: dollar linked con dollar linked; en dólares,
+// la de su legislación.
+function familiaSob(b){ return b.moneda==='DL' ? 'DL' : b.leg==='Nueva York' ? 'NY' : 'AR'; }
 
 // ── Ajuste de la curva: Nelson-Siegel robusto ─────────────────────────────────────────────
 // TIR(τ) = β0 + β1·f1(τ/λ) + β2·f2(τ/λ), con f1 = (1−e^−x)/x y f2 = f1 − e^−x: nivel, pendiente
@@ -3446,11 +3464,15 @@ function muestrearNS(f){
   for(let i=0;i<=60;i++){ const d=f.min*Math.pow(f.max/f.min,i/60); out.push({dur:d, tir:valorNS(f,d)}); }
   return out;
 }
-// Curvas soberanas de una lista de bonos: {NY:{f, pts}, AR:{f, pts}}, solo las que ajustan.
+// Curvas soberanas de una lista de bonos: {NY:{f, pts}, AR:{…}, DL:{…}}, solo las que ajustan.
+// Quedan afuera los que vencen en menos de 30 días: a tan poco plazo, la TIR anualizada
+// amplifica cualquier diferencia de centavos (o, en los dollar linked, entre el A3500 de hoy
+// y el del fixing).
 function curvasSoberanas(lista){
-  const out={};
-  ['NY','AR'].forEach(k=>{
-    const pts=lista.filter(b=>b.soberano && familiaSob(b)===k && esPuntoSano(b));
+  const out={}, lim=Date.now()+30*864e5;
+  ['NY','AR','DL'].forEach(k=>{
+    const pts=lista.filter(b=>b.soberano && familiaSob(b)===k && esPuntoSano(b)
+                              && !(b.venc && new Date(b.venc+'T12:00:00')<lim));
     const f=ajusteNS(pts);
     if(f) out[k]={f, pts};
   });
@@ -3511,7 +3533,9 @@ function pintarYcCtrl(){
   el.querySelectorAll('[data-g]').forEach(b=>{ const g=b.dataset.g;
     b.disabled = activeType==='DL' && (g==='leg'||g==='jur');
     b.classList.toggle('on', g==='' ? !dims.length : dims.includes(g)); });
-  el.querySelectorAll('[data-s]').forEach(b=>b.classList.toggle('on', YC.sob.includes(b.dataset.s)));
+  const disp=ycSobDisponibles();
+  el.querySelectorAll('[data-s]').forEach(b=>{ b.hidden=!disp.includes(b.dataset.s);
+    b.classList.toggle('on', YC.sob.includes(b.dataset.s)); });
   const leg=document.getElementById('chart-legend');
   if(leg && !leg._yc){ leg._yc=true;           // la leyenda prende y apaga grupos
     leg.addEventListener('click',e=>{ const t=e.target.closest('[data-yc]'); if(t) ycToggleGrupo(t.dataset.yc); }); }
@@ -3572,7 +3596,7 @@ function drawYield(data){
   // Curvas soberanas: en la pestaña SOB salen de los puntos del gráfico; sobre las ONs, de
   // todos los soberanos con precio (no dependen de los filtros de la tabla).
   const curvas=curvasSoberanas(enSob ? pts : bonds);
-  const sobVer=enSob ? Object.keys(curvas) : YC.sob.filter(k=>curvas[k]);
+  const sobVer=enSob ? Object.keys(curvas) : YC.sob.filter(k=>curvas[k] && ycSobDisponibles().includes(k));
   const sobPts=enSob ? [] : sobVer.flatMap(k=>curvas[k].pts);
   const dims=enSob ? [] : ycDims();
   let grupos=[], act={};
@@ -3746,7 +3770,7 @@ fuera de escala</title></path>`;
 function pintarSubYC(enSob, dims){
   const el=document.getElementById('yc-sub'); if(!el) return;
   const ayuda=' · arrastrar: zona de zoom · doble clic: reset · clic en punto: abrir bono';
-  el.textContent = enSob ? 'Curva soberana por legislación · Nelson-Siegel'+ayuda
+  el.textContent = enSob ? 'Curvas soberanas: Globales, Bonares y dollar linked · Nelson-Siegel'+ayuda
     : dims.length ? 'Una curva por '+dims.map(d=>YC_DIMS[d].toLowerCase()).join(' y ')+' · Nelson-Siegel · hasta 5 a la vez, se eligen en la leyenda'+ayuda
     : 'Nelson-Siegel · color por sector'+ayuda;
 }
