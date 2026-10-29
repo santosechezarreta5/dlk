@@ -7554,7 +7554,10 @@ const OPS = (function(){
     <div class="fci-bar">
       <label>Moneda<div id="fci-moneda"></div></label>
       <label>Tipo de activo<div id="fci-tipo"></div></label>
-      <label id="fci-venc-wrap" style="display:none">Fecha de vencimiento<div id="fci-venc"></div></label>
+      <label class="fci-on" style="display:none">Fecha de vencimiento<div id="fci-venc"></div></label>
+      <label class="fci-on" style="display:none">Legislación<div id="fci-leg"></div></label>
+      <label class="fci-on" style="display:none">Jurisdicción de pago<div id="fci-jur"></div></label>
+      <label class="fci-on" style="display:none">Callable<div id="fci-call"></div></label>
       <label>Bono / Activo<div id="fci-bono"></div></label>
       <label>Gerente<div id="fci-ger"></div></label>
       <label>Agrupar por<select id="fci-agr"><option value="gerente">Gerente</option><option value="fondo">Fondo</option></select></label>
@@ -7572,7 +7575,10 @@ const OPS = (function(){
       <label>FCI<select id="fci-f-fondo" style="min-width:240px"></select></label>
       <label>Moneda<div id="fci-f-moneda"></div></label>
       <label>Tipo de activo<div id="fci-f-tipo"></div></label>
-      <label id="fci-f-venc-wrap" style="display:none">Fecha de vencimiento<div id="fci-f-venc"></div></label>
+      <label class="fci-on" style="display:none">Fecha de vencimiento<div id="fci-f-venc"></div></label>
+      <label class="fci-on" style="display:none">Legislación<div id="fci-f-leg"></div></label>
+      <label class="fci-on" style="display:none">Jurisdicción de pago<div id="fci-f-jur"></div></label>
+      <label class="fci-on" style="display:none">Callable<div id="fci-f-call"></div></label>
       <button class="fci-go" onclick="FCI.runFondo()">Analizar</button>
     </div>
     <div id="fci-fondo-out"></div>
@@ -7639,7 +7645,8 @@ window.FCI = (function(){
 
   let inited=false, tab='bono';
   let fechas=[], fondos=[], bonos=[], dolar={}, gerentes=[], tipos=[], monedas=[], bmap={};
-  let msTipo=null, msBono=null, msGer=null, msMoneda=null, msFTipo=null, msVenc=null, msFMoneda=null, msFVenc=null;
+  let msTipo=null, msBono=null, msGer=null, msMoneda=null, msFTipo=null, msFMoneda=null;
+  let msOn={}, msFOn={};   // filtros de ON (vencimiento, legislación, ...) de cada solapa
   let bonoChips=[];   // pool ordenado de bonos con chip (persisten aunque se deseleccionen)
 
   // ── ONs de las calculadoras: match FCI activo (…(TICKER)) ↔ catálogo `bonds` por ticker ──
@@ -7647,19 +7654,37 @@ window.FCI = (function(){
   const tkOf   = a => { const m=/\(([^)]+)\)\s*$/.exec(a||''); return m?m[1]:''; };
   const normTk = t => t ? (t.slice(0,-1)+'O') : t;           // normaliza sufijo de settlement → …O
   const fmtVenc= v => { const p=String(v||'').slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:v; };
-  function calcVencMap(){   // {ticker|tickerNorm -> venc} desde el catálogo de calculadoras (vigentes)
+  function calcMap(){   // {ticker|tickerNorm -> bono} desde el catálogo de calculadoras (vigentes)
     const map={}; const cat=(typeof bonds!=='undefined'&&Array.isArray(bonds))?bonds:[];
-    cat.forEach(b=>{ if(b&&b.ticker&&b.venc){ map[b.ticker]=b.venc; const c=normTk(b.ticker); if(!(c in map))map[c]=b.venc; } });
+    cat.forEach(b=>{ if(b&&b.ticker&&b.venc){ map[b.ticker]=b; const c=normTk(b.ticker); if(!(c in map))map[c]=b; } });
     return map;
   }
-  const vencDe = (activo, vm) => { const t=tkOf(activo); if(!t)return null; return vm[t]||vm[normTk(t)]||null; };
+  const onDe = (activo, cm) => { const t=tkOf(activo); if(!t)return null; return cm[t]||cm[normTk(t)]||null; };
   const yearOf = v => String(v||'').slice(0,4);
-  function vencOptsFor(ms){  // años de vencimiento distintos de las ONs de calculadora (respeta moneda)
-    const vm=calcVencMap(); if(!Object.keys(vm).length) return [];
-    const set=new Set();
-    bonos.forEach(b=>{ if(b.tipo!==ON_TIPO) return; if(ms&&ms.length&&!ms.includes(b.moneda)) return;
-      const v=vencDe(b.activo,vm); if(v) set.add(yearOf(v)); });
-    return [...set].sort().map(y=>({value:y,label:y}));
+  // Filtros que aparecen al elegir ON / Corporativo: datos de la ON en su calculadora.
+  const ON_FILTROS = {
+    venc: b => yearOf(b.venc),
+    leg:  b => b.leg || 'Sin dato',
+    jur:  b => b.jur || 'Sin dato',
+    call: b => b.callable==='Si' ? 'Sí' : 'No',
+  };
+  const selOn  = ms => Object.fromEntries(Object.entries(ms).map(([k,m])=>[k, m.get()]));
+  const pasaOn = (b, sel) => Object.keys(ON_FILTROS).every(k=> !(sel[k]&&sel[k].length) || sel[k].includes(ON_FILTROS[k](b)));
+  // Opciones de cada filtro: los valores que tienen esas ONs (las que están en la calculadora).
+  function onOpts(activos, k){
+    const cm=calcMap(), set=new Set();
+    activos.forEach(a=>{ const b=onDe(a,cm); if(b) set.add(ON_FILTROS[k](b)); });
+    return [...set].sort((x,y)=>x.localeCompare(y)).map(v=>({value:v,label:v}));
+  }
+  // Muestra u oculta los filtros de ON de una solapa y les carga las opciones.
+  function mostrarFiltrosOn(tabId, ms, mostrar, activos){
+    document.querySelectorAll(`#${tabId} .fci-on`).forEach(l=>l.style.display = mostrar ? '' : 'none');
+    for(const [k,m] of Object.entries(ms)){ if(mostrar) m.setOptions(onOpts(activos,k)); else m.set([]); }
+  }
+  // Lo elegido en los filtros de ON, para el título de la foto de la tabla.
+  function descOn(sel){
+    const pref={venc:'vto ', leg:'ley ', jur:'pago en ', call:'callable '};
+    return Object.keys(ON_FILTROS).filter(k=>sel[k]&&sel[k].length).map(k=>pref[k]+sel[k].join('/')).join(', ');
   }
 
   // ── multi-select buscable ──
@@ -7691,36 +7716,34 @@ window.FCI = (function(){
     return { get:()=>[...set], set:a=>{set.clear();(a||[]).forEach(x=>set.add(x));rb();},
       setOptions:n=>{ norm=(n||[]).map(o=>typeof o==='string'?{value:o,label:o}:o); const ok=new Set(norm.map(o=>o.value)); [...set].forEach(v=>{if(!ok.has(v))set.delete(v);}); rb(); rl(); } };
   }
-  function bonoOpts(ts, ms, vencs){
-    const vm=calcVencMap(); const restrictOn=Object.keys(vm).length>0;   // sólo si el catálogo cargó
-    const vset=(vencs&&vencs.length)?new Set(vencs):null;
+  function bonoOpts(ts, ms, sel={}){
+    const cm=calcMap(); const restrictOn=Object.keys(cm).length>0;   // sólo si el catálogo cargó
     return bonos.filter(b=>{
       if(ts&&ts.length&&!ts.includes(b.tipo)) return false;
       if(ms&&ms.length&&!ms.includes(b.moneda)) return false;
       if(b.tipo===ON_TIPO && restrictOn){
-        const v=vencDe(b.activo,vm);
-        if(v==null) return false;                        // sólo ONs incorporadas en las calculadoras
-        if(vset && !vset.has(yearOf(v))) return false;   // filtro por año de vencimiento
+        const on=onDe(b.activo,cm);
+        if(!on) return false;                  // sólo ONs incorporadas en las calculadoras
+        if(!pasaOn(on, sel)) return false;     // vencimiento, legislación, jurisdicción, callable
       }
       return true;
     }).map(b=>{
-      const v=(b.tipo===ON_TIPO&&restrictOn)?vencDe(b.activo,vm):null;
+      const v=(b.tipo===ON_TIPO&&restrictOn)?(onDe(b.activo,cm)||{}).venc:null;
       return {value:b.activo, label:v?`${b.activo} · vto ${fmtVenc(v)} · ${b.n_fondos}`:`${b.activo} · ${b.n_fondos}`};
     });
   }
-  function refreshBonoFilters(){   // muestra/oculta Vencimiento según tipo=ON y reconstruye listas
+  function refreshBonoFilters(){   // muestra/oculta los filtros de ON según tipo=ON y reconstruye listas
     const ts=msTipo.get(), ms=msMoneda.get();
-    const showVenc = ts.includes(ON_TIPO) && Object.keys(calcVencMap()).length>0;
-    $('fci-venc-wrap').style.display = showVenc ? '' : 'none';
-    if(showVenc) msVenc.setOptions(vencOptsFor(ms)); else msVenc.set([]);
-    msBono.setOptions(bonoOpts(ts, ms, msVenc.get()));
+    const ons=bonos.filter(b=>b.tipo===ON_TIPO && !(ms.length && !ms.includes(b.moneda))).map(b=>b.activo);
+    mostrarFiltrosOn('fci-tab-bono', msOn, ts.includes(ON_TIPO) && Object.keys(calcMap()).length>0, ons);
+    msBono.setOptions(bonoOpts(ts, ms, selOn(msOn)));
     renderBonoChips();
   }
   function shortBono(v){ const t=tkOf(v); return t || (v.length>22 ? v.slice(0,22)+'…' : v); }
   // Chips de bonos seleccionados: aparecen con ≥2 en el pool; click togglea activo/inactivo, × lo quita.
   function renderBonoChips(){
     const box=$('fci-bono-chips'); if(!box) return;
-    const valid=new Set(bonoOpts(msTipo.get(), msMoneda.get(), msVenc?msVenc.get():[]).map(o=>o.value));
+    const valid=new Set(bonoOpts(msTipo.get(), msMoneda.get(), selOn(msOn)).map(o=>o.value));
     const selected=new Set(msBono.get());
     selected.forEach(v=>{ if(!bonoChips.includes(v)) bonoChips.push(v); });   // union: agrega recién elegidos
     bonoChips = bonoChips.filter(v=>valid.has(v));                            // poda los que ya no son opción
@@ -7786,13 +7809,20 @@ window.FCI = (function(){
     $('fci-ini').value=fechas[Math.max(0,fechas.length-2)]; $('fci-fin').value=fechas[fechas.length-1];
     msMoneda = mksel($('fci-moneda'), monedas, {placeholder:'(todas)', onChange:()=>{ refreshBonoFilters(); autoRun(); }});
     msTipo = mksel($('fci-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:()=>{ refreshBonoFilters(); autoRun(); }});
-    msVenc = mksel($('fci-venc'), [], {placeholder:'(todos los años)',
-              onChange:()=>{ msBono.setOptions(bonoOpts(msTipo.get(), msMoneda.get(), msVenc.get())); renderBonoChips(); autoRun(); }});
+    const cambioOn = ()=>{ msBono.setOptions(bonoOpts(msTipo.get(), msMoneda.get(), selOn(msOn))); renderBonoChips(); autoRun(); };
+    msOn = { venc: mksel($('fci-venc'), [], {placeholder:'(todos los años)', onChange:cambioOn}),
+             leg:  mksel($('fci-leg'),  [], {placeholder:'(todas)', onChange:cambioOn}),
+             jur:  mksel($('fci-jur'),  [], {placeholder:'(todas)', onChange:cambioOn}),
+             call: mksel($('fci-call'), [], {placeholder:'(todos)', onChange:cambioOn}) };
     msBono = mksel($('fci-bono'), bonoOpts([],[]), {placeholder:'(elegí bono/s)', onChange:()=>{ renderBonoChips(); autoRun(); }});
     msGer  = mksel($('fci-ger'),  gerentes,    {placeholder:'(todas las gerentes)', onChange:autoRun});
     msFMoneda= mksel($('fci-f-moneda'), monedas, {placeholder:'(todas)', onChange:()=>{ if(_lastFondo) renderFondo(_lastFondo); }});
     msFTipo= mksel($('fci-f-tipo'), tipos, {placeholder:'(todos los tipos)', onChange:refreshFondoFilters});
-    msFVenc= mksel($('fci-f-venc'), [], {placeholder:'(todos los años)', onChange:()=>{ if(_lastFondo) renderFondo(_lastFondo); }});
+    const cambioFOn = ()=>{ if(_lastFondo) renderFondo(_lastFondo); };
+    msFOn = { venc: mksel($('fci-f-venc'), [], {placeholder:'(todos los años)', onChange:cambioFOn}),
+              leg:  mksel($('fci-f-leg'),  [], {placeholder:'(todas)', onChange:cambioFOn}),
+              jur:  mksel($('fci-f-jur'),  [], {placeholder:'(todas)', onChange:cambioFOn}),
+              call: mksel($('fci-f-call'), [], {placeholder:'(todos)', onChange:cambioFOn}) };
     $('fci-f-ger').innerHTML='<option value="">(todas)</option>'+gerentes.map(g=>`<option>${esc(g)}</option>`).join('');
     // Auto-run al cambiar cualquier select de filtro (una sola vez para no duplicar listeners en reintentos).
     if(!_fciBound){ ['fci-ini','fci-fin','fci-agr','fci-f-ger','fci-f-fondo'].forEach(id=>$(id).addEventListener('change', autoRun)); _fciBound=true; }
@@ -7948,18 +7978,21 @@ window.FCI = (function(){
     const activos=msBono.get();
     const tiposSel=msTipo.get(), monedasSel=msMoneda.get();
     const gers=msGer.get();
+    const sel=selOn(msOn);   // sin ON / Corporativo elegido los filtros de ON se ocultan y quedan vacíos
     let p_activos=activos, p_tipos=[];
     if(!activos.length){
-      const vencsSel = tiposSel.includes(ON_TIPO) && msVenc ? msVenc.get() : [];
-      // Expandir a la lista explícita en el cliente si hay moneda, ON (restricción calculadora)
-      // o vencimiento; así se usa exactamente el universo mostrado en "Bono / Activo".
-      if(monedasSel.length || tiposSel.includes(ON_TIPO) || vencsSel.length){
-        p_activos = bonoOpts(tiposSel, monedasSel, vencsSel).map(o=>o.value);
+      // Expandir a la lista explícita en el cliente si hay moneda u ON (restricción calculadora y
+      // filtros de ON); así se usa exactamente el universo mostrado en "Bono / Activo".
+      if(monedasSel.length || tiposSel.includes(ON_TIPO)){
+        p_activos = bonoOpts(tiposSel, monedasSel, sel).map(o=>o.value);
       } else {
         p_tipos = tiposSel;
       }
     }
-    if(!p_activos.length && !p_tipos.length){ $('fci-bono-out').innerHTML='<div class="empty">Elegí al menos un bono, un tipo o una moneda.</div>'; return; }
+    if(!p_activos.length && !p_tipos.length){
+      $('fci-bono-out').innerHTML = descOn(sel) ? '<div class="empty">Ninguna ON cumple esos filtros.</div>'
+                                                : '<div class="empty">Elegí al menos un bono, un tipo o una moneda.</div>';
+      return; }
     $('fci-bono-out').innerHTML='<div class="empty">Calculando…</div>';
     const args = a => ({p_ini:ini,p_fin:fin,p_tipos:p_tipos,p_activos:a,p_gerentes:gers,p_agrupar:agr});
     // Con 2 o más bonos elegidos el gráfico apila un tramo por bono: se pide aparte cada bono con
@@ -7972,6 +8005,7 @@ window.FCI = (function(){
     // Lo elegido, para el título de la foto de la tabla
     const que = activos.length ? activos.map(shortBono) : (tiposSel.length ? tiposSel : monedasSel);
     let desc = que.slice(0,4).join(', ') + (que.length>4 ? ` y ${que.length-4} más` : '');
+    if(!activos.length && descOn(sel)) desc += ` (${descOn(sel)})`;
     if(gers.length) desc += ' · ' + (gers.length>2 ? gers.length+' gerentes' : gers.join(', '));
     _lastBono={ini,fin,agr,raw,porBono,desc}; renderBono(_lastBono);
   }
@@ -8034,26 +8068,20 @@ window.FCI = (function(){
     if(msFMoneda) msFMoneda.setOptions([...new Set((raw||[]).map(r=>r.moneda).filter(Boolean))].sort((a,b)=>a.localeCompare(b)));
     _lastFondo={title,ini,fin,raw}; refreshFondoFilters();
   }
-  // Muestra/oculta Vencimiento (según Tipo=ON) en el tab fondo y re-renderiza.
+  // Muestra/oculta los filtros de ON (según Tipo=ON) en el tab fondo y re-renderiza.
   function refreshFondoFilters(){
     const raw=_lastFondo?_lastFondo.raw:[];
     const tsel=(msFTipo&&msFTipo.get())||[];
-    const showVenc=tsel.includes(ON_TIPO) && Object.keys(calcVencMap()).length>0;
-    $('fci-f-venc-wrap').style.display = showVenc ? '' : 'none';
-    if(showVenc){
-      const vm=calcVencMap(); const set=new Set();
-      raw.forEach(r=>{ if(r.tipo!==ON_TIPO) return; const v=vencDe(r.activo,vm); if(v) set.add(yearOf(v)); });
-      msFVenc.setOptions([...set].sort().map(y=>({value:y,label:y})));
-    } else if(msFVenc) msFVenc.set([]);
+    mostrarFiltrosOn('fci-tab-fondo', msFOn, tsel.includes(ON_TIPO) && Object.keys(calcMap()).length>0,
+                     raw.filter(r=>r.tipo===ON_TIPO).map(r=>r.activo));
     if(_lastFondo) renderFondo(_lastFondo);
   }
   function renderFondo({title,ini,fin,raw}){
-    const vm=calcVencMap();
     let data=raw.map(r=>({activo:r.activo,tipo:r.tipo,moneda:r.moneda, ini:val(r.monto_ini,ini), fin:val(r.monto_fin,fin), delta:val(r.monto_fin,fin)-val(r.monto_ini,ini)}));
     const _tsel=(msFTipo&&msFTipo.get())||[]; if(_tsel.length) data=data.filter(r=>_tsel.includes(r.tipo));
     const _msel=(msFMoneda&&msFMoneda.get())||[]; if(_msel.length) data=data.filter(r=>_msel.includes(r.moneda));
-    const _vsel=(msFVenc&&msFVenc.get())||[]; if(_vsel.length){ const vs=new Set(_vsel);
-      data=data.filter(r=> r.tipo!==ON_TIPO || vs.has(yearOf(vencDe(r.activo,vm)||''))); }
+    const _osel=selOn(msFOn); if(descOn(_osel)){ const cm=calcMap();
+      data=data.filter(r=>{ if(r.tipo!==ON_TIPO) return true; const b=onDe(r.activo,cm); return !!b && pasaOn(b,_osel); }); }
     const totI=data.reduce((s,r)=>s+r.ini,0), totF=data.reduce((s,r)=>s+r.fin,0);
     let h=`<div class="ops-h">${esc(title)}</div><div class="fci-cards">
       <div class="fci-card"><div class="k">Patrimonio ${ini}</div><div class="v">${money(totI)}</div></div>
@@ -8068,7 +8096,8 @@ window.FCI = (function(){
         <div class="fci-tblh">Detalle por activo<button class="btn-png" onclick="FCI.exportTabla('fondo')" title="Exportar tabla a PNG (todas las filas)">⤓ PNG</button></div>
         <div id="fci-fondo-tbl"></div>`;
     $('fci-fondo-out').innerHTML=h;
-    tituloTabla.fondo = title;
+    const filtros=[_tsel.join(', '), _msel.join(', '), descOn(_osel)].filter(Boolean).join(' · ');
+    tituloTabla.fondo = title + (filtros ? ' · '+filtros : '');
     sortableTable($('fci-fondo-tbl'), data,
       [{k:'activo',t:'Activo',tx:1,fmt:r=>r.activo},{k:'tipo',t:'Tipo',tx:1,fmt:r=>r.tipo||''},{k:'moneda',t:'Mon.',tx:1,fmt:r=>r.moneda||''},
        {k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:tituloVar(ini,fin),raw:1,fmt:r=>signed(r.delta)}],
