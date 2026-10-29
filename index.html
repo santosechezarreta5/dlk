@@ -7532,6 +7532,8 @@ const OPS = (function(){
   #view-fci .chip .x:hover{opacity:1}
   #view-fci .fci-chips-clear{font-size:.58rem;color:#7c93ad;text-decoration:none;margin-left:4px}
   #view-fci .fci-chips-clear:hover{color:#c0392b;text-decoration:underline}
+  #view-fci .fci-png{margin-left:8px;vertical-align:middle}
+  #view-fci .fci-tblh{display:flex;align-items:center;gap:10px;margin:16px 0 4px;font-size:.74rem;font-weight:700;color:#cdd9e8}
 </style>
 
 <div id="view-fci">
@@ -7611,7 +7613,8 @@ window.FCI = (function(){
     }
     return out;
   }
-  async function rpc(fn,args){ try{ return await pagedFetch(REST+'/rpc/'+fn,{method:'POST',headers:H,body:JSON.stringify(args||{})}); }catch(e){ console.error('[FCI]',e); return []; } }
+  const rpcEstricto=(fn,args)=>pagedFetch(REST+'/rpc/'+fn,{method:'POST',headers:H,body:JSON.stringify(args||{})});
+  async function rpc(fn,args){ try{ return await rpcEstricto(fn,args); }catch(e){ console.error('[FCI]',e); return []; } }
   async function sel(p){ try{ return await pagedFetch(REST+p,{headers:H}); }catch(e){ return []; } }
   // RPC crítica: reintenta si vuelve vacía (un vacío en fechas/fondos/bonos siempre es un fallo, no un dato real).
   async function rpcCore(fn){
@@ -7831,15 +7834,115 @@ window.FCI = (function(){
   function autoRun(){ clearTimeout(_autoT); _autoT=setTimeout(()=>{ tab==='bono'?runBono():runFondo(); }, 400); }
 
   let _chart=null;
-  function chart(canvasId, labels, values, color){ const ctx=$(canvasId); if(!ctx)return; if(_chart)_chart.destroy();
-    _chart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{data:values,backgroundColor:color||'#2E8B6B'}]},
-      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.parsed.x)}}},
-        scales:{x:{ticks:{callback:v=>money(v),color:'#9fb2c8',font:{size:9}},grid:{color:'#16202e'}},
-                y:{ticks:{color:'#cdd9e8',font:{size:10}},grid:{display:false}}}}}); }
+  const fontEtq = () => '600 10px ' + Chart.defaults.font.family;
+  // Total de cada fila al final de la barra, afuera. Con varios bonos apilados es la suma de los
+  // que están a la vista (la leyenda los prende y apaga) y va en la punta del lado de su signo.
+  // El margen derecho se reserva con el ancho de la etiqueta más larga. Una etiqueta negativa
+  // que no entra a la izquierda (chocaría con los nombres) va a la derecha, libre en esa fila.
+  function etiquetasBarras(fmt){
+    return { id:'fciEtiquetas', afterDatasetsDraw(c){
+      const {ctx, chartArea:a}=c, cero=c.scales.x.getPixelForValue(0);
+      const vis=c.data.datasets.map((d,j)=>j).filter(j=>c.isDatasetVisible(j));
+      ctx.save(); ctx.font=fontEtq(); ctx.fillStyle='#cdd9e8'; ctx.textAlign='left'; ctx.textBaseline='middle';
+      c.data.labels.forEach((_,i)=>{
+        let tot=0, der=cero, izq=cero, y=null;
+        for(const j of vis){
+          const v=c.data.datasets[j].data[i], bar=c.getDatasetMeta(j).data[i];
+          if(v==null||!isFinite(v)||!bar) continue;
+          tot+=v; y=bar.y;
+          if(v>0) der=Math.max(der,bar.x); else if(v<0) izq=Math.min(izq,bar.x);
+        }
+        if(y==null) return;
+        const t=fmt(tot), w=ctx.measureText(t).width;
+        let x = tot>=0 ? der+4 : izq-4-w;
+        if(x<a.left) x=der+4;
+        ctx.fillText(t, x, y);
+      });
+      ctx.restore(); } };
+  }
+  // series: [{label, data, color}]. Con más de una se apilan, con leyenda y un borde del color
+  // del fondo que separa los tramos.
+  function chart(canvasId, labels, series, fmt=money){ const ctx=$(canvasId); if(!ctx)return; if(_chart)_chart.destroy();
+    const varias=series.length>1;
+    const totales=labels.map((_,i)=>series.reduce((s,d)=>s+(d.data[i]||0),0));
+    const m=document.createElement('canvas').getContext('2d'); m.font=fontEtq();
+    const anchoEtq=Math.max(0, ...totales.map(v=>m.measureText(fmt(v)).width));
+    _chart=new Chart(ctx,{type:'bar',
+      data:{labels,datasets:series.map(d=>({label:d.label, data:d.data, backgroundColor:d.color||'#2E8B6B',
+        borderColor:'#0c1018', borderWidth:varias?1:0, borderSkipped:false}))},
+      plugins:[etiquetasBarras(fmt)],
+      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,layout:{padding:{right:Math.ceil(anchoEtq)+8}},
+        ...(varias ? {interaction:{mode:'index', axis:'y', intersect:false}} : {}),
+        plugins:{legend:{display:varias, position:'top', align:'start',
+                         labels:{color:'#cdd9e8', boxWidth:10, boxHeight:10, font:{size:10}}},
+          tooltip:{filter:it=>!varias||it.parsed.x!==0,
+            callbacks:{label:c=> varias ? `${c.dataset.label}: ${fmt(c.parsed.x)}` : fmt(c.parsed.x),
+                       footer:its=> varias ? 'Total: '+fmt(its.reduce((s,it)=>s+it.parsed.x,0)) : ''}}},
+        scales:{x:{stacked:varias, ticks:{callback:v=>money(v),color:'#9fb2c8',font:{size:9}},grid:{color:'#16202e'}},
+                y:{stacked:varias, ticks:{color:'#cdd9e8',font:{size:10}},grid:{display:false}}}}}); }
+  const conSigno = v => (v>0?'+':'')+money(v);
+  // Días corridos entre las dos fechas de cartera ('YYYY-MM-DD').
+  function tituloVar(ini, fin){ const n=Math.round((Date.parse(fin)-Date.parse(ini))/864e5);
+    return `Variación (${n} ${Math.abs(n)===1?'día':'días'})`; }
+
+  // Foto de la tabla tal como se ve (mismo orden y colores) pero con todas las filas: en pantalla
+  // la tabla corta a 560 px con scroll. Se dibuja a mano en un canvas, sin librerías.
+  const tituloTabla={bono:'', fondo:''};
+  function exportTabla(t){
+    const tb=$('fci-'+t+'-tbl') && $('fci-'+t+'-tbl').querySelector('table'); if(!tb) return;
+    const leer = tr => [...tr.children].map(c=>({t:c.textContent.replace(/ [▾▴]$/,''), tx:c.classList.contains('tx'),
+      col: c.querySelector('.pos') ? '#43d39e' : (c.querySelector('.neg') ? '#ff6b6b' : null)}));
+    const head=leer(tb.tHead.rows[0]), filas=[...tb.tBodies[0].rows].map(leer), titulo=tituloTabla[t];
+    const FAM="'Segoe UI',Arial,sans-serif", F='12px '+FAM, FB='700 12px '+FAM, FT='700 14px '+FAM;
+    const m=document.createElement('canvas').getContext('2d');
+    const anchos=head.map((h,j)=>{ m.font=FB; let w=m.measureText(h.t).width; m.font=F;
+      for(const f of filas) w=Math.max(w, m.measureText(f[j].t).width);
+      return Math.ceil(w)+20; });
+    m.font=FT;
+    const PAD=14, RH=22, TH=titulo?30:0, WT=anchos.reduce((s,w)=>s+w,0);
+    const W=PAD*2+Math.max(WT, titulo?Math.ceil(m.measureText(titulo).width):0), H=PAD*2+TH+RH*(filas.length+1);
+    const k=Math.min(2, 32000/H);   // Chrome no dibuja canvas de más de ~32.000 px de alto
+    const cv=document.createElement('canvas'); cv.width=Math.round(W*k); cv.height=Math.round(H*k);
+    const x=cv.getContext('2d'); x.scale(k,k); x.textBaseline='middle';
+    x.fillStyle='#0c1018'; x.fillRect(0,0,W,H);
+    if(titulo){ x.font=FT; x.fillStyle='#e2e8f0'; x.fillText(titulo, PAD, PAD+TH/2-3); }
+    const y0=PAD+TH;
+    [head, ...filas].forEach((f,i)=>{
+      const y=y0+i*RH;
+      x.fillStyle = i===0 ? '#16202e' : (i%2===0 ? '#0e151f' : '#0c1018'); x.fillRect(PAD,y,WT,RH);
+      x.font = i===0 ? FB : F;
+      let cx=PAD;
+      f.forEach((c,j)=>{
+        x.fillStyle = i===0 ? '#cdd9e8' : (c.col||'#e2e8f0');
+        x.textAlign = c.tx ? 'left' : 'right';
+        x.fillText(c.t, c.tx ? cx+10 : cx+anchos[j]-10, y+RH/2);
+        cx+=anchos[j];
+      });
+    });
+    x.strokeStyle='#1e2d42'; x.lineWidth=1; x.beginPath();
+    for(let i=0;i<=filas.length+1;i++){ x.moveTo(PAD,y0+i*RH+.5); x.lineTo(PAD+WT,y0+i*RH+.5); }
+    let cx=PAD; [0,...anchos].forEach(w=>{ cx+=w; x.moveTo(cx+.5,y0); x.lineTo(cx+.5,y0+RH*(filas.length+1)); });
+    x.stroke();
+    _downloadDataURL(cv.toDataURL('image/png'), 'mov_'+t+'_tabla.png');
+  }
 
   // ── BONO ──
   let _lastBono=null;
+  // Color de cada bono elegido (índice en YC_COL, la paleta validada de la curva). Un bono lo
+  // conserva mientras siga elegido; los que entran toman un color libre, en el orden en que se
+  // eligieron. Hay 5 colores: del sexto en adelante van a "Otros", en gris.
+  let colBono={};
+  function coloresBonos(activos){
+    const vivos=new Set(activos);
+    for(const b of Object.keys(colBono)) if(!vivos.has(b)) delete colBono[b];
+    const usados=new Set(Object.values(colBono));
+    for(const b of activos){
+      if(b in colBono) continue;
+      const libre=YC_COL.findIndex((_,i)=>!usados.has(i)); if(libre<0) break;
+      colBono[b]=libre; usados.add(libre);
+    }
+    return Object.keys(colBono).sort((a,b)=>colBono[a]-colBono[b]);
+  }
   async function runBono(){
     const ini=$('fci-ini').value, fin=$('fci-fin').value, agr=$('fci-agr').value;
     const activos=msBono.get();
@@ -7858,10 +7961,21 @@ window.FCI = (function(){
     }
     if(!p_activos.length && !p_tipos.length){ $('fci-bono-out').innerHTML='<div class="empty">Elegí al menos un bono, un tipo o una moneda.</div>'; return; }
     $('fci-bono-out').innerHTML='<div class="empty">Calculando…</div>';
-    const raw=await rpc('fci_mov_consulta',{p_ini:ini,p_fin:fin,p_tipos:p_tipos,p_activos:p_activos,p_gerentes:gers,p_agrupar:agr});
-    _lastBono={ini,fin,agr,raw}; renderBono(_lastBono);
+    const args = a => ({p_ini:ini,p_fin:fin,p_tipos:p_tipos,p_activos:a,p_gerentes:gers,p_agrupar:agr});
+    // Con 2 o más bonos elegidos el gráfico apila un tramo por bono: se pide aparte cada bono con
+    // color; "Otros" es el total menos esos. Si falla uno, el gráfico vuelve a una sola barra.
+    const conColor = activos.length>=2 ? coloresBonos(activos) : [];
+    const [raw, ...partes] = await Promise.all([rpc('fci_mov_consulta',args(p_activos)),
+      ...conColor.map(b=>rpcEstricto('fci_mov_consulta',args([b])).catch(e=>{ console.error('[FCI]',e); return null; }))]);
+    const porBono = conColor.length && partes.every(Array.isArray)
+      ? conColor.map((b,i)=>({activo:b, color:YC_COL[colBono[b]], filas:partes[i]})) : null;
+    // Lo elegido, para el título de la foto de la tabla
+    const que = activos.length ? activos.map(shortBono) : (tiposSel.length ? tiposSel : monedasSel);
+    let desc = que.slice(0,4).join(', ') + (que.length>4 ? ` y ${que.length-4} más` : '');
+    if(gers.length) desc += ' · ' + (gers.length>2 ? gers.length+' gerentes' : gers.join(', '));
+    _lastBono={ini,fin,agr,raw,porBono,desc}; renderBono(_lastBono);
   }
-  function renderBono({ini,fin,agr,raw}){
+  function renderBono({ini,fin,agr,raw,porBono,desc}){
     const data=raw.map(r=>({clave:r.clave, ini:val(r.monto_ini,ini), fin:val(r.monto_fin,fin), delta:val(r.monto_fin,fin)-val(r.monto_ini,ini)}));
     const totI=data.reduce((s,r)=>s+r.ini,0), totF=data.reduce((s,r)=>s+r.fin,0);
     const dim={gerente:'gerente',fondo:'fondo'}[agr]||'grupo';
@@ -7873,18 +7987,31 @@ window.FCI = (function(){
     if(!data.length){ $('fci-bono-out').innerHTML=h+'<div class="empty">Sin tenencias para esa selección/fechas.</div>'; return; }
     const useDelta = chartMode==='variacion';
     h+=`<div class="ops-h">${useDelta?'Variación':'Tenencia'} por ${dim}
-          <span class="fci-cm"><button class="cm ${!useDelta?'on':''}" onclick="FCI.setChartMode('tenencia')">Tenencia</button><button class="cm ${useDelta?'on':''}" onclick="FCI.setChartMode('variacion')">Variación</button></span></div>
-        <div style="height:${Math.max(240,Math.min(data.length,25)*26)}px"><canvas id="fci-bono-canvas"></canvas></div>
-        <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-bono-canvas','mov_bono.png')">⤓ PNG</button></div>
+          <span class="fci-cm"><button class="cm ${!useDelta?'on':''}" onclick="FCI.setChartMode('tenencia')">Tenencia</button><button class="cm ${useDelta?'on':''}" onclick="FCI.setChartMode('variacion')">Variación</button></span>
+          <button class="btn-png fci-png" onclick="exportChartPNG('fci-bono-canvas','mov_bono.png')" title="Exportar gráfico a PNG">⤓ PNG</button></div>
+        <div style="height:${Math.max(240,Math.min(data.length,25)*26)+(porBono?28:0)}px"><canvas id="fci-bono-canvas"></canvas></div>
+        <div class="fci-tblh">Detalle por ${dim}<button class="btn-png" onclick="FCI.exportTabla('bono')" title="Exportar tabla a PNG (todas las filas)">⤓ PNG</button></div>
         <div id="fci-bono-tbl"></div>`;
     $('fci-bono-out').innerHTML=h;
+    tituloTabla.bono = `Tenencia de ${desc||'la selección'} por ${dim}`;
     sortableTable($('fci-bono-tbl'), data,
-      [{k:'clave',t:cap(dim),tx:1,fmt:r=>r.clave},{k:'ini',t:'Tenencia '+ini,fmt:r=>money(r.ini)},
-       {k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:'Δ',raw:1,fmt:r=>signed(r.delta)}],
+      [{k:'clave',t:cap(dim),tx:1,fmt:r=>r.clave},{k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},
+       {k:'delta',t:tituloVar(ini,fin),raw:1,fmt:r=>signed(r.delta)}],
       {key:'fin', dir:-1});
     const top=data.slice().sort((a,b)=> useDelta ? (Math.abs(b.delta)-Math.abs(a.delta)) : (b.fin-a.fin)).slice(0,25);
-    chart('fci-bono-canvas', top.map(r=>r.clave), top.map(r=> useDelta?r.delta:r.fin),
-      useDelta ? top.map(r=> r.delta>=0?'#2E8B6B':'#c0392b') : '#2E8B6B');
+    const valor = (r, f0, f1) => useDelta ? val(r.monto_fin,f1)-val(r.monto_ini,f0) : val(r.monto_fin,f1);
+    let series;
+    if(porBono){
+      series = porBono.map(p=>{ const m=new Map(p.filas.map(r=>[r.clave, valor(r,ini,fin)]));
+        return {label:shortBono(p.activo), color:p.color, data:top.map(r=>m.get(r.clave)||0)}; });
+      const otros = top.map((r,i)=>{ const x=(useDelta?r.delta:r.fin)-series.reduce((s,d)=>s+d.data[i],0);
+        return Math.abs(x)<1 ? 0 : x; });   // menos de 1 US$/$: redondeo
+      if(otros.some(x=>x)) series.push({label:'Otros', color:YC_GRIS, data:otros});
+    } else {
+      series = [{data:top.map(r=> useDelta?r.delta:r.fin),
+                 color: useDelta ? top.map(r=> r.delta>=0?'#2E8B6B':'#c0392b') : '#2E8B6B'}];
+    }
+    chart('fci-bono-canvas', top.map(r=>r.clave), series, useDelta ? conSigno : money);
   }
 
   // ── FONDO ──
@@ -7935,22 +8062,24 @@ window.FCI = (function(){
     if(!data.length){ $('fci-fondo-out').innerHTML=h+'<div class="empty">Sin tenencias en esas fechas.</div>'; return; }
     const useDelta = chartMode==='variacion';
     h+=`<div class="ops-h" style="font-size:.85rem">${useDelta?'Variación':'Tenencia'} por activo
-          <span class="fci-cm"><button class="cm ${!useDelta?'on':''}" onclick="FCI.setChartMode('tenencia')">Tenencia</button><button class="cm ${useDelta?'on':''}" onclick="FCI.setChartMode('variacion')">Variación</button></span></div>
+          <span class="fci-cm"><button class="cm ${!useDelta?'on':''}" onclick="FCI.setChartMode('tenencia')">Tenencia</button><button class="cm ${useDelta?'on':''}" onclick="FCI.setChartMode('variacion')">Variación</button></span>
+          <button class="btn-png fci-png" onclick="exportChartPNG('fci-fondo-canvas','mov_fondo.png')" title="Exportar gráfico a PNG">⤓ PNG</button></div>
         <div style="height:${Math.max(240,Math.min(data.length,25)*26)}px"><canvas id="fci-fondo-canvas"></canvas></div>
-        <div style="margin:8px 0"><button class="btn-png" onclick="exportChartPNG('fci-fondo-canvas','mov_fondo.png')">⤓ PNG</button></div>
+        <div class="fci-tblh">Detalle por activo<button class="btn-png" onclick="FCI.exportTabla('fondo')" title="Exportar tabla a PNG (todas las filas)">⤓ PNG</button></div>
         <div id="fci-fondo-tbl"></div>`;
     $('fci-fondo-out').innerHTML=h;
+    tituloTabla.fondo = title;
     sortableTable($('fci-fondo-tbl'), data,
       [{k:'activo',t:'Activo',tx:1,fmt:r=>r.activo},{k:'tipo',t:'Tipo',tx:1,fmt:r=>r.tipo||''},{k:'moneda',t:'Mon.',tx:1,fmt:r=>r.moneda||''},
-       {k:'ini',t:'Tenencia '+ini,fmt:r=>money(r.ini)},{k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:'Δ',raw:1,fmt:r=>signed(r.delta)}],
+       {k:'fin',t:'Tenencia '+fin,fmt:r=>money(r.fin)},{k:'delta',t:tituloVar(ini,fin),raw:1,fmt:r=>signed(r.delta)}],
       {key:'fin', dir:-1});
     const top=data.slice().sort((a,b)=> useDelta ? (Math.abs(b.delta)-Math.abs(a.delta)) : (b.fin-a.fin)).slice(0,25);
-    chart('fci-fondo-canvas', top.map(r=>r.activo), top.map(r=> useDelta?r.delta:r.fin),
-      useDelta ? top.map(r=> r.delta>=0?'#2E8B6B':'#c0392b') : '#2E8B6B');
+    chart('fci-fondo-canvas', top.map(r=>r.activo), [{data:top.map(r=> useDelta?r.delta:r.fin),
+      color: useDelta ? top.map(r=> r.delta>=0?'#2E8B6B':'#c0392b') : '#2E8B6B'}], useDelta ? conSigno : money);
   }
   function cap(s){ return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
 
-  return { init, setTab, toggleUsd, setChartMode, rebuildFondoList, runBono, runFondo, retryLoad };
+  return { init, setTab, toggleUsd, setChartMode, rebuildFondoList, runBono, runFondo, retryLoad, exportTabla };
 })();
 </script>
 
