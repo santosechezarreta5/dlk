@@ -93,12 +93,16 @@ test('curvasSoberanas ignora las ONs y los puntos sin TIR o con TIR absurda', ()
   assert.equal(c.AR, undefined);
 });
 
-test('grupos combinando dimensiones, de más a menos bonos', () => {
+test('grupos combinando dimensiones, de más a menos bonos; los "Sin …" al final', () => {
   const u = [on('A', { leg: 'Nueva York', rating: 'AAA(arg)' }), on('B', { leg: 'Argentina', rating: 'AAA(arg)' }),
              on('C', { leg: 'Argentina', rating: 'AAA(arg)' }), on('D', { leg: 'Argentina', rating: '' })];
   assert.deepEqual(B.ycGrupos(u, ['leg']), [{ clave: 'Argentina', n: 3 }, { clave: 'Nueva York', n: 1 }]);
+  // "Sin calificación" no le gana un color a un grupo con nombre aunque empate en cantidad
   assert.deepEqual(B.ycGrupos(u, ['leg', 'rating']).map(g => g.clave),
-    ['Argentina · AAA(arg)', 'Argentina · Sin calificación', 'Nueva York · AAA(arg)']);
+    ['Argentina · AAA(arg)', 'Nueva York · AAA(arg)', 'Argentina · Sin calificación']);
+  // Ni aunque sea el más grande: los bonos sin subsector quedan últimos
+  const s = [on('E', { subsector: '' }), on('F', { subsector: '' }), on('G', { subsector: 'Petróleo y gas' })];
+  assert.deepEqual(B.ycGrupos(s, ['subsector']), [{ clave: 'Petróleo y gas', n: 1 }, { clave: 'Sin subsector', n: 2 }]);
 });
 
 test('hasta 5 curvas: la primera vez los 5 grupos más grandes; después cada grupo conserva su color', () => {
