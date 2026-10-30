@@ -1800,7 +1800,7 @@ async function reloadCatalog(opts){
     bonds.forEach(b => {
       prev[b.ticker] = {
         precio: b.precio, prevPrecio: b.prevPrecio, vp: b.vp,
-        tir: b.tir, tna: b.tna, dur: b.dur, vol: b.vol,
+        tir: b.tir, tna: b.tna, dur: b.dur, vol: b.vol, volDet: b.volDet,
         bid: b.bid, ask: b.ask, bid_ars: b.bid_ars, ask_ars: b.ask_ars,
         precio_ars: b.precio_ars, precio_usd_eq: b.precio_usd_eq,
         priceSrc: b.priceSrc, manualOverride: b.manualOverride, loaded: b.loaded,
@@ -1845,6 +1845,47 @@ function setDataMode(){} // no-op — mantenido por compatibilidad con llamadas 
 function pn(v){ if(v==null)return null; const n=parseFloat(v); return isNaN(n)?null:n; }
 // Precios D en data912: directamente en % del VN (ej: 105.8). Sin conversión.
 function normPrice(px){ const p=parseFloat(px); return isNaN(p)||p<=0?null:p; }
+
+// ── Volumen operado ───────────────────────────────────────────────────────────
+// En data912 `v` es VALOR NOMINAL operado (coincide con el `volume` de BYMA) y `c` el
+// último precio por 100 VN. El monto efectivo de cada segmento es VN × precio / 100.
+// El volumen del bono es la suma de los tres segmentos en dólares: el de pesos se convierte
+// al MEP (al A3500 en los DL, igual que su precio USD-eq); MEP y cable ya están en USD.
+function segVol(it){
+  if(!it) return null;
+  const vn=pn(it.v); if(!(vn>0)) return null;
+  let px=normPrice(it.c);
+  if(!px){ const bd=normPrice(it.px_bid), ak=normPrice(it.px_ask); px=(bd&&ak)?(bd+ak)/2:(bd||ak); }
+  return { vn, monto: px ? vn*px/100 : null, ops: pn(it.q_op) };
+}
+function calcVolumen(b, itO, itD, itC){
+  const det={ ars:segVol(itO), mep:segVol(itD), cable:segVol(itC) };
+  const mid=(x,y)=>(x&&y)?(x+y)/2:(x||y||null);
+  const fx = b.moneda==='DL' ? mid(FX.a3500Bid,FX.a3500Ask) : mid(FX.mepBid,FX.mepAsk);
+  let usd=0, alguno=false;
+  if(det.ars && det.ars.monto!=null && fx){ det.ars.usd=det.ars.monto/fx; usd+=det.ars.usd; alguno=true; }
+  ['mep','cable'].forEach(k=>{ const s=det[k]; if(s && s.monto!=null){ s.usd=s.monto; usd+=s.monto; alguno=true; } });
+  b.volDet = (det.ars||det.mep||det.cable) ? det : null;
+  b.vol = alguno ? usd : null;
+}
+// 1.250.000 → "1,25 M" · 350.000 → "350 k" · 1.540 → "1,5 k"
+function fmtVolUSD(v){
+  if(v==null) return '—';
+  if(v>=1e6) return (v/1e6).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})+' M';
+  if(v>=1e4) return (v/1e3).toLocaleString('es-AR',{maximumFractionDigits:0})+' k';
+  if(v>=1e3) return (v/1e3).toLocaleString('es-AR',{maximumFractionDigits:1})+' k';
+  return v.toLocaleString('es-AR',{maximumFractionDigits:0});
+}
+function volTitle(b){
+  const d=b.volDet; if(!d) return 'Sin operaciones hoy';
+  const vn=x=>x.toLocaleString('es-AR',{maximumFractionDigits:0})+' VN';
+  const l=['Monto operado hoy en US$ (data912)'];
+  if(d.ars)   l.push('Pesos: '+vn(d.ars.vn)+(d.ars.monto!=null?' · $ '+fmtVolUSD(d.ars.monto):'')
+                     +(d.ars.usd!=null?' ≈ US$ '+fmtVolUSD(d.ars.usd)+(b.moneda==='DL'?' (A3500)':' (MEP)'):''));
+  if(d.mep)   l.push('MEP: '+vn(d.mep.vn)+(d.mep.usd!=null?' · US$ '+fmtVolUSD(d.mep.usd):''));
+  if(d.cable) l.push('Cable: '+vn(d.cable.vn)+(d.cable.usd!=null?' · US$ '+fmtVolUSD(d.cable.usd):''));
+  return l.join('\n');
+}
 
 // Feriados globales. SEED/fallback embebido — la fuente de verdad es la tabla
 // `feriados` de Supabase (loadFeriadosIntoMemory la sobreescribe al iniciar).
@@ -2021,6 +2062,10 @@ async function fetchAll(){
       const base = b.soberano ? b.ticker : b.ticker.slice(0,-1);
       const itO  = b.soberano ? m[base] : m[base+'O'];
 
+      // Volumen: se actualiza aunque el precio esté pisado a mano. Los DL operan sólo en pesos.
+      if(b.moneda==='DL') calcVolumen(b, itO, null, null);
+      else calcVolumen(b, itO, m[base+'D'], m[base+'C']);
+
       if(b.manualOverride){ if(itO||m[base+'D']) hits++; return; }
 
       if(b.moneda==='DL'){
@@ -2044,7 +2089,6 @@ async function fetchAll(){
         b.vp=vp; b.marketVp=vp; b.marketPrecio=b.precio; b.precio_ars=b.precio;
         const a3500Mid=(FX.a3500Bid&&FX.a3500Ask)?(FX.a3500Bid+FX.a3500Ask)/2:(FX.a3500Bid||FX.a3500Ask||null);
         b.precio_usd_eq = (b.precio!=null&&a3500Mid) ? parseFloat((b.precio/a3500Mid).toFixed(4)) : null;
-        const rv=pn(it.v); b.vol=(rv!=null&&rv>0)?parseFloat((rv/1e6).toFixed(2)):null;
         b.open=null; b.precio_cable=null;
         if(b.precio_usd_eq!=null&&b.precio_usd_eq>0){
           recalcTIR(b);
@@ -2078,7 +2122,6 @@ async function fetchAll(){
         b.priceSrc = pMEP ? 'trade' : 'noOp';
         b.vp = itD ? pn(itD.pct_change) : null;
         b.marketVp=b.vp; b.marketPrecio=b.precio;
-        const rv=itD?pn(itD.v):null; b.vol=(rv!=null&&rv>0)?parseFloat((rv/1e6).toFixed(2)):null;
         b.open=null;
         if(b.precio_usd_eq!=null&&b.precio_usd_eq>0){
           recalcTIR(b);   // TIR/TNA/duration de la tabla: siguen sobre el precio MEP
@@ -2642,7 +2685,7 @@ function _setYTW(b, e, pPrice, memo){
 // Guarda en el memo con una cota de memoria (sesiones largas con muchos precios distintos).
 function _memoSet(m,k,v){ if(m.size>128) m.clear(); m.set(k,v); }
 
-function seedDemo(){const rng=(a,b,d=2)=>parseFloat((Math.random()*(b-a)+a).toFixed(d));bonds.forEach(b=>{b.loaded=true;b.precio=rng(70,103);b.vp=rng(-2.5,2.5);b.vol=rng(0.5,20);recalcTIR(b);});document.getElementById('s1').textContent='0 (demo)';}
+function seedDemo(){const rng=(a,b,d=2)=>parseFloat((Math.random()*(b-a)+a).toFixed(d));bonds.forEach(b=>{b.loaded=true;b.precio=rng(70,103);b.vp=rng(-2.5,2.5);b.vol=rng(5e4,2e6,0);recalcTIR(b);});document.getElementById('s1').textContent='0 (demo)';}
 
 // Calcula TIR y TNA para un precio dado, usando los mismos flujos que recalcTIR
 // Devuelve {tir, tna} o null si no se puede calcular
@@ -3124,6 +3167,9 @@ function render(){
                        const tip=bind?('Peor escenario: call '+(b.ytwDesde?b.ytwDesde.split('-').reverse().join('/'):'')+' @ '+b.ytwPrecio
                                       +(corto?' · horizonte corto: retorno del período, sin anualizar':'')):'Peor escenario: a vencimiento (YTM)';
                        return `<span title="${tip}" style="font-size:.72rem;font-weight:600;color:${bind?'var(--amber)':'var(--text2)'}">${txt}${bind?' ◂':''}</span>`; })(),
+      vol:      b.vol!=null
+                  ? `<span title="${volTitle(b)}" style="color:var(--text2);font-size:.68rem;font-variant-numeric:tabular-nums">${fmtVolUSD(b.vol)}</span>`
+                  : `<span title="${volTitle(b)}" style="color:var(--muted2)">—</span>`,
       dur:      `<span style="color:var(--text2)">${b.dur!=null?b.dur.toFixed(1)+'a':'—'}</span>`,
       emision:  `<span style="color:var(--text2);font-size:.62rem">${ef}</span>`,
       venc:     `<span style="color:var(--text2);font-size:.62rem">${vf}</span>`,
@@ -3157,7 +3203,8 @@ const COL_DEFS = [
   {id:'bidTna',   label:'Bid TNA',      sort:'bidTna',   width:80,  visible:true},
   {id:'ask',      label:'Offer',        sort:'ask',      width:90,  visible:true},
   {id:'askTna',   label:'Offer TNA',    sort:'askTna',   width:80,  visible:true},
-  {id:'tir',      label:'TIR %',        sort:'tir',      width:100, visible:false},
+  {id:'vol',      label:'Volumen US$',  sort:'vol',      width:90,  visible:true},
+  {id:'tir',     label:'TIR %',        sort:'tir',      width:100, visible:false},
   {id:'tna',      label:'TNA %',        sort:'tna',      width:80,  visible:false},
   {id:'ytw',      label:'YTW %',        sort:'ytw',      width:85,  visible:false},
   {id:'dur',      label:'Duration',     sort:'dur',      width:80,  visible:true},
@@ -3794,7 +3841,8 @@ function updateLegend(o){
   if(o.anyHist) h+=`<div class="leg-item" title="Sin bid/offer: se usa el último precio operado"><div class="leg-dot" style="background:transparent;border:1.4px dashed var(--muted2)"></div>últ. operado</div>`;
   document.getElementById('chart-legend').innerHTML=h;
 }
-function srt(k){SK===k?SD*=-1:(SK=k,SD=1);document.querySelectorAll('th').forEach(t=>t.classList.remove('asc','desc'));const th=document.querySelector(`th[data-col]`);render();}
+const SORT_DESC_PRIMERO={vol:true};   // el volumen se mira de mayor a menor
+function srt(k){SK===k?SD*=-1:(SK=k,SD=SORT_DESC_PRIMERO[k]?-1:1);document.querySelectorAll('th').forEach(t=>t.classList.remove('asc','desc'));const th=document.querySelector(`th[data-col]`);render();}
 
 // generateCashflows devuelve dias calculados desde today (para saber qué pasó).
 // El descuento T+1 se aplica DESPUÉS en calcFromPanel/recalcTIR remapeando x.dias.
