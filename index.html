@@ -350,6 +350,27 @@ th .resize-handle:hover,th .resize-handle.dragging{background:var(--blue);opacit
 .btn-alerts:hover{background:rgba(251,191,36,.18);}
 .btn-alerts.ringing{animation:ring 2s infinite;}
 @keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,.4)}60%{box-shadow:0 0 0 5px rgba(251,191,36,0)}}
+/* Emisiones nuevas pendientes de aprobación (solo admin) */
+.btn-borr{border:1px solid rgba(45,212,191,.45);background:rgba(45,212,191,.1);color:var(--teal);}
+.btn-borr:hover{background:rgba(45,212,191,.2);}
+.btn-borr .alert-badge{background:var(--teal);}
+.borr-bar{display:none;align-items:center;gap:6px 12px;flex-wrap:wrap;border-radius:6px;padding:9px 15px;margin-bottom:14px;font-size:.62rem;line-height:1.6;background:rgba(45,212,191,.07);border:1px solid rgba(45,212,191,.32);color:var(--text2);}
+.borr-bar.show{display:flex;}
+.borr-bar b{color:var(--teal);}
+.borr-bar .borr-go{font:inherit;font-weight:700;padding:3px 12px;border-radius:20px;cursor:pointer;border:1px solid var(--teal);background:rgba(45,212,191,.14);color:var(--teal);}
+.borr-fuente{font-size:.58rem;line-height:1.65;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:6px;padding:9px 12px;}
+.borr-fuente .k{color:var(--muted2);}
+.borr-fuente .aviso{color:var(--amber);margin-top:4px;}
+.form-group.supuesto .form-input,.form-group.supuesto .form-select{border-color:rgba(251,191,36,.75);box-shadow:0 0 0 1px rgba(251,191,36,.3);}
+.form-group.supuesto .form-label::after{content:' · supuesto';color:var(--amber);font-weight:700;text-transform:none;letter-spacing:0;}
+.mb-call-rows{display:flex;flex-direction:column;gap:5px;margin-bottom:5px;}
+.mb-call-row{display:flex;gap:6px;align-items:center;}
+.mb-call-row .form-input{max-width:170px;}
+.borr-item{display:grid;grid-template-columns:1fr auto;gap:4px 14px;align-items:center;padding:10px 2px;border-bottom:1px solid var(--border);}
+.borr-item .t{font-size:.68rem;font-weight:700;color:var(--text);}
+.borr-item .d{font-size:.58rem;color:var(--muted2);line-height:1.6;font-variant-numeric:tabular-nums;}
+.borr-item .acc{display:flex;gap:6px;grid-row:span 2;}
+.chip-sup{display:inline-block;font-size:.5rem;padding:1px 6px;border-radius:9px;margin:2px 3px 0 0;border:1px solid rgba(251,191,36,.4);color:var(--amber);}
 .alert-badge{display:none;background:#fbbf24;color:#000;font-size:.45rem;font-weight:700;border-radius:9px;padding:1px 5px;margin-left:3px;vertical-align:middle;}
 /* ══ Fase 4 · Postura en móvil ════════════════════════════════════════════════
    Esto es una terminal de escritorio: ocho columnas de tabla y un panel lateral
@@ -481,6 +502,7 @@ window.SUPABASE_CONFIG = {
     <button class="hdr-btn btn-import" onclick="openImportModal()">⬆ Importar Excel</button>
     <button class="hdr-btn btn-add-bond" onclick="openAddModal()">+ Nuevo bono</button>
     <button class="hdr-btn btn-alerts" id="btn-alerts" onclick="openAlertModal()">🔔 Alertas <span class="alert-badge" id="alert-badge"></span></button>
+    <button class="hdr-btn btn-borr" id="btn-borradores" onclick="openBorradores()" style="display:none" title="Emisiones nuevas pendientes de aprobación (admin)">🆕 Emisiones <span class="alert-badge" id="borr-badge"></span></button>
     <button class="hdr-btn" id="btn-ratings" onclick="openRatingsModal()" style="display:none" title="Editar ratings por emisor (admin)">🏷 Ratings</button>
     <button class="hdr-btn" id="btn-admin" onclick="onAdminClick()" style="display:none">🔒 Admin</button>
     <span id="clk"></span>
@@ -565,6 +587,7 @@ window.SUPABASE_CONFIG = {
     <h1 class="h-title">BONOS CORPORATIVOS AR</h1>
     <div class="h-sub">// data912.com + MAE · <span id="bond-count">64</span> instrumentos · Auto-refresh 30s · Click para calculadora</div>
   </div>
+  <div class="borr-bar" id="borr-bar" role="status"></div>
   <div class="alert warn" id="warn-bar"></div>
   <div class="alert err" id="err-bar"></div>
   <div class="alert suc" id="suc-bar"></div>
@@ -1062,6 +1085,7 @@ window.SUPABASE_CONFIG = {
   <div class="modal">
     <div class="modal-head"><div class="modal-title" id="modal-bond-title">Agregar nuevo bono</div><button class="btn-close" aria-label="Cerrar" onclick="closeBondModal()">✕</button></div>
     <div class="modal-body">
+      <div class="borr-fuente" id="mb-borr-info" hidden></div>
       <div class="modal-grid">
         <div class="form-group"><label class="form-label" for="mb-ticker">Ticker * (exacto BYMA)</label><input class="form-input" id="mb-ticker" type="text" placeholder="NUEVO1"></div>
         <div class="form-group"><label class="form-label" for="mb-emisor-sel">Emisor *</label>
@@ -1080,7 +1104,7 @@ window.SUPABASE_CONFIG = {
         <div class="form-group"><label class="form-label" for="mb-inicio-int">Inicio pago intereses</label><input class="form-input" id="mb-inicio-int" type="date"></div>
         <div class="form-group"><label class="form-label" for="mb-venc">Vencimiento *</label><input class="form-input" id="mb-venc" type="date"></div>
         <div class="form-group"><label class="form-label" for="mb-callable">Callable</label>
-          <select class="form-select" id="mb-callable"><option value="No">No</option><option value="Si">Sí</option></select></div>
+          <select class="form-select" id="mb-callable" onchange="onMbCallableChange()"><option value="No">No</option><option value="Si">Sí</option></select></div>
         <div class="form-group"><label class="form-label" for="mb-cupon">Cupón (%)</label><input class="form-input" id="mb-cupon" type="number" step="0.01" placeholder="8.5"></div>
         <div class="form-group"><label class="form-label" for="mb-tipo-cupon">Tipo cupón</label>
           <select class="form-select" id="mb-tipo-cupon"><option value="fijo">Fijo</option><option value="badlar">BADLAR+</option><option value="cer">CER+</option><option value="otro">Otro</option></select></div>
@@ -1093,15 +1117,33 @@ window.SUPABASE_CONFIG = {
         <div class="form-group"><label class="form-label" for="mb-amort">Amortización</label>
           <select class="form-select" id="mb-amort"><option value="bullet">Bullet</option><option value="cuotas">Cuotas</option></select></div>
       </div>
+      <div class="form-group" id="mb-call-wrap" hidden>
+        <label class="form-label">Cronograma de call (callable desde · precio % VN)</label>
+        <div id="mb-call-rows" class="mb-call-rows"></div>
+        <div><button type="button" class="btn-sm add" onclick="addMbCallRow()">+ Agregar condición</button></div>
+      </div>
       <p class="modal-note">* obligatorios. Luego podés abrir la calculadora para cargar el cronograma de amortizaciones si corresponde.</p>
     </div>
     <div class="modal-foot">
+      <button class="btn-secondary" id="mb-btn-descartar" hidden onclick="descartarBorrador(_borrActual&&_borrActual.id)" style="margin-right:auto">Descartar</button>
       <button class="btn-secondary" onclick="closeBondModal()">Cancelar</button>
-      <button class="btn-primary" onclick="saveBond()">Guardar bono</button>
+      <button class="btn-secondary" id="mb-btn-guardar-borr" hidden onclick="guardarBorrador()">Guardar borrador</button>
+      <button class="btn-primary" id="mb-btn-guardar" onclick="guardarFichaBono()">Guardar bono</button>
     </div>
   </div>
 </div>
 
+
+<!-- MODAL EMISIONES NUEVAS (borradores que arma emisiones.py; solo admin) -->
+<div class="modal-overlay" id="modal-borradores" onclick="if(event.target===this)closeBorradores()">
+  <div class="modal" style="width:min(880px,100%)">
+    <div class="modal-head"><div class="modal-title">Emisiones nuevas · pendientes de aprobación</div><button class="btn-close" aria-label="Cerrar" onclick="closeBorradores()">✕</button></div>
+    <div class="modal-body">
+      <p class="modal-note">La corrida diaria arma cada borrador con la licitación del MAE y la ficha técnica de BYMA. Lo marcado como <b style="color:var(--amber)">supuesto</b> no lo publica ninguno de los dos (frecuencia, primer cupón, call, ley): verificalo en el aviso de suscripción antes de aprobar.</p>
+      <div id="borr-list"></div>
+    </div>
+  </div>
+</div>
 
 <!-- MODAL IMPORTAR EXCEL -->
 <div class="modal-overlay" id="modal-import">
@@ -2794,6 +2836,8 @@ function updateAdminUI(){
   // Botón de editor de ratings: solo admin logueado
   const rbtn = document.getElementById('btn-ratings');
   if(rbtn) rbtn.style.display = (Catalog.isRemote && Catalog.isLoggedIn()) ? 'inline-flex' : 'none';
+  // Emisiones nuevas pendientes de aprobación: se consultan al entrar y cada 10 minutos
+  refreshBorradores();
 }
 function onAdminClick(){
   if(Catalog.isLoggedIn()){
@@ -5198,8 +5242,11 @@ function openAddModal(){
     setTimeout(onAdminClick, 300);
     return;
   }
+  salirModoBorrador();
   document.getElementById('modal-bond-title').textContent='Agregar nuevo bono';
   ['mb-ticker','mb-cupon'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('mb-callable').value='No';
+  setMbCallRows([]);
   document.getElementById('mb-venc').value='';
   document.getElementById('mb-emisor-new').style.display='none';
   document.getElementById('mb-emisor-new').value='';
@@ -5337,35 +5384,48 @@ async function deleteUserBond(tk){
   document.getElementById('total-count').textContent=bonds.length;
   render();
 }
-async function saveBond(){
+// Bono armado con lo que dice la ficha (alta manual o borrador de una emisión nueva).
+// null si faltan los obligatorios.
+function leerFichaBono(){
   const tk=(document.getElementById('mb-ticker').value||'').trim().toUpperCase();
   const selVal=document.getElementById('mb-emisor-sel').value;
   const em=(selVal==='__new__'
     ? document.getElementById('mb-emisor-new').value.trim()
     : selVal).trim();
   const vc=document.getElementById('mb-venc').value;
-  if(!tk||!em||!vc){toast('Ticker, emisor y vencimiento son obligatorios.');return;}
-  if(em===''&&selVal==='__new__'){toast('Ingresá el nombre del nuevo emisor.');return;}
-  if(bonds.find(b=>b.ticker===tk)){if(!confirm(`El ticker ${tk} ya existe. ¿Sobreescribir?`))return;bonds=bonds.filter(b=>b.ticker!==tk);}
-  const amortTipo=document.getElementById('mb-amort').value;
-
-  const newBond={
+  if(!tk||!em||!vc){toast('Ticker, emisor y vencimiento son obligatorios.');return null;}
+  const callable=document.getElementById('mb-callable').value;
+  return {
     ticker:tk, emisor:em,
     sector:(RATINGS[normEmisor(em)]||{}).sector||'',  // sector es propiedad del emisor (editable en el modal de ratings)
     moneda:document.getElementById('mb-moneda').value,
     leg:document.getElementById('mb-leg').value,
     jur:document.getElementById('mb-jur').value,
     venc:vc,
-    callable:document.getElementById('mb-callable').value,
+    callable,
     cupon:parseFloat(document.getElementById('mb-cupon').value)||0,
     tipo_cupon:'fijo',
     periodicidad:(()=>{const p=parseInt(document.getElementById('mb-periodicidad').value);return isNaN(p)?6:p;})(),
     base_dias:document.getElementById('mb-base-dias').value,
     devengo:document.getElementById('mb-devengo').value,
-    amort:amortTipo,
+    amort:document.getElementById('mb-amort').value,
     amortSched:[],
+    callSched: callable==='Si' ? leerMbCallRows() : [],
     fecha_emision:document.getElementById('mb-emision')?.value||'',
     fecha_inicio_int:document.getElementById('mb-inicio-int')?.value||'',
+  };
+}
+async function saveBond(){
+  const nb=leerFichaBono(); if(!nb) return;
+  await guardarEnCatalogo(nb);
+}
+// Agrega el bono al catálogo: en memoria y, con sesión de admin, en Supabase.
+// Devuelve true si quedó guardado en el catálogo compartido (o en el local, sin Supabase).
+async function guardarEnCatalogo(nb){
+  const tk=nb.ticker;
+  if(bonds.find(b=>b.ticker===tk)){if(!confirm(`El ticker ${tk} ya existe. ¿Sobreescribir?`))return false;bonds=bonds.filter(b=>b.ticker!==tk);}
+  const newBond={
+    ...nb,
     precio:null,prevPrecio:null,vp:null,tir:null,tna:null,dur:null,
     vol:null,bid:null,ask:null,open:null,loaded:false,
     isUserBond:true
@@ -5376,16 +5436,19 @@ async function saveBond(){
   closeBondModal();
 
   // Si Supabase está activo y hay sesión, persistir remoto
+  let ok=true;
   if(Catalog.isRemote && Catalog.isLoggedIn()){
     const r = await Catalog.upsert(newBond);
     if(!r.ok){
       showErr(`No se pudo guardar en la nube: ${r.error}`);
+      ok=false;
     } else {
       showSuc(`✓ Bono ${tk} agregado al catálogo compartido.`);
     }
   } else if(Catalog.isRemote && !Catalog.isLoggedIn()){
     showWarn(`Bono ${tk} agregado solo en este navegador. Iniciá sesión como admin para compartirlo.`);
     setTimeout(hideAlerts, 4000);
+    ok=false;
   } else {
     showSuc(`✓ Bono ${tk} agregado a tu base permanente.`);
   }
@@ -5393,6 +5456,187 @@ async function saveBond(){
   persistBonds();
   document.getElementById('total-count').textContent=bonds.length;
   render();
+  return ok;
+}
+
+// ── Cronograma de call en la ficha ───────────────────────────────────────────
+function addMbCallRow(desde='', precio=''){
+  const row=document.createElement('div'); row.className='mb-call-row';
+  row.innerHTML=`<input class="form-input" type="date" value="${escA(desde)}" aria-label="Callable desde">`
+    +`<input class="form-input" type="number" step="0.01" placeholder="100" value="${escA(precio)}" aria-label="Precio de call (% VN)">`
+    +`<button type="button" class="btn-sm del" aria-label="Quitar condición" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById('mb-call-rows').appendChild(row);
+}
+function setMbCallRows(sched){
+  document.getElementById('mb-call-rows').innerHTML='';
+  (sched||[]).forEach(c=>addMbCallRow(c.desde||'', c.precio!=null?c.precio:''));
+  onMbCallableChange();
+}
+function leerMbCallRows(){
+  return [...document.querySelectorAll('#mb-call-rows .mb-call-row')].map(r=>{
+    const [d,p]=r.querySelectorAll('input'); return {desde:d.value, precio:parseFloat(p.value)};
+  }).filter(c=>c.desde && !isNaN(c.precio)).sort((a,b)=>a.desde.localeCompare(b.desde));
+}
+function onMbCallableChange(){
+  const si=document.getElementById('mb-callable').value==='Si';
+  document.getElementById('mb-call-wrap').hidden=!si;
+  if(si && !document.querySelector('#mb-call-rows .mb-call-row')) addMbCallRow();
+}
+
+// ── Emisiones nuevas: borradores de calculadora ──────────────────────────────
+// Los arma la corrida diaria (ons/byma-reporter/emisiones.py) con la licitación del MAE
+// y la ficha de BYMA, en la tabla bonos_borrador (solo admin). Acá se revisan, se editan y
+// se aprueban: aprobar = agregar el bono al catálogo con la misma ficha del alta manual.
+let BORRADORES=[], _borrActual=null, _borrTimer=null;
+const BORR_CAMPOS={            // campo del borrador → [input de la ficha, nombre para mostrar]
+  ticker:['mb-ticker','ticker'], cupon:['mb-cupon','cupón'], periodicidad:['mb-periodicidad','frecuencia'],
+  fecha_inicio_int:['mb-inicio-int','primer cupón'], amort:['mb-amort','amortización'],
+  callable:['mb-callable','call'], leg:['mb-leg','ley'], jur:['mb-jur','plaza de pago'],
+  base_dias:['mb-base-dias','base'], venc:['mb-venc','vencimiento'],
+};
+async function refreshBorradores(){
+  const db=Catalog.db();
+  if(!db){ BORRADORES=[]; pintarAvisoBorradores(); return; }
+  try{
+    const {data,error}=await db.from('bonos_borrador').select('*').eq('estado','pendiente').order('created_at');
+    if(error) throw error;
+    BORRADORES=data||[];
+  }catch(e){ console.warn('[borradores]', e.message||e); BORRADORES=[]; }   // sin la tabla: sin aviso
+  pintarAvisoBorradores();
+  if(document.getElementById('modal-borradores').classList.contains('open')) renderBorradores();
+  if(!_borrTimer) _borrTimer=setInterval(()=>{ if(Catalog.isLoggedIn()) refreshBorradores(); }, 10*60*1000);
+}
+function pintarAvisoBorradores(){
+  const n=Catalog.isLoggedIn() ? BORRADORES.length : 0;
+  const btn=document.getElementById('btn-borradores'), badge=document.getElementById('borr-badge');
+  const bar=document.getElementById('borr-bar');
+  btn.style.display=n?'inline-flex':'none';
+  badge.textContent=n; badge.style.display=n?'inline-block':'none';
+  if(!n){ bar.classList.remove('show'); bar.innerHTML=''; return; }
+  const nombres=BORRADORES.slice(0,3).map(d=>escA(d.titulo.replace(/^ON\s+/i,''))).join(' · ')
+    + (n>3 ? ` y ${n-3} más` : '');
+  bar.innerHTML=`<span>🆕 <b>${n} ${n>1?'emisiones nuevas pendientes':'emisión nueva pendiente'} de aprobación</b>: ${nombres}</span>`
+    +`<button type="button" class="borr-go" onclick="openBorradores()">Revisar</button>`;
+  bar.classList.add('show');
+}
+function openBorradores(){ renderBorradores(); document.getElementById('modal-borradores').classList.add('open'); }
+function closeBorradores(){ document.getElementById('modal-borradores').classList.remove('open'); }
+const _fechaDMY=iso=>iso?String(iso).slice(0,10).split('-').reverse().join('/'):'—';
+function renderBorradores(){
+  const box=document.getElementById('borr-list');
+  if(!BORRADORES.length){ box.innerHTML='<p class="modal-note">No hay emisiones pendientes.</p>'; return; }
+  box.innerHTML=BORRADORES.map(d=>{
+    const b=d.bono||{}, f=d.fuente||{}, pos=f.tickers_posibles||[];
+    const tk=d.ticker ? `<b style="color:var(--text)">${escA(d.ticker)}</b>`
+      : pos.length ? `ticker: ${pos.map(escA).join(' o ')}` : 'sin ticker todavía (BYMA no la lista)';
+    const sup=(d.supuestos||[]).filter(k=>BORR_CAMPOS[k]).map(k=>`<span class="chip-sup">${BORR_CAMPOS[k][1]}</span>`).join('');
+    return `<div class="borr-item"><div class="t">${escA(d.titulo)}${d.editado?' <span class="chip-sup" style="color:var(--teal);border-color:rgba(45,212,191,.4)">editado</span>':''}</div>`
+      +`<div class="acc"><button type="button" class="btn-primary" onclick="abrirBorrador(${d.id})">Revisar</button>`
+      +`<button type="button" class="btn-secondary" onclick="descartarBorrador(${d.id})">Descartar</button></div>`
+      +`<div class="d">${tk} · ${escA(b.emisor||'')} · ${escA(b.moneda||'')} · emisión ${_fechaDMY(b.fecha_emision)} → vto ${_fechaDMY(b.venc)}`
+      +` · ${b.cupon!=null?escA(b.cupon)+'%':'tasa —'}${sup?'<br>Supuestos: '+sup:''}</div></div>`;
+  }).join('');
+}
+function salirModoBorrador(){
+  _borrActual=null;
+  document.getElementById('mb-borr-info').hidden=true;
+  document.getElementById('mb-btn-descartar').hidden=true;
+  document.getElementById('mb-btn-guardar-borr').hidden=true;
+  document.getElementById('mb-btn-guardar').textContent='Guardar bono';
+  document.querySelectorAll('#modal-bond .supuesto').forEach(g=>g.classList.remove('supuesto'));
+}
+// Abre la ficha de alta con el borrador cargado y lo supuesto marcado en amarillo
+function abrirBorrador(id){
+  const d=BORRADORES.find(x=>x.id===id); if(!d) return;
+  closeBorradores();
+  openAddModal();
+  _borrActual=d;
+  const b=d.bono||{}, f=d.fuente||{}, m=f.mae||{}, y=f.byma;
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el && v!=null && v!=='') el.value=String(v); };
+  document.getElementById('modal-bond-title').textContent='Emisión nueva · '+d.titulo;
+  set('mb-ticker', d.ticker||b.ticker||'');
+  const sel=document.getElementById('mb-emisor-sel');
+  if([...sel.options].some(o=>o.value===b.emisor)) sel.value=b.emisor;
+  else { sel.value='__new__'; onEmisorSelChange('__new__'); document.getElementById('mb-emisor-new').value=b.emisor||''; }
+  set('mb-moneda', b.moneda); onMbMonedaChange();
+  set('mb-leg', b.leg); set('mb-jur', b.jur);
+  set('mb-emision', b.fecha_emision); set('mb-inicio-int', b.fecha_inicio_int); set('mb-venc', b.venc);
+  set('mb-callable', b.callable||'No'); set('mb-cupon', b.cupon); set('mb-tipo-cupon', b.tipo_cupon);
+  set('mb-periodicidad', b.periodicidad); set('mb-base-dias', b.base_dias); set('mb-devengo', b.devengo);
+  set('mb-amort', b.amort);
+  setMbCallRows(b.call_sched||[]);
+  (d.supuestos||[]).forEach(k=>{ const c=BORR_CAMPOS[k]; const g=c&&document.getElementById(c[0])?.closest('.form-group'); if(g) g.classList.add('supuesto'); });
+  if((d.supuestos||[]).includes('callable')) document.getElementById('mb-call-wrap').classList.add('supuesto');
+  // De dónde salió cada dato
+  const fila=(k,v)=>v?`<div><span class="k">${k}:</span> ${escA(v)}</div>`:'';
+  document.getElementById('mb-borr-info').innerHTML=
+      fila('MAE', [m.titulo, m.valor_Corte, m.duration?'duration '+m.duration:'', m.monto_Adjudicado?'adjudicado '+Number(m.monto_Adjudicado).toLocaleString('es-AR')+' '+(m.monedaMonto||''):''].filter(Boolean).join(' · '))
+    + fila('Observaciones', m.observaciones)
+    + (y ? fila('BYMA', [y.denominacion, y.emisor, y.interes, y.formaAmortizacion?'amortización: '+y.formaAmortizacion:'', y.codigoIsin?'ISIN '+y.codigoIsin:''].filter(Boolean).join(' · '))
+         : fila('BYMA', 'todavía sin ficha técnica'))
+    + ((f.tickers_posibles||[]).length ? fila('Tickers posibles', f.tickers_posibles.join(' o ')+' (mismo vencimiento y emisor: elegí el de esta clase)') : '')
+    + ((d.supuestos||[]).length ? `<div class="aviso">Lo marcado como supuesto no lo publican ni el MAE ni BYMA: verificalo en el aviso de suscripción.</div>` : '');
+  document.getElementById('mb-borr-info').hidden=false;
+  document.getElementById('mb-btn-descartar').hidden=false;
+  document.getElementById('mb-btn-guardar-borr').hidden=false;
+  document.getElementById('mb-btn-guardar').textContent='Aprobar y agregar al catálogo';
+}
+// El bono de la ficha con las columnas de `bonds` (como lo guarda el borrador)
+function aFilaBorrador(nb, base){
+  return { ...base, ticker:nb.ticker, emisor:nb.emisor, sector:nb.sector||base.sector||'', leg:nb.leg, jur:nb.jur,
+           fecha_emision:nb.fecha_emision||null, fecha_inicio_int:nb.fecha_inicio_int||null, venc:nb.venc,
+           cupon:nb.cupon, tipo_cupon:nb.tipo_cupon, periodicidad:nb.periodicidad, base_dias:nb.base_dias,
+           devengo:nb.devengo, amort:nb.amort, callable:nb.callable, moneda:nb.moneda,
+           amort_sched:nb.amortSched||[], call_sched:nb.callSched||[] };
+}
+// Guardar de la ficha: en el alta manual guarda el bono; con un borrador abierto, lo aprueba
+async function guardarFichaBono(){
+  if(!_borrActual) return saveBond();
+  const d=_borrActual, nb=leerFichaBono(); if(!nb) return;
+  nb.isin=(d.bono||{}).isin||'';
+  nb.valor_residual=(d.bono||{}).valor_residual||1;
+  if(!await guardarEnCatalogo(nb)) return;            // no se guardó: el borrador sigue pendiente
+  const db=Catalog.db();
+  const {error}=db ? await db.from('bonos_borrador').update({estado:'aprobado', ticker:nb.ticker,
+      bono:aFilaBorrador(nb, d.bono||{}), resuelto_at:new Date().toISOString()}).eq('id', d.id) : {error:{message:'sin sesión'}};
+  // Si no se pudo marcar, la corrida de mañana lo cierra sola al ver el bono en el catálogo
+  if(error) console.warn('[borradores] aprobado pero sin marcar:', error.message);
+  salirModoBorrador();
+  refreshBorradores();
+}
+// Guarda lo editado sin aprobar. Lo que cambiaste deja de figurar como supuesto, y la
+// corrida diaria ya no pisa el borrador (solo completa el ticker si faltaba).
+async function guardarBorrador(){
+  const d=_borrActual; if(!d) return;
+  const tk=(document.getElementById('mb-ticker').value||'').trim().toUpperCase();
+  const selVal=document.getElementById('mb-emisor-sel').value;
+  const em=(selVal==='__new__' ? document.getElementById('mb-emisor-new').value : selVal).trim();
+  const vc=document.getElementById('mb-venc').value;
+  if(!em||!vc){ toast('El borrador necesita al menos emisor y vencimiento.'); return; }
+  // leerFichaBono pide ticker: el borrador puede guardarse sin él (BYMA puede no listarla aún)
+  const tkInp=document.getElementById('mb-ticker'); tkInp.value=tk||'SIN-TICKER';
+  const nb=leerFichaBono(); tkInp.value=tk;
+  if(!nb) return;
+  nb.ticker=tk;
+  const fila=aFilaBorrador(nb, d.bono||{});
+  const cambio=k=>String((d.bono||{})[k]??'')!==String(fila[k]??'')
+    || (k==='callable' && JSON.stringify((d.bono||{}).call_sched||[])!==JSON.stringify(fila.call_sched));
+  const supuestos=(d.supuestos||[]).filter(k=>!cambio(k));
+  const db=Catalog.db(); if(!db){ showErr('Iniciá sesión como admin.'); return; }
+  const {error}=await db.from('bonos_borrador').update({bono:fila, ticker:tk||null, supuestos, editado:true}).eq('id', d.id);
+  if(error){ showErr('No se pudo guardar el borrador: '+error.message); return; }
+  closeBondModal(); salirModoBorrador();
+  showSuc('✓ Borrador guardado.'); setTimeout(hideAlerts, 3000);
+  refreshBorradores();
+}
+async function descartarBorrador(id){
+  const d=BORRADORES.find(x=>x.id===id); if(!d) return;
+  if(!confirm(`¿Descartar «${d.titulo}»? No se va a volver a proponer.`)) return;
+  const db=Catalog.db(); if(!db){ showErr('Iniciá sesión como admin.'); return; }
+  const {error}=await db.from('bonos_borrador').update({estado:'descartado', resuelto_at:new Date().toISOString()}).eq('id', id);
+  if(error){ showErr('No se pudo descartar: '+error.message); return; }
+  if(_borrActual && _borrActual.id===id){ closeBondModal(); salirModoBorrador(); }
+  refreshBorradores();
 }
 
 // FIX #4: importar desde Excel
