@@ -363,6 +363,13 @@ th .resize-handle:hover,th .resize-handle.dragging{background:var(--blue);opacit
 .borr-fuente .aviso{color:var(--amber);margin-top:4px;}
 .form-group.supuesto .form-input,.form-group.supuesto .form-select{border-color:rgba(251,191,36,.75);box-shadow:0 0 0 1px rgba(251,191,36,.3);}
 .form-group.supuesto .form-label::after{content:' · supuesto';color:var(--amber);font-weight:700;text-transform:none;letter-spacing:0;}
+.form-group.del-aviso .form-input,.form-group.del-aviso .form-select{border-color:rgba(45,212,191,.55);}
+.form-group.del-aviso .form-label::after{content:' · aviso';color:var(--teal);font-weight:700;text-transform:none;letter-spacing:0;}
+.borr-fuente .docs a{color:var(--teal);text-decoration:none;margin-right:10px;white-space:nowrap;}
+.borr-fuente .docs a:hover{text-decoration:underline;}
+.borr-fuente details{margin-top:4px;}
+.borr-fuente summary{cursor:pointer;color:var(--teal);}
+.borr-fuente .cita{display:block;color:var(--muted2);font-style:italic;margin:0 0 4px 10px;}
 .mb-call-rows{display:flex;flex-direction:column;gap:5px;margin-bottom:5px;}
 .mb-call-row{display:flex;gap:6px;align-items:center;}
 .mb-call-row .form-input{max-width:170px;}
@@ -5492,8 +5499,40 @@ const BORR_CAMPOS={            // campo del borrador → [input de la ficha, nom
   ticker:['mb-ticker','ticker'], cupon:['mb-cupon','cupón'], periodicidad:['mb-periodicidad','frecuencia'],
   fecha_inicio_int:['mb-inicio-int','primer cupón'], amort:['mb-amort','amortización'],
   callable:['mb-callable','call'], leg:['mb-leg','ley'], jur:['mb-jur','plaza de pago'],
-  base_dias:['mb-base-dias','base'], venc:['mb-venc','vencimiento'],
+  base_dias:['mb-base-dias','base'], venc:['mb-venc','vencimiento'], fecha_emision:['mb-emision','emisión'],
 };
+// Documentos de una licitación del MAE (licitaciones.archivos y fuente.aviso.docs de un borrador)
+const DOC_MAE_TIPO={resultados:'Aviso de resultados', resultados_compl:'Resultados (complementario)',
+  suscripcion:'Aviso de suscripción', complementario:'Aviso complementario', suplemento:'Suplemento de prospecto',
+  prospecto:'Prospecto', resumen:'Resumen del MAE', otro:'Documento'};
+const DOC_MAE_ORDEN=Object.keys(DOC_MAE_TIPO);
+// Tipo de documento por el nombre del archivo del MAE (igual que avisos.tipo_doc en Python)
+function docTipoMae(nombre){
+  const n=String(nombre||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+  if(/resultad|\brdos\b/.test(n)) return /complementari/.test(n)?'resultados_compl':'resultados';
+  if(/suscrip/.test(n)) return 'suscripcion';
+  if(/complementari|adenda|enmienda|rectificativ/.test(n)) return 'complementario';
+  if(/suplemento/.test(n)) return 'suplemento';
+  if(/prospecto/.test(n)) return 'prospecto';
+  if(/resumen/.test(n)) return 'resumen';
+  return 'otro';
+}
+function docsMaeOrdenados(docs){
+  return (docs||[]).filter(d=>d&&d.url).slice()
+    .sort((a,b)=>DOC_MAE_ORDEN.indexOf(a.tipo)-DOC_MAE_ORDEN.indexOf(b.tipo));
+}
+// Valor leído de un aviso, para mostrar: '3 meses', '22/04/2027', 'cuotas: 50% 22/10/2028 …'
+function valorAvisoTxt(k, c){
+  const f=v=>String(v).slice(0,10).split('-').reverse().join('/');
+  const v=c.valor;
+  if(k==='periodicidad') return v+' '+(v==1?'mes':'meses');
+  if(['fecha_emision','venc','fecha_inicio_int'].includes(k)) return f(v)+(c.calculado?' (calculada)':'');
+  if(k==='cupon') return v+'%';
+  if(k==='amort' && v==='cuotas') return 'cuotas'+((c.sched||[]).length?': '+c.sched.map(x=>x.pct+'% '+f(x.fecha)).join(', '):' (sin cronograma)');
+  if(k==='callable' && v==='Si') return 'sí'+((c.sched||[]).length?': '+c.sched.map(x=>'desde '+f(x.desde)+' a '+x.precio+'%').join(', '):' (sin fechas ni precios)');
+  if(k==='base_dias') return ({act365:'ACT/365', '180_360':'30/360', act360:'ACT/360'})[v]||v;
+  return String(v);
+}
 async function refreshBorradores(){
   const db=Catalog.db();
   if(!db){ BORRADORES=[]; pintarAvisoBorradores(); return; }
@@ -5544,6 +5583,7 @@ function salirModoBorrador(){
   document.getElementById('mb-btn-guardar-borr').hidden=true;
   document.getElementById('mb-btn-guardar').textContent='Guardar bono';
   document.querySelectorAll('#modal-bond .supuesto').forEach(g=>g.classList.remove('supuesto'));
+  document.querySelectorAll('#modal-bond .del-aviso').forEach(g=>{ g.classList.remove('del-aviso'); g.removeAttribute('title'); });
 }
 // Abre la ficha de alta con el borrador cargado y lo supuesto marcado en amarillo
 function abrirBorrador(id){
@@ -5567,19 +5607,43 @@ function abrirBorrador(id){
   setMbCallRows(b.call_sched||[]);
   (d.supuestos||[]).forEach(k=>{ const c=BORR_CAMPOS[k]; const g=c&&document.getElementById(c[0])?.closest('.form-group'); if(g) g.classList.add('supuesto'); });
   if((d.supuestos||[]).includes('callable')) document.getElementById('mb-call-wrap').classList.add('supuesto');
+  // Lo que salió de los avisos del MAE: en verde, con la cita al pasar el mouse
+  const av=f.aviso||{}, avc=av.campos||{};
+  Object.entries(avc).forEach(([k,c])=>{
+    if((d.supuestos||[]).includes(k) || !BORR_CAMPOS[k]) return;
+    const g=document.getElementById(BORR_CAMPOS[k][0])?.closest('.form-group'); if(!g) return;
+    g.classList.add('del-aviso'); g.title='Del '+(DOC_MAE_TIPO[docTipoMae(c.doc)]||'aviso').toLowerCase()+': «'+c.cita+'»';
+  });
   // De dónde salió cada dato
   const fila=(k,v)=>v?`<div><span class="k">${k}:</span> ${escA(v)}</div>`:'';
+  const docs=docsMaeOrdenados(av.docs).filter(x=>!['prospecto','resumen'].includes(x.tipo));
+  const nombreCampo=k=>(BORR_CAMPOS[k]||[,({isin:'ISIN'})[k]||k])[1];
+  const avisoHTML=Object.keys(avc).length
+    ? `<details><summary>Lo que dicen los avisos (${Object.keys(avc).length} datos)</summary>`
+      + Object.entries(avc).map(([k,c])=>`<div><span class="k">${escA(nombreCampo(k))}:</span> ${escA(valorAvisoTxt(k,c))}`
+          +`<span class="cita">«${escA(c.cita)}» — ${escA(DOC_MAE_TIPO[docTipoMae(c.doc)]||c.doc||'')}</span></div>`).join('')
+      + `</details>` : '';
+  const sched=(b.amort==='cuotas' && (b.amort_sched||[]).length) ? b.amort_sched.map(x=>x.pct+'% '+_fechaDMY(x.fecha)).join(', ') : '';
   document.getElementById('mb-borr-info').innerHTML=
       fila('MAE', [m.titulo, m.valor_Corte, m.duration?'duration '+m.duration:'', m.monto_Adjudicado?'adjudicado '+Number(m.monto_Adjudicado).toLocaleString('es-AR')+' '+(m.monedaMonto||''):''].filter(Boolean).join(' · '))
     + fila('Observaciones', m.observaciones)
     + (y ? fila('BYMA', [y.denominacion, y.emisor, y.interes, y.formaAmortizacion?'amortización: '+y.formaAmortizacion:'', y.codigoIsin?'ISIN '+y.codigoIsin:''].filter(Boolean).join(' · '))
          : fila('BYMA', 'todavía sin ficha técnica'))
     + ((f.tickers_posibles||[]).length ? fila('Tickers posibles', f.tickers_posibles.join(' o ')+' (mismo vencimiento y emisor: elegí el de esta clase)') : '')
-    + ((d.supuestos||[]).length ? `<div class="aviso">Lo marcado como supuesto no lo publican ni el MAE ni BYMA: verificalo en el aviso de suscripción.</div>` : '');
+    + (docs.length ? `<div class="docs"><span class="k">Avisos:</span> `+docs.map(x=>`<a href="${escA(x.url)}" target="_blank" rel="noopener">${escA(DOC_MAE_TIPO[x.tipo]||x.nombre)} ↗</a>`).join('')+`</div>` : '')
+    + (sched ? fila('Cronograma de amortización (del aviso, se guarda al aprobar)', sched) : '')
+    + avisoHTML
+    + ((d.supuestos||[]).length ? `<div class="aviso">Lo marcado como supuesto no está en los avisos ni en BYMA: verificalo en el suplemento de prospecto${docs.some(x=>x.tipo==='suplemento')?' (enlace arriba)':''}.</div>` : '');
   document.getElementById('mb-borr-info').hidden=false;
   document.getElementById('mb-btn-descartar').hidden=false;
   document.getElementById('mb-btn-guardar-borr').hidden=false;
   document.getElementById('mb-btn-guardar').textContent='Aprobar y agregar al catálogo';
+}
+// La ficha no edita el cronograma de amortización: si sigue en cuotas, se conserva el del
+// borrador (el que leyó la corrida del aviso de resultados)
+function cronogramaBorrador(nb, d){
+  if(nb.amort!=='cuotas') return [];
+  return (nb.amortSched||[]).length ? nb.amortSched : ((d.bono||{}).amort_sched||[]);
 }
 // El bono de la ficha con las columnas de `bonds` (como lo guarda el borrador)
 function aFilaBorrador(nb, base){
@@ -5595,6 +5659,7 @@ async function guardarFichaBono(){
   const d=_borrActual, nb=leerFichaBono(); if(!nb) return;
   nb.isin=(d.bono||{}).isin||'';
   nb.valor_residual=(d.bono||{}).valor_residual||1;
+  nb.amortSched=cronogramaBorrador(nb, d);
   if(!await guardarEnCatalogo(nb)) return;            // no se guardó: el borrador sigue pendiente
   const db=Catalog.db();
   const {error}=db ? await db.from('bonos_borrador').update({estado:'aprobado', ticker:nb.ticker,
@@ -5618,6 +5683,7 @@ async function guardarBorrador(){
   const nb=leerFichaBono(); tkInp.value=tk;
   if(!nb) return;
   nb.ticker=tk;
+  nb.amortSched=cronogramaBorrador(nb, d);
   const fila=aFilaBorrador(nb, d.bono||{});
   const cambio=k=>String((d.bono||{})[k]??'')!==String(fila[k]??'')
     || (k==='callable' && JSON.stringify((d.bono||{}).call_sched||[])!==JSON.stringify(fila.call_sched));
@@ -7997,6 +8063,8 @@ body.lic-mode #view-lic{display:block}
 #view-lic .lic-det .bloque{margin-top:11px;font-size:.64rem;color:#94a3b8;line-height:1.5;overflow-wrap:anywhere}
 #view-lic .lic-det .bloque b{display:block;color:#cfe0f5;font-size:.58rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
 #view-lic .lic-det .acc{display:flex;flex-wrap:wrap;gap:6px;margin-top:13px}
+#view-lic .lic-det .lic-docs a{display:block;color:#60a5fa;text-decoration:none;font-size:.66rem;padding:2px 0}
+#view-lic .lic-det .lic-docs a:hover{text-decoration:underline}
 #view-lic .lic-det .lic-prox-list{grid-template-columns:minmax(0,1fr)}
 /* Lista */
 #view-lic .lic-lista-wrap{overflow-x:auto;border:1px solid #1e2d42;border-radius:8px}
@@ -8488,6 +8556,8 @@ const LICIT=(function(){
       +'<h3>'+esc(r.titulo)+'</h3><div class="em">'+esc(r.emisor||r._emi)+'</div>'
       +'<dl>'+filasDL.map(([k,v,c])=>'<dt>'+k+'</dt><dd'+(c?' class="'+c+'"':'')+'>'+esc(v)+'</dd>').join('')+'</dl>'
       +(r.detalle?'':'<div class="bloque">Todavía no está el detalle de esta licitación (montos y resultado): por ahora, el título y el horario del calendario del MAE.</div>')
+      +((r.archivos||[]).length?'<div class="bloque lic-docs"><b>Documentos</b>'+docsMaeOrdenados(r.archivos).map(x=>
+          '<a href="'+esc(x.url)+'" target="_blank" rel="noopener" title="'+esc(x.nombre)+'">'+esc(DOC_MAE_TIPO[x.tipo]||x.nombre)+' ↗</a>').join('')+'</div>':'')
       +(r.colocador?'<div class="bloque"><b>Colocadores</b>'+esc(r.colocador)+'</div>':'')
       +(r.observaciones?'<div class="bloque"><b>Observaciones</b>'+esc(r.observaciones)+'</div>':'')
       +'<div class="acc">'+acc.join('')+'</div>';

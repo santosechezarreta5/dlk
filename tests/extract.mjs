@@ -68,6 +68,8 @@ const EXPORTA = [
   // calendario de licitaciones
   'licFechaAR', 'licHorario', 'licEstado', 'licCorto', 'licTitulo', 'licEmisor', 'licMesRango', 'licSuave',
   'licSemanas', 'licMonto', 'licPlazo',
+  // documentos del MAE y borradores
+  'DOC_MAE_TIPO', 'docTipoMae', 'docsMaeOrdenados', 'valorAvisoTxt', 'cronogramaBorrador',
 ];
 
 export async function cargar() {
@@ -112,6 +114,9 @@ export async function cargar() {
     linea(src, 'const LIC_PROV='),
     linea(src, 'const LIC_SIGLAS='),
     ...['licFechaAR', 'licHorario', 'licEstado', 'licCorto', 'licTitulo', 'licEmisor', 'licMesRango', 'licSuave', 'licSemanas', 'licMonto', 'licPlazo'].map(n => func(src, n)),
+    objeto(src, 'DOC_MAE_TIPO'),
+    linea(src, 'const DOC_MAE_ORDEN='),
+    ...['docTipoMae', 'docsMaeOrdenados', 'valorAvisoTxt', 'cronogramaBorrador'].map(n => func(src, n)),
     `export { ${EXPORTA.join(', ')}, YTC_DIAS_CORTO };`,
   ];
   const mod = partes.join('\n\n');
