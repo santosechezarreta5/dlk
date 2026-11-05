@@ -7897,6 +7897,7 @@ body.lic-mode #main-content, body.lic-mode #calc-panel{display:none !important}
 #view-lic{display:none;padding:16px 22px;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif;
   --lic-on:#3987e5;--lic-provincia:#d95926;--lic-nacion:#199e70;--lic-ff:#c98500;--lic-pyme:#d55181;--lic-otros:#9085e9}
 body.lic-mode #view-lic{display:block}
+#view-lic [hidden]{display:none !important}
 #view-lic .lic-h{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:#e2e8f0;margin:6px 0 4px}
 #view-lic .lic-note{color:#94a3b8;font-size:.68rem;margin:0 0 12px;max-width:860px;line-height:1.5}
 #view-lic .lic-bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-bottom:10px}
@@ -7912,14 +7913,41 @@ body.lic-mode #view-lic{display:block}
 #view-lic .lic-seg .lic-btn:last-child{border-radius:0 5px 5px 0;border-left:none}
 #view-lic .lic-seg .lic-btn.on{background:#1F3864;color:#fff;border-color:#2E75B6}
 #view-lic .lic-upd{margin-left:auto;font-size:.64rem;color:#7f92ab}
-#view-lic .lic-filtros{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:0 0 12px}
-#view-lic .lic-fg{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
-#view-lic .lic-fl{font-size:.56rem;color:#7f92ab;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-right:2px}
-#view-lic .lic-f{font:inherit;font-size:.68rem;padding:4px 10px 4px 8px;border:1px solid #1e2d42;border-radius:999px;background:#0c1018;color:#7f92ab;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-#view-lic .lic-f .sw{width:9px;height:9px;border-radius:2px;background:var(--c,#64748b);opacity:.3}
-#view-lic .lic-f.on{color:#e2e8f0;border-color:#2b3f5c;background:#11243f}
-#view-lic .lic-f.on .sw{opacity:1}
-#view-lic .lic-f .n{color:#7f92ab;font-variant-numeric:tabular-nums;font-size:.62rem}
+/* Filtros: listas desplegables con varias opciones (vacía = todos) */
+#view-lic .lic-filtros{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;margin:0 0 12px}
+#view-lic .lic-flt{display:flex;flex-direction:column;gap:3px;min-width:0}
+#view-lic .lic-flt > span{font-size:.56rem;color:#7f92ab;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+#view-lic .lic-ms{position:relative}
+#view-lic .lic-ms-btn{font:inherit;font-size:.72rem;text-align:left;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:5px;padding:6px 26px 6px 10px;width:210px;max-width:100%;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+#view-lic .lic-ms-btn::after{content:'▾';position:absolute;right:9px;top:50%;transform:translateY(-50%);color:#7f92ab;font-size:.7rem}
+#view-lic .lic-ms-btn:hover,#view-lic .lic-ms.open .lic-ms-btn{border-color:#2E75B6}
+#view-lic .lic-ms.activo .lic-ms-btn{border-color:#2E75B6;background:#0f1b2c}
+#view-lic .lic-ms-pan{position:absolute;z-index:60;top:calc(100% + 3px);left:0;width:300px;max-width:calc(100vw - 32px);background:#0e141d;border:1px solid #1e2d42;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.45);padding:7px}
+#view-lic .lic-ms-q{width:100%;box-sizing:border-box;font:inherit;font-size:.72rem;background:#0a0e14;color:#e2e8f0;border:1px solid #1e2d42;border-radius:4px;padding:5px 8px;margin-bottom:5px}
+#view-lic .lic-ms-list{max-height:260px;overflow:auto}
+#view-lic .lic-ms-opt{display:flex;align-items:center;gap:7px;padding:4px 6px;font-size:.72rem;border-radius:4px;cursor:pointer;color:#e2e8f0}
+#view-lic .lic-ms-opt:hover{background:#16202e}
+#view-lic .lic-ms-opt.cero{color:#6b7c93}
+#view-lic .lic-ms-opt input{width:15px;height:15px;margin:0;accent-color:#2E75B6;flex:0 0 auto;cursor:pointer}
+#view-lic .lic-ms-opt .sw{width:9px;height:9px;border-radius:2px;background:var(--c);flex:0 0 auto}
+#view-lic .lic-ms-opt .tx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#view-lic .lic-ms-opt .n{color:#7f92ab;font-size:.64rem;font-variant-numeric:tabular-nums}
+#view-lic .lic-ms-vacio{color:#7c93ad;padding:6px;font-size:.7rem}
+#view-lic .lic-ms-act{display:flex;justify-content:space-between;border-top:1px solid #1e2d42;margin-top:6px;padding-top:6px}
+#view-lic .lic-lnk{font:inherit;font-size:.68rem;color:#60a5fa;background:none;border:none;cursor:pointer;padding:2px 0}
+#view-lic .lic-lnk:hover{text-decoration:underline}
+#view-lic .lic-filtros > .lic-lnk{align-self:center;margin-top:14px}
+/* Rango de fechas (vista lista) */
+#view-lic .lic-rango{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}
+#view-lic .lic-rango label{display:flex;flex-direction:column;gap:3px;font-size:.56rem;color:#7f92ab;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+#view-lic .lic-rango input[type=date]{color-scheme:dark;font:inherit;font-size:.72rem;letter-spacing:0;text-transform:none;font-weight:400;background:#0c1018;color:#e2e8f0;border:1px solid #1e2d42;border-radius:5px;padding:5px 8px}
+#view-lic .lic-rango input[type=date]:focus{outline:none;border-color:#2E75B6}
+#view-lic .lic-cuenta{font-size:.66rem;color:#94a3b8;margin:0 0 8px}
+#view-lic .lic-cuenta.mal{color:#f1a1a1}
+/* Leyenda de colores del calendario */
+#view-lic .lic-ley{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 8px;font-size:.62rem;color:#94a3b8}
+#view-lic .lic-ley span{display:inline-flex;align-items:center;gap:5px}
+#view-lic .lic-ley i{width:9px;height:9px;border-radius:2px;background:var(--c);display:inline-block}
 /* Próximas */
 #view-lic .lic-prox{border:1px solid #1e2d42;border-radius:8px;background:#0a0f18;padding:10px 12px;margin-bottom:14px}
 #view-lic .lic-prox h2{font-size:.74rem;font-weight:700;color:#cfe0f5;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
@@ -8002,19 +8030,31 @@ body.lic-mode #view-lic{display:block}
   <h1 class="lic-h">📅 Licitaciones primarias · MAE</h1>
   <p class="lic-note">Calendario de colocaciones del MAE: ONs, provincias, Tesoro y fideicomisos. El MAE anuncia cada licitación pocos días antes y muestra los resultados (monto adjudicado, tasa o margen de corte) durante un mes; la corrida diaria los guarda, así que quedan acá aunque el MAE los saque. Las ONs que ya tienen calculadora se abren desde el detalle.</p>
   <div class="lic-bar">
-    <div class="lic-nav">
+    <div class="lic-seg" role="group" aria-label="Vista">
+      <button class="lic-btn" id="lic-v-cal" onclick="LICIT.setVista('cal')">Calendario</button>
+      <button class="lic-btn" id="lic-v-lista" onclick="LICIT.setVista('lista')">Lista</button>
+    </div>
+    <div class="lic-nav" id="lic-nav">
       <button class="lic-btn" onclick="LICIT.mes(-1)" aria-label="Mes anterior">‹</button>
       <span class="lic-mes" id="lic-mes">—</span>
       <button class="lic-btn" onclick="LICIT.mes(1)" aria-label="Mes siguiente">›</button>
       <button class="lic-btn" onclick="LICIT.hoy()">Hoy</button>
     </div>
-    <div class="lic-seg" role="group" aria-label="Vista">
-      <button class="lic-btn" id="lic-v-cal" onclick="LICIT.setVista('cal')">Calendario</button>
-      <button class="lic-btn" id="lic-v-lista" onclick="LICIT.setVista('lista')">Lista</button>
+    <div class="lic-rango" id="lic-rango" hidden>
+      <label>Desde<input type="date" id="lic-desde" onchange="LICIT.setRango()"></label>
+      <label>Hasta<input type="date" id="lic-hasta" onchange="LICIT.setRango()"></label>
+      <button class="lic-btn" onclick="LICIT.rangoMes()">Este mes</button>
+      <button class="lic-btn" onclick="LICIT.rangoProximas()">De hoy en adelante</button>
+      <button class="lic-btn" onclick="LICIT.rangoTodo()">Todo</button>
     </div>
     <span class="lic-upd" id="lic-upd"></span>
   </div>
-  <div class="lic-filtros" id="lic-filtros"></div>
+  <div class="lic-filtros" id="lic-filtros">
+    <div class="lic-flt"><span id="lic-l-emi">Emisor</span><div id="lic-f-emi" aria-labelledby="lic-l-emi"></div></div>
+    <div class="lic-flt"><span id="lic-l-cat">Tipo</span><div id="lic-f-cat" aria-labelledby="lic-l-cat"></div></div>
+    <div class="lic-flt"><span id="lic-l-mon">Moneda</span><div id="lic-f-mon" aria-labelledby="lic-l-mon"></div></div>
+    <button class="lic-lnk" id="lic-f-limpiar" onclick="LICIT.limpiarFiltros()" hidden>Limpiar filtros</button>
+  </div>
   <section class="lic-prox" id="lic-prox"></section>
   <div class="lic-main sin-det" id="lic-main">
     <div id="lic-cuerpo"></div>
@@ -8028,7 +8068,8 @@ const LIC_CATS=[['on','ONs'],['provincia','Provincias y municipios'],['nacion','
 const LIC_MONEDAS=[['USD','US$'],['DL','Dólar linked'],['ARS','Pesos'],['','Sin dato']];
 const LIC_ESTADO_TXT={programada:'Anunciada',hoy:'Hoy',finalizada:'Finalizada',realizada:'Realizada',cancelada:'Cancelada'};
 const LIC_MINUS=new Set(['TASA','DE','DEL','CORTE','MARGEN','PRECIO','EMISIÓN','EMISION','POR','CADA','DESIERTA','AÑOS','AÑO','MESES','MES','DÍAS','DIAS','SPREAD','TRAMO','CUPÓN','CUPON']);
-const LIC_SIGLAS=new Set(['PBA','CABA','UVA','PF','ICBC','BBVA','BACS','GPAT','CNH','FCA','CGC','TGS','TGN','PAE','MSU','BST','CMF','CER','TAMAR','USD','VDF','VDFA','VDFB','IRSA','SBS','AFS','RDA','CNV','BCRA','VCP','ON','ONS','FF','SRL']);
+const LIC_PROV={'BUENOS AIRES':'Buenos Aires','CATAMARCA':'Catamarca','CHACO':'Chaco','CHUBUT':'Chubut','CORDOBA':'Córdoba','CORRIENTES':'Corrientes','ENTRE RIOS':'Entre Ríos','FORMOSA':'Formosa','JUJUY':'Jujuy','LA PAMPA':'La Pampa','LA RIOJA':'La Rioja','MENDOZA':'Mendoza','MISIONES':'Misiones','NEUQUEN':'Neuquén','RIO NEGRO':'Río Negro','SALTA':'Salta','SAN JUAN':'San Juan','SAN LUIS':'San Luis','SANTA CRUZ':'Santa Cruz','SANTA FE':'Santa Fe','SANTIAGO DEL ESTERO':'Santiago del Estero','TIERRA DEL FUEGO':'Tierra del Fuego','TUCUMAN':'Tucumán'};
+const LIC_SIGLAS=new Set(['PBA','CABA','UVA','PF','ICBC','BBVA','BACS','GPAT','CNH','FCA','CGC','TGS','TGN','PAE','MSU','BST','CMF','CER','TAMAR','USD','VDF','VDFA','VDFB','IRSA','SBS','AFS','RDA','CNV','BCRA','VCP','ON','ONS','FF','SRL','ANSES','PSA','IEB']);
 
 // Instante del MAE (UTC) → día y hora en Argentina (UTC-3 todo el año). 00:00 = sin hora.
 function licFechaAR(iso){
@@ -8081,9 +8122,14 @@ function licCorto(t){
      .replace(/\bCOMPA[NÑ][IÍ]A FINANCIERA\b/gi,'CF')
      .replace(/\bCLASE\b/gi,'Cl.').replace(/\bSERIE\b/gi,'S.')
      .replace(/\s+/g,' ').trim();
-  const conect=/^(de|del|la|las|los|el|y|e|en|con|al|a|por|para|p\/)$/i;
+  return licTitulo(s);
+}
+
+// MAYÚSCULAS del MAE → "Tipo Título", dejando siglas, números romanos y conectores.
+function licTitulo(s){
+  const conect=/^(de|del|la|las|los|el|y|e|en|con|al|a|por|para|un|una|p\/)$/i;
   const romano=/^(?=[IVXLCDM]+$)M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/;
-  s=s.split(' ').map((w,i)=>{
+  s=String(s||'').replace(/\s+/g,' ').trim().split(' ').map((w,i)=>{
     const W=w.toUpperCase(), puro=W.replace(/[^A-ZÁÉÍÓÚÑ]/g,'');
     if(i>0 && conect.test(w)) return w.toLowerCase();
     if(LIC_SIGLAS.has(puro) || (puro && !/[AEIOUÁÉÍÓÚ]/.test(puro)) || /\d/.test(w)) return W==='CL.'?'Cl.':w;
@@ -8091,6 +8137,48 @@ function licCorto(t){
     const l=w.toLowerCase(); return l.charAt(0).toUpperCase()+l.slice(1);
   }).join(' ');
   return s.charAt(0).toUpperCase()+s.slice(1);
+}
+
+// Emisor para el filtro. Sale del título, que el MAE escribe igual para cada emisor y que
+// tienen todas (el campo emisor solo viene con el detalle, el último mes). En los
+// fideicomisos es el nombre del fideicomiso, no el fiduciario.
+function licEmisor(r){
+  const T=String(r.titulo||'').toUpperCase().replace(/\s+/g,' ').trim();
+  const llano=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+  const sinLegal=s=>s.replace(/[\s,]+(S\.?\s?A\.?\s?U?\.?|S\.?\s?R\.?\s?L\.?|SOCIEDAD AN[OÓ]NIMA( UNIPERSONAL)?|S\.?A\.?I\.?C\.?\s?(Y\s?F\.?)?|S\.?A\.?C\.?I\.?F\.?)$/,'').replace(/[\s\-–,]+$/,'').trim();
+  const romano=w=>/^(?=[IVXLCDM]+$)M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/.test(w);
+  const cat=r.categoria, t=llano(T), e=llano(r.emisor);
+  if(cat==='nacion') return /BANCO CENTRAL|\bBCRA\b/.test(t+' '+e) ? 'BCRA' : 'Tesoro Nacional';
+  if(cat==='provincia'){
+    const txt=t+' | '+e;
+    if(/CIUDAD (AUTONOMA )?DE BUENOS AIRES|\bCABA\b/.test(txt)) return 'Ciudad de Buenos Aires';
+    const mu=(T+' | '+String(r.emisor||'').toUpperCase()).match(/MUNICIPALIDAD DE (.+?)(?= (?:SERIE|CLASE|EN|A|CON|POR) | - | \| |$)/);
+    if(mu) return 'Municipalidad de '+licTitulo(mu[1]);
+    if(/\bBS\.?\s?AS\b/.test(txt)) return 'Provincia de Buenos Aires';      // "PROVINCIA BS.AS."
+    for(const [k,v] of Object.entries(LIC_PROV)) if(new RegExp('\\b'+k+'\\b').test(txt))
+      return 'Provincia '+(/^(CHACO|CHUBUT|NEUQUEN)$/.test(k)?'del ':'de ')+v;
+    return r.emisor ? licTitulo(sinLegal(String(r.emisor).split(' - ')[0].toUpperCase())) : 'Otras provincias';
+  }
+  if(cat==='otros' && r.emisor) return licTitulo(sinLegal(String(r.emisor).toUpperCase()));
+  if(cat==='ff'){
+    const w=T.replace(/^FF\s+/,'').replace(/^(MEDIANO IMPACTO\s+)?(AMPLIADO\s+)?/,'')
+             .split(/\s+SERIE\s+|\s+-\s+|\s*\(/)[0].split(' ');
+    while(w.length>1 && (/\d/.test(w[w.length-1]) || romano(w[w.length-1]))) w.pop();
+    return licTitulo(w.join(' '));
+  }
+  const w=sinLegal(T.replace(/^(ON|VCP)\s+/,'')
+                    .replace(/^(SUBORDINADAS?\s+)?(PYME CNV\s+)?(GARANTIZADAS?\s+)?(DE\s+)?((BAJO|MEDIANO) IMPACTO\s+)?((SVS|VS|SV)\s+)?/,'')
+                    .replace(/^T[IÍ]TULOS? DE DEUDA\s+/,'')
+                    .split(/\s+(?:CLASE|SERIE)\s+|\s+-\s+|\s*\(/)[0]).split(' ');
+  while(w.length>1 && (/\d/.test(w[w.length-1]) || romano(w[w.length-1]))) w.pop();   // BANCO COMAFI XX
+  const n=w.join(' ');
+  return n ? licTitulo(n) : licTitulo(sinLegal(String(r.emisor||r.titulo||'').toUpperCase()));
+}
+
+// Primer y último día de un mes: ['2026-11-01', '2026-11-30'].
+function licMesRango(anio, mes){
+  const p=n=>String(n).padStart(2,'0');
+  return [anio+'-'+p(mes)+'-01', anio+'-'+p(mes)+'-'+p(new Date(Date.UTC(anio,mes,0)).getUTCDate())];
 }
 
 // Texto del MAE en mayúsculas → legible: "TASA DE CORTE: 7.00%" → "Tasa de corte: 7.00%", "3.36 AÑOS" → "3.36 años".
@@ -8141,20 +8229,76 @@ const LICIT=(function(){
   const MON_TXT={USD:'Dólares',DL:'Dólar linked',ARS:'Pesos'};
   let filas=null, cargando=null, error=null;
   let vista='cal', anio=0, mes=0, selId=null, diaSel=null;
-  let fCat=new Set(LIC_CATS.map(c=>c[0])), fMon=new Set(LIC_MONEDAS.map(m=>m[0]));
+  let desde=null, hasta=null;                       // rango de la vista lista (null = sin límite)
+  // Filtros: emisor (clave), tipo y moneda. Conjunto vacío = todos.
+  const F={emi:new Set(), cat:new Set(), mon:new Set()};
   try{
-    const g=JSON.parse(localStorage.getItem('lic_prefs')||'null');
-    if(g){ if(Array.isArray(g.cat)) fCat=new Set(g.cat); if(Array.isArray(g.mon)) fMon=new Set(g.mon); if(g.vista==='lista') vista='lista'; }
+    localStorage.removeItem('lic_prefs');           // formato anterior (botones)
+    const g=JSON.parse(localStorage.getItem('lic_filtros')||'null');
+    if(g){ for(const k of Object.keys(F)) if(Array.isArray(g[k])) F[k]=new Set(g[k]); if(g.vista==='lista') vista='lista'; }
   }catch(e){}
-  function guardarPrefs(){ try{ localStorage.setItem('lic_prefs', JSON.stringify({cat:[...fCat], mon:[...fMon], vista})); }catch(e){} }
+  function guardarPrefs(){ try{ localStorage.setItem('lic_filtros', JSON.stringify({emi:[...F.emi], cat:[...F.cat], mon:[...F.mon], vista})); }catch(e){} }
   const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const llano=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
   const hoyAR=()=>licFechaAR(new Date().toISOString()).dia;
   const ddmm=dia=>dia?dia.slice(8,10)+'/'+dia.slice(5,7):'';
   const ddmmaa=dia=>dia?ddmm(dia)+'/'+dia.slice(0,4):'—';
   const dowDe=dia=>DOW[(new Date(dia+'T12:00:00Z').getUTCDay()+6)%7];
   const catTxt=c=>(LIC_CATS.find(x=>x[0]===c)||[c,c])[1];
-  const visibles=()=>(filas||[]).filter(r=>fCat.has(r.categoria) && fMon.has(r._mon));
-  const delMes=rs=>{ const pre=anio+'-'+String(mes).padStart(2,'0'); return rs.filter(r=>r._dia && r._dia.startsWith(pre)); };
+  // ¿Pasa los filtros? `salvo` deja afuera uno (para contar las opciones de ese filtro).
+  const pasa=(r,salvo)=>(salvo==='emi' || !F.emi.size || F.emi.has(r._emiK))
+                     && (salvo==='cat' || !F.cat.size || F.cat.has(r.categoria))
+                     && (salvo==='mon' || !F.mon.size || F.mon.has(r._mon));
+  const visibles=()=>(filas||[]).filter(r=>pasa(r));
+  // Período: el mes en el calendario, el rango elegido en la lista
+  const periodo=()=>vista==='lista' ? [desde, hasta] : licMesRango(anio, mes);
+  const enPeriodo=rs=>{ const [a,b]=periodo(); return rs.filter(r=>r._dia && (!a || r._dia>=a) && (!b || r._dia<=b)); };
+  const txtPeriodo=()=>{ const [a,b]=periodo();
+    return a&&b ? 'del '+ddmmaa(a)+' al '+ddmmaa(b) : a ? 'desde el '+ddmmaa(a) : b ? 'hasta el '+ddmmaa(b) : 'en todas las fechas'; };
+
+  // ── Lista desplegable con varias opciones (como la de Movimientos de FCI) ──
+  const SELS={};
+  function mkSel(id, key){
+    const el=document.getElementById(id);
+    el.className='lic-ms';
+    el.innerHTML='<button type="button" class="lic-ms-btn" aria-haspopup="true" aria-expanded="false"></button>'
+      +'<div class="lic-ms-pan" hidden><input type="search" class="lic-ms-q" placeholder="Buscar…" aria-label="Buscar">'
+      +'<div class="lic-ms-list"></div><div class="lic-ms-act"><button type="button" class="lic-lnk" data-a="todos">Ver todos</button></div></div>';
+    const btn=el.querySelector('.lic-ms-btn'), pan=el.querySelector('.lic-ms-pan'),
+          q=el.querySelector('.lic-ms-q'), list=el.querySelector('.lic-ms-list');
+    let opts=[];
+    const nombre=v=>(opts.find(o=>o.value===v)||{label:v||'Sin dato'}).label;
+    function pintarBoton(){
+      const s=F[key];
+      btn.textContent=!s.size ? 'Todos' : s.size===1 ? nombre([...s][0]) : s.size+' seleccionados';
+      btn.title=[...s].map(nombre).join(', ');
+      el.classList.toggle('activo', s.size>0);
+    }
+    function pintarLista(){
+      const t=llano(q.value.trim()), vis=opts.filter(o=>!t || llano(o.label).includes(t));
+      list.innerHTML=vis.length ? vis.slice(0,500).map(o=>'<label class="lic-ms-opt'+(o.n?'':' cero')+'">'
+          +'<input type="checkbox" value="'+esc(o.value)+'"'+(F[key].has(o.value)?' checked':'')+'>'
+          +(o.color?'<span class="sw" style="--c:'+o.color+'"></span>':'')
+          +'<span class="tx">'+esc(o.label)+'</span><span class="n">'+o.n+'</span></label>').join('')
+        : '<div class="lic-ms-vacio">Sin resultados</div>';
+    }
+    function abrir(on){
+      pan.hidden=!on; el.classList.toggle('open', on); btn.setAttribute('aria-expanded', on);
+      if(on){ q.value=''; q.hidden=opts.length<=8; pintarLista(); if(!q.hidden) q.focus(); }
+    }
+    list.addEventListener('change', e=>{
+      const i=e.target; if(i.type!=='checkbox') return;
+      if(i.checked) F[key].add(i.value); else F[key].delete(i.value);
+      pintarBoton(); cambio();
+    });
+    btn.addEventListener('click', e=>{ e.stopPropagation(); const on=pan.hidden; Object.values(SELS).forEach(s=>s.cerrar()); abrir(on); });
+    q.addEventListener('input', pintarLista);
+    el.querySelector('[data-a=todos]').addEventListener('click', ()=>{ F[key].clear(); pintarBoton(); pintarLista(); cambio(); });
+    document.addEventListener('click', e=>{ if(!pan.hidden && !el.contains(e.target)) abrir(false); });
+    el.addEventListener('keydown', e=>{ if(e.key==='Escape' && !pan.hidden){ abrir(false); btn.focus(); } });
+    return { cerrar(){ if(!pan.hidden) abrir(false); }, setOpts(o){ opts=o; pintarBoton(); if(!pan.hidden) pintarLista(); } };
+  }
+  function cambio(){ guardarPrefs(); render(); }
 
   async function cargar(){
     const out=[]; let desde=0;
@@ -8167,12 +8311,13 @@ const LICIT=(function(){
       if(lote.length<1000) break;
       desde+=1000;
     }
-    out.forEach(x=>{ const a=licFechaAR(x.inicio); x._dia=a.dia; x._corto=licCorto(x.titulo); x._mon=x.moneda||''; });
+    out.forEach(x=>{ const a=licFechaAR(x.inicio); x._dia=a.dia; x._corto=licCorto(x.titulo); x._mon=x.moneda||'';
+      x._emi=licEmisor(x); x._emiK=normEmisor(x._emi); });
     return out;
   }
 
   function show(){
-    if(!anio){ const h=hoyAR(); anio=+h.slice(0,4); mes=+h.slice(5,7); }
+    if(!anio){ const h=hoyAR(); anio=+h.slice(0,4); mes=+h.slice(5,7); [desde, hasta]=licMesRango(anio, mes); }
     if(!filas && !cargando){
       cargando=cargar().then(f=>{ filas=f; error=null; })
         .catch(e=>{ error=e; console.error('[LICIT]', e); })
@@ -8185,9 +8330,11 @@ const LICIT=(function(){
     document.getElementById('lic-mes').textContent=anio?MESES[mes-1]+' '+anio:'—';
     document.getElementById('lic-v-cal').classList.toggle('on', vista==='cal');
     document.getElementById('lic-v-lista').classList.toggle('on', vista==='lista');
+    document.getElementById('lic-nav').hidden = vista==='lista';
+    document.getElementById('lic-rango').hidden = vista!=='lista';
     const cuerpo=document.getElementById('lic-cuerpo');
+    document.getElementById('lic-filtros').hidden=!filas;
     if(!filas){
-      document.getElementById('lic-filtros').innerHTML='';
       document.getElementById('lic-prox').hidden=true;
       document.getElementById('lic-det').hidden=true;
       document.getElementById('lic-main').classList.add('sin-det');
@@ -8199,19 +8346,35 @@ const LICIT=(function(){
     let upd=''; filas.forEach(r=>{ if(r.updated_at && r.updated_at>upd) upd=r.updated_at; });
     const u=licFechaAR(upd);
     document.getElementById('lic-upd').textContent=u.dia?'Actualizado el '+ddmm(u.dia)+(u.hora?' a las '+u.hora:'')+' · fuente MAE':'';
-    renderFiltros(); renderProximas();
+    pintarRango(); renderFiltros(); renderProximas();
     cuerpo.innerHTML = vista==='cal' ? htmlCalendario() : htmlLista();
     renderDetalle();
   }
 
+  function pintarRango(){
+    const d=document.getElementById('lic-desde'), h=document.getElementById('lic-hasta');
+    if(d.value!==(desde||'')) d.value=desde||'';
+    if(h.value!==(hasta||'')) h.value=hasta||'';
+    if(filas && filas.length){ const mn=filas[0]._dia, mx=filas[filas.length-1]._dia; [d,h].forEach(i=>{ i.min=mn; i.max=mx; }); }
+  }
+
+  // Opciones de cada filtro con cuántas licitaciones hay en el período (con los otros filtros aplicados).
   function renderFiltros(){
-    const mesRs=delMes(filas);
-    const nCat=c=>mesRs.filter(r=>r.categoria===c && fMon.has(r._mon)).length;
-    const nMon=m=>mesRs.filter(r=>r._mon===m && fCat.has(r.categoria)).length;
-    const chip=(on,fn,val,txt,n,color)=>'<button class="lic-f'+(on?' on':'')+'" aria-pressed="'+on+'" onclick="LICIT.'+fn+'(\''+val+'\')"'+(color?' style="--c:'+color+'"':'')+'><span class="sw"></span>'+esc(txt)+' <span class="n">'+n+'</span></button>';
-    document.getElementById('lic-filtros').innerHTML=
-      '<div class="lic-fg"><span class="lic-fl">Tipo</span>'+LIC_CATS.map(([c,t])=>chip(fCat.has(c),'togCat',c,t,nCat(c),'var(--lic-'+c+')')).join('')+'</div>'
-      +'<div class="lic-fg"><span class="lic-fl">Moneda</span>'+LIC_MONEDAS.map(([m,t])=>chip(fMon.has(m),'togMon',m,t,nMon(m),'#8aa0bb')).join('')+'</div>';
+    if(!SELS.emi){ SELS.emi=mkSel('lic-f-emi','emi'); SELS.cat=mkSel('lic-f-cat','cat'); SELS.mon=mkSel('lic-f-mon','mon'); }
+    const per=enPeriodo(filas);
+    const cuenta=(key, val)=>{ const n={}; per.forEach(r=>{ if(pasa(r,key)){ const v=val(r); n[v]=(n[v]||0)+1; } }); return n; };
+    // Emisores: los que tienen licitaciones del tipo y la moneda elegidos en cualquier fecha, así la
+    // selección sigue al cambiar de mes. Primero los que tienen algo en el período.
+    const nE=cuenta('emi', r=>r._emiK), nom={};
+    filas.forEach(r=>{ if(pasa(r,'emi') && !nom[r._emiK]) nom[r._emiK]=r._emi; });
+    [...F.emi].forEach(k=>{ if(!nom[k]) F.emi.delete(k); });
+    const optsE=Object.entries(nom).map(([k,l])=>({value:k, label:l, n:nE[k]||0}))
+      .sort((a,b)=>(b.n>0)-(a.n>0) || a.label.localeCompare(b.label,'es'));
+    const nC=cuenta('cat', r=>r.categoria), nM=cuenta('mon', r=>r._mon);
+    SELS.emi.setOpts(optsE);
+    SELS.cat.setOpts(LIC_CATS.map(([c,t])=>({value:c, label:t, n:nC[c]||0, color:'var(--lic-'+c+')'})));
+    SELS.mon.setOpts(LIC_MONEDAS.map(([m,t])=>({value:m, label:t, n:nM[m]||0})));
+    document.getElementById('lic-f-limpiar').hidden=!(F.emi.size || F.cat.size || F.mon.size);
   }
 
   function itemHTML(r, hoy, conFecha){
@@ -8236,11 +8399,13 @@ const LICIT=(function(){
   }
 
   function htmlCalendario(){
-    const hoy=hoyAR(), rs=delMes(visibles());
+    const hoy=hoyAR(), rs=enPeriodo(visibles());
     const porDia={}; rs.forEach(r=>{ (porDia[r._dia]=porDia[r._dia]||[]).push(r); });
     const finde=Object.keys(porDia).some(d=>{ const w=new Date(d+'T12:00:00Z').getUTCDay(); return w===0||w===6; });
     const sems=licSemanas(anio, mes, finde);
-    let h='<div class="lic-cal" style="--cols:'+(finde?7:5)+'">'+DOW.slice(0,finde?7:5).map(d=>'<div class="lic-dow">'+d+'</div>').join('');
+    const cats=F.cat.size ? LIC_CATS.filter(([c])=>F.cat.has(c)) : LIC_CATS;
+    let h='<div class="lic-ley" aria-label="Colores por tipo">'+cats.map(([c,t])=>'<span><i style="--c:var(--lic-'+c+')"></i>'+esc(t)+'</span>').join('')+'</div>';
+    h+='<div class="lic-cal" style="--cols:'+(finde?7:5)+'">'+DOW.slice(0,finde?7:5).map(d=>'<div class="lic-dow">'+d+'</div>').join('');
     for(const sem of sems) for(const c of sem){
       const evs=(porDia[c.dia]||[]).sort((a,b)=>(a.inicio<b.inicio?-1:a.inicio>b.inicio?1:0));
       const cls=['lic-day', c.enMes?'':'fuera', c.dia===hoy?'hoy':'', evs.length?'':'vacio'].filter(Boolean).join(' ');
@@ -8259,12 +8424,14 @@ const LICIT=(function(){
   }
 
   function htmlLista(){
-    const hoy=hoyAR(), rs=delMes(visibles());
-    if(!rs.length) return '<div class="lic-estado">Sin licitaciones en '+MESES[mes-1]+' con estos filtros.</div>';
+    const hoy=hoyAR(), [a,b]=periodo();
+    if(a && b && a>b) return '<div class="lic-estado">La fecha “desde” ('+ddmmaa(a)+') es posterior a la fecha “hasta” ('+ddmmaa(b)+').</div>';
+    const rs=enPeriodo(visibles());
+    if(!rs.length) return '<div class="lic-estado">Sin licitaciones '+txtPeriodo()+' con estos filtros.</div>';
     const fila=r=>{ const e=licEstado(r,hoy);
       return '<tr class="'+(r.id===selId?'sel ':'')+e+'" onclick="LICIT.ver('+r.id+')">'
-        +'<td>'+dowDe(r._dia)+' '+ddmm(r._dia)+'</td><td>'+esc(licHorario(r))+'</td>'
-        +'<td class="tit">'+esc(r.titulo)+(r.emisor?'<small>'+esc(r.emisor)+'</small>':'')+'</td>'
+        +'<td>'+dowDe(r._dia)+' '+ddmmaa(r._dia)+'</td><td>'+esc(licHorario(r))+'</td>'
+        +'<td class="tit">'+esc(r.titulo)+'<small>'+esc(r._emi)+'</small></td>'
         +'<td style="--c:var(--lic-'+r.categoria+')"><span class="sw"></span>'+esc(catTxt(r.categoria))+'</td>'
         +'<td>'+esc(MON_TAG[r._mon]||'')+'</td>'
         +'<td class="num">'+esc(licMonto(r.monto_licitar,r.moneda_monto)||'')+'</td>'
@@ -8273,7 +8440,8 @@ const LICIT=(function(){
         +'<td>'+(r.vencimiento?ddmmaa(r.vencimiento):'')+'</td>'
         +'<td class="dur">'+esc(licSuave(r.duration)||'')+'</td>'
         +'<td>'+(r.ticker?'<button class="lic-tk" onclick="event.stopPropagation();LICIT.abrirCalc(\''+esc(r.ticker)+'\')">'+esc(r.ticker)+'</button>':'')+'</td></tr>'; };
-    return '<div class="lic-lista-wrap"><table class="lic-tbl"><thead><tr><th>Fecha</th><th>Horario</th><th>Licitación</th><th>Tipo</th><th>Moneda</th>'
+    return '<div class="lic-cuenta">'+rs.length+' licitaci'+(rs.length>1?'ones':'ón')+' '+txtPeriodo()+'</div>'
+      +'<div class="lic-lista-wrap"><table class="lic-tbl"><thead><tr><th>Fecha</th><th>Horario</th><th>Licitación</th><th>Tipo</th><th>Moneda</th>'
       +'<th class="num">A licitar</th><th class="num">Adjudicado</th><th>Resultado</th><th>Vencimiento</th><th>Duration</th><th>Calculadora</th></tr></thead><tbody>'
       +rs.map(fila).join('')+'</tbody></table></div>';
   }
@@ -8317,7 +8485,7 @@ const LICIT=(function(){
     acc.push('<a class="lic-btn" href="https://marketdata.mae.com.ar/licitaciones/Todos" target="_blank" rel="noopener">Ver en el MAE ↗</a>');
     el.innerHTML='<div class="cab"><span class="tag cat" style="--c:var(--lic-'+r.categoria+')">'+esc(catTxt(r.categoria))+'</span>'
       +'<span class="tag e-'+e+'">'+LIC_ESTADO_TXT[e]+'</span>'+cerrar+'</div>'
-      +'<h3>'+esc(r.titulo)+'</h3>'+(r.emisor?'<div class="em">'+esc(r.emisor)+'</div>':'<div class="em"></div>')
+      +'<h3>'+esc(r.titulo)+'</h3><div class="em">'+esc(r.emisor||r._emi)+'</div>'
       +'<dl>'+filasDL.map(([k,v,c])=>'<dt>'+k+'</dt><dd'+(c?' class="'+c+'"':'')+'>'+esc(v)+'</dd>').join('')+'</dl>'
       +(r.detalle?'':'<div class="bloque">El MAE ya no muestra el detalle de esta licitación (lo publica durante un mes): queda el título y el horario.</div>')
       +(r.colocador?'<div class="bloque"><b>Colocadores</b>'+esc(r.colocador)+'</div>':'')
@@ -8330,9 +8498,16 @@ const LICIT=(function(){
     reintentar(){ error=null; filas=null; show(); },
     mes(d){ mes+=d; if(mes<1){ mes=12; anio--; } if(mes>12){ mes=1; anio++; } diaSel=null; render(); },
     hoy(){ const h=hoyAR(); anio=+h.slice(0,4); mes=+h.slice(5,7); render(); },
-    setVista(v){ vista=v; guardarPrefs(); render(); },
-    togCat(c){ fCat.has(c)?fCat.delete(c):fCat.add(c); guardarPrefs(); render(); },
-    togMon(m){ fMon.has(m)?fMon.delete(m):fMon.add(m); guardarPrefs(); render(); },
+    setVista(v){ vista=v; diaSel=null; guardarPrefs(); render(); },
+    setRango(){
+      desde=document.getElementById('lic-desde').value||null;
+      hasta=document.getElementById('lic-hasta').value||null;
+      render();
+    },
+    rangoMes(){ const h=hoyAR(); [desde, hasta]=licMesRango(+h.slice(0,4), +h.slice(5,7)); render(); },
+    rangoProximas(){ desde=hoyAR(); hasta=null; render(); },
+    rangoTodo(){ desde=null; hasta=null; render(); },
+    limpiarFiltros(){ F.emi.clear(); F.cat.clear(); F.mon.clear(); cambio(); },
     ver(id){
       selId=id; diaSel=null;
       const r=(filas||[]).find(x=>x.id===id);

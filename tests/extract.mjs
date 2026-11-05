@@ -66,7 +66,8 @@ const EXPORTA = [
   'YC_COL', 'YC_SOB', 'NS_LAMBDAS', 'esPuntoSano', 'familiaSob', 'nsFactores', 'valorNS', 'ajusteNS',
   'tirEnCurva', 'muestrearNS', 'curvasSoberanas', 'spreadSob', 'ycClave', 'ycGrupos', 'ycActivos', 'marcaSVG',
   // calendario de licitaciones
-  'licFechaAR', 'licHorario', 'licEstado', 'licCorto', 'licSuave', 'licSemanas', 'licMonto', 'licPlazo',
+  'licFechaAR', 'licHorario', 'licEstado', 'licCorto', 'licTitulo', 'licEmisor', 'licMesRango', 'licSuave',
+  'licSemanas', 'licMonto', 'licPlazo',
 ];
 
 export async function cargar() {
@@ -108,8 +109,9 @@ export async function cargar() {
     func(src, 'callYield'),
     func(src, '_rankYTC'),
     linea(src, 'const LIC_MINUS='),
+    linea(src, 'const LIC_PROV='),
     linea(src, 'const LIC_SIGLAS='),
-    ...['licFechaAR', 'licHorario', 'licEstado', 'licCorto', 'licSuave', 'licSemanas', 'licMonto', 'licPlazo'].map(n => func(src, n)),
+    ...['licFechaAR', 'licHorario', 'licEstado', 'licCorto', 'licTitulo', 'licEmisor', 'licMesRango', 'licSuave', 'licSemanas', 'licMonto', 'licPlazo'].map(n => func(src, n)),
     `export { ${EXPORTA.join(', ')}, YTC_DIAS_CORTO };`,
   ];
   const mod = partes.join('\n\n');

@@ -67,6 +67,34 @@ test('licSuave pasa a minúsculas el texto del MAE sin tocar siglas ni números'
   assert.equal(B.licSuave(null), null);
 });
 
+test('licEmisor sale del título y agrupa igual con o sin detalle del MAE', () => {
+  const on = (titulo, emisor) => B.licEmisor({ categoria: 'on', titulo, emisor });
+  assert.equal(on('ON PLAZA LOGISTICA CLASE 6', 'PLAZA LOGISTICA S.R.L.'), 'Plaza Logistica');
+  assert.equal(on('ON YPF SOCIEDAD ANÓNIMA CLASE XLIII ADICIONALES'), 'YPF');
+  assert.equal(on('ON BANCO COMAFI XX'), on('ON BANCO COMAFI CLASE XXII'));          // sin "CLASE" en el título
+  assert.equal(on('ON SUBORDINADAS BANCO DEL SOL CLASE I'), 'Banco del Sol');
+  assert.equal(on('TITULOS DE DEUDA BANCO DE LA PROVINCIA DE BUENOS AIRES CLASE V'), 'Banco de la Provincia de Buenos Aires');
+  const pyme = t => B.licEmisor({ categoria: 'pyme', titulo: t });
+  assert.equal(pyme('ON GARANTIZADAS DE BAJO IMPACTO DIESEL LANGE SERIE I'), 'Diesel Lange');
+  assert.equal(pyme('ON MEDIANO IMPACTO CHAMICAL SOLAR II SERIE I'), 'Chamical Solar');
+  const prov = (titulo, emisor) => B.licEmisor({ categoria: 'provincia', titulo, emisor });
+  assert.equal(prov('LETRAS DEL TESORO DE LA PROVINCIA DEL CHUBUT SERIE CXXIV'), 'Provincia del Chubut');
+  assert.equal(prov('TÍTULOS DE DEUDA PÚBLICA DE LA PROVINCIA BS.AS. EN PESOS A TASA VARIABLE'), 'Provincia de Buenos Aires');
+  assert.equal(prov('LICITACION DE LA PROVINCIA DE BUENOS AIRES DE ACUERDO AL CRONOGRAMA', 'GOBIERNO DE LA PROVINCIA DE BUENOS AIRES'), 'Provincia de Buenos Aires');
+  assert.equal(prov('TITULOS DE DEUDA MUNICIPALIDAD DE SAN ISIDRO EN PESOS A TASA VARIABLE'), 'Municipalidad de San Isidro');
+  assert.equal(prov('LETRAS DE LA CIUDAD AUTÓNOMA DE BUENOS AIRES'), 'Ciudad de Buenos Aires');
+  // Fideicomisos: el nombre del fideicomiso, sin la serie
+  assert.equal(B.licEmisor({ categoria: 'ff', titulo: 'FF MERCADO CRÉDITO XLIV', emisor: 'TMF TRUST COMPANY' }), 'Mercado Crédito');
+  assert.equal(B.licEmisor({ categoria: 'ff', titulo: 'FF CUOTAS CENCOSUD SERIE LXII' }), 'Cuotas Cencosud');
+  assert.equal(B.licEmisor({ categoria: 'nacion', titulo: 'BONO DEL TESORO NACIONAL EN PESOS (TMG28)' }), 'Tesoro Nacional');
+});
+
+test('licMesRango: primer y último día', () => {
+  assert.deepEqual(B.licMesRango(2026, 11), ['2026-11-01', '2026-11-30']);
+  assert.deepEqual(B.licMesRango(2028, 2), ['2028-02-01', '2028-02-29']);
+  assert.deepEqual(B.licMesRango(2026, 12), ['2026-12-01', '2026-12-31']);
+});
+
 test('licSemanas: lunes a viernes, sin semanas que no tocan el mes', () => {
   // Noviembre 2026 empieza domingo: la semana del lunes 26/10 no entra (sin fin de semana)
   const nov = B.licSemanas(2026, 11, false);
