@@ -7307,6 +7307,7 @@ body.drawer-open #ops-drawer{transform:translateX(0)}
   <div class="dh"><span>Menú</span><span class="x" onclick="OPS.toggleMenu(false)">✕</span></div>
   <button class="ditem active" data-v="calc" onclick="OPS.selectView('calc')">🧮 Calculadoras</button>
   <button class="ditem" data-v="ops" onclick="OPS.selectView('ops')">📊 Operaciones Mercado</button>
+  <button class="ditem" data-v="lic" onclick="OPS.selectView('lic')">📅 Licitaciones</button>
   <button class="ditem" data-v="byma" onclick="OPS.selectView('byma')">🧾 Tasa → Precio</button>
   <button class="ditem ditem-admin" data-v="spread" onclick="OPS.selectView('spread')">📐 Valor relativo</button>
   <button class="ditem" data-v="fci" onclick="OPS.selectView('fci')">📈 Movimientos de FCI</button>
@@ -7837,7 +7838,9 @@ const OPS = (function(){
       document.body.classList.toggle('fci-mode', v==='fci');
       document.body.classList.toggle('byma-mode', v==='byma');
       document.body.classList.toggle('spread-mode', v==='spread');
+      document.body.classList.toggle('lic-mode', v==='lic');
       if(v==='ops' && !inited){ inited=true; loadDates(); }
+      if(v==='lic' && window.LICIT){ window.LICIT.show(); }
       if(v==='fci' && window.FCI){ window.FCI.init(); }
       if(v==='byma' && window.BYMAOPS){ window.BYMAOPS.show(); }
       if(v==='spread'){ if(window.VALREL) window.VALREL.show(); else if(window.SPREADV) window.SPREADV.show(); }
@@ -7886,6 +7889,469 @@ const OPS = (function(){
     },
   };
 })();
+</script>
+
+<!-- ═══════════════ CALENDARIO DE LICITACIONES (MAE) ═══════════════ -->
+<style>
+body.lic-mode #main-content, body.lic-mode #calc-panel{display:none !important}
+#view-lic{display:none;padding:16px 22px;color:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif;
+  --lic-on:#3987e5;--lic-provincia:#d95926;--lic-nacion:#199e70;--lic-ff:#c98500;--lic-pyme:#d55181;--lic-otros:#9085e9}
+body.lic-mode #view-lic{display:block}
+#view-lic .lic-h{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:#e2e8f0;margin:6px 0 4px}
+#view-lic .lic-note{color:#94a3b8;font-size:.68rem;margin:0 0 12px;max-width:860px;line-height:1.5}
+#view-lic .lic-bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-bottom:10px}
+#view-lic .lic-nav{display:flex;align-items:center;gap:6px}
+#view-lic .lic-btn{font:inherit;font-size:.72rem;font-weight:600;padding:5px 11px;border:1px solid #1e2d42;border-radius:5px;background:#11243f;color:#cfe0f5;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
+#view-lic .lic-btn:hover{background:#17304f}
+#view-lic .lic-btn.pri{background:#1F3864;border-color:#2E75B6;color:#fff}
+#view-lic .lic-btn.pri:hover{background:#2E75B6}
+#view-lic .lic-mes{font-family:'Syne',sans-serif;font-weight:700;font-size:.92rem;min-width:150px;text-align:center}
+#view-lic .lic-seg{display:inline-flex}
+#view-lic .lic-seg .lic-btn{border-radius:0}
+#view-lic .lic-seg .lic-btn:first-child{border-radius:5px 0 0 5px}
+#view-lic .lic-seg .lic-btn:last-child{border-radius:0 5px 5px 0;border-left:none}
+#view-lic .lic-seg .lic-btn.on{background:#1F3864;color:#fff;border-color:#2E75B6}
+#view-lic .lic-upd{margin-left:auto;font-size:.64rem;color:#7f92ab}
+#view-lic .lic-filtros{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:0 0 12px}
+#view-lic .lic-fg{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+#view-lic .lic-fl{font-size:.56rem;color:#7f92ab;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-right:2px}
+#view-lic .lic-f{font:inherit;font-size:.68rem;padding:4px 10px 4px 8px;border:1px solid #1e2d42;border-radius:999px;background:#0c1018;color:#7f92ab;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+#view-lic .lic-f .sw{width:9px;height:9px;border-radius:2px;background:var(--c,#64748b);opacity:.3}
+#view-lic .lic-f.on{color:#e2e8f0;border-color:#2b3f5c;background:#11243f}
+#view-lic .lic-f.on .sw{opacity:1}
+#view-lic .lic-f .n{color:#7f92ab;font-variant-numeric:tabular-nums;font-size:.62rem}
+/* Próximas */
+#view-lic .lic-prox{border:1px solid #1e2d42;border-radius:8px;background:#0a0f18;padding:10px 12px;margin-bottom:14px}
+#view-lic .lic-prox h2{font-size:.74rem;font-weight:700;color:#cfe0f5;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+#view-lic .lic-prox h2 small{font-weight:400;color:#7f92ab;font-size:.64rem}
+#view-lic .lic-prox-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px}
+#view-lic .lic-pi{display:flex;flex-direction:column;gap:2px;text-align:left;font:inherit;background:#0c1018;border:1px solid #16233a;border-left:3px solid var(--c);border-radius:6px;padding:6px 9px;color:#e2e8f0;cursor:pointer;min-width:0}
+#view-lic .lic-pi:hover{background:#101a2a}
+#view-lic .lic-pi.sel{border-color:#2E75B6;border-left-color:var(--c)}
+#view-lic .lic-pi .d{font-size:.6rem;color:#93c5fd;font-weight:700;letter-spacing:.02em}
+#view-lic .lic-pi .t{font-size:.7rem;font-weight:600;line-height:1.3}
+#view-lic .lic-pi .m{font-size:.62rem;color:#94a3b8}
+#view-lic .lic-vacio{color:#94a3b8;font-size:.68rem;font-style:italic;padding:2px 0}
+/* Calendario + detalle */
+#view-lic .lic-main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}
+#view-lic .lic-main.sin-det{grid-template-columns:minmax(0,1fr)}
+#view-lic .lic-cal{display:grid;grid-template-columns:repeat(var(--cols,5),minmax(0,1fr));gap:1px;background:#1e2d42;border:1px solid #1e2d42;border-radius:8px;overflow:hidden}
+#view-lic .lic-dow{background:#142235;color:#cfe0f5;font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:5px 8px}
+#view-lic .lic-day{background:#0c1018;min-height:104px;padding:5px 6px 7px;display:flex;flex-direction:column;gap:3px;min-width:0}
+#view-lic .lic-day.fuera{background:#090c12}
+#view-lic .lic-day.fuera .num{color:#3b4a5f}
+#view-lic .lic-day .num{font-size:.66rem;font-weight:700;color:#7f92ab;font-variant-numeric:tabular-nums;margin-bottom:1px}
+#view-lic .lic-day .num .dw{display:none}
+#view-lic .lic-day.hoy .num .dn{background:#2E75B6;color:#fff;border-radius:4px;padding:0 5px}
+#view-lic .lic-chip{display:flex;align-items:center;gap:5px;width:100%;font:inherit;font-size:.64rem;text-align:left;padding:3px 5px;border:none;border-left:3px solid var(--c);border-radius:3px;background:rgba(255,255,255,.04);color:#dbe4ef;cursor:pointer;min-width:0}
+#view-lic .lic-chip:hover{background:rgba(255,255,255,.09)}
+#view-lic .lic-chip.sel{outline:1px solid #60a5fa;outline-offset:-1px}
+#view-lic .lic-chip .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+#view-lic .lic-chip .mo{font-size:.56rem;color:#93a4bb;font-weight:700;flex-shrink:0}
+#view-lic .lic-chip.cancelada .tx{text-decoration:line-through;color:#7f92ab}
+#view-lic .lic-mas{font:inherit;font-size:.62rem;color:#60a5fa;background:none;border:none;text-align:left;cursor:pointer;padding:1px 5px}
+#view-lic .lic-mas:hover{text-decoration:underline}
+#view-lic .lic-det{border:1px solid #1e2d42;border-radius:8px;background:#0a0f18;padding:12px 14px;position:sticky;top:12px;max-height:calc(100vh - 40px);overflow:auto}
+#view-lic .lic-det .cab{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#view-lic .lic-det .x{margin-left:auto;background:none;border:none;color:#7f92ab;cursor:pointer;font-size:.85rem;padding:2px 6px;border-radius:4px}
+#view-lic .lic-det .x:hover{color:#e2e8f0;background:#11243f}
+#view-lic .tag{font-size:.6rem;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid #2b3f5c;color:#cfe0f5;white-space:nowrap}
+#view-lic .tag.cat::before{content:'';display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--c);margin-right:5px;vertical-align:-1px}
+#view-lic .tag.e-programada,#view-lic .tag.e-hoy{border-color:#2E75B6;color:#93c5fd}
+#view-lic .tag.e-finalizada{border-color:#1f5c4d;color:#7ee0b8}
+#view-lic .tag.e-cancelada{border-color:#6b2a2a;color:#f1a1a1}
+#view-lic .lic-det h3{font-size:.84rem;margin:9px 0 2px;line-height:1.35;text-wrap:balance;color:#f1f5f9}
+#view-lic .lic-det .em{font-size:.68rem;color:#94a3b8;margin-bottom:10px}
+#view-lic .lic-det dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 12px;font-size:.68rem;margin:0}
+#view-lic .lic-det dt{color:#7f92ab;white-space:nowrap}
+#view-lic .lic-det dd{margin:0;color:#e2e8f0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+#view-lic .lic-det dd.res{color:#7ee0b8;font-weight:700}
+#view-lic .lic-det .bloque{margin-top:11px;font-size:.64rem;color:#94a3b8;line-height:1.5;overflow-wrap:anywhere}
+#view-lic .lic-det .bloque b{display:block;color:#cfe0f5;font-size:.58rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+#view-lic .lic-det .acc{display:flex;flex-wrap:wrap;gap:6px;margin-top:13px}
+#view-lic .lic-det .lic-prox-list{grid-template-columns:minmax(0,1fr)}
+/* Lista */
+#view-lic .lic-lista-wrap{overflow-x:auto;border:1px solid #1e2d42;border-radius:8px}
+#view-lic table.lic-tbl{table-layout:auto;border-collapse:separate;border-spacing:0;font-size:.68rem;width:100%;background:#0c1018;color:#e2e8f0}
+#view-lic table.lic-tbl th{position:static;overflow:visible;cursor:default;font-size:.58rem;letter-spacing:.06em;text-transform:uppercase;background:#142235;color:#cfe0f5;font-weight:600;text-align:left;padding:6px 9px;border-bottom:1px solid #1e2d42;white-space:nowrap}
+#view-lic table.lic-tbl th.num,#view-lic table.lic-tbl td.num{text-align:right;font-variant-numeric:tabular-nums}
+#view-lic table.lic-tbl td{padding:5px 9px;border-bottom:1px solid #16233a;white-space:nowrap;vertical-align:top}
+#view-lic table.lic-tbl td.tit{white-space:normal;min-width:240px;max-width:420px}
+#view-lic table.lic-tbl td.tit small{display:block;color:#7f92ab;font-size:.6rem}
+#view-lic table.lic-tbl td .sw{display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--c);margin-right:5px}
+#view-lic table.lic-tbl td.res{color:#7ee0b8;white-space:normal;min-width:130px;max-width:250px}
+#view-lic table.lic-tbl td.dur{white-space:normal;max-width:150px}
+#view-lic table.lic-tbl tbody tr{cursor:pointer}
+#view-lic table.lic-tbl tbody tr:hover td{background:rgba(255,255,255,.03)}
+#view-lic table.lic-tbl tbody tr.sel td{background:rgba(46,117,182,.14)}
+#view-lic table.lic-tbl tbody tr.cancelada td.tit{text-decoration:line-through;color:#7f92ab}
+#view-lic .lic-tk{font:inherit;font-size:.64rem;font-weight:700;padding:1px 7px;border-radius:4px;border:1px solid #2E75B6;background:#1F3864;color:#fff;cursor:pointer}
+#view-lic .lic-estado{color:#94a3b8;font-size:.72rem;padding:18px;border:1px dashed #1e2d42;border-radius:8px}
+@media (max-width:1100px){ #view-lic .lic-main{grid-template-columns:minmax(0,1fr)} #view-lic .lic-det{position:static;max-height:none} }
+@media (max-width:700px){
+  #view-lic{padding:12px 16px}
+  #view-lic .lic-upd{margin-left:0;width:100%}
+  #view-lic .lic-cal{display:flex;flex-direction:column}
+  #view-lic .lic-dow,#view-lic .lic-day.vacio,#view-lic .lic-day.fuera{display:none}
+  #view-lic .lic-day{min-height:0}
+  #view-lic .lic-day .num .dw{display:inline;margin-right:4px;text-transform:capitalize}
+}
+</style>
+
+<div id="view-lic">
+  <h1 class="lic-h">📅 Licitaciones primarias · MAE</h1>
+  <p class="lic-note">Calendario de colocaciones del MAE: ONs, provincias, Tesoro y fideicomisos. El MAE anuncia cada licitación pocos días antes y muestra los resultados (monto adjudicado, tasa o margen de corte) durante un mes; la corrida diaria los guarda, así que quedan acá aunque el MAE los saque. Las ONs que ya tienen calculadora se abren desde el detalle.</p>
+  <div class="lic-bar">
+    <div class="lic-nav">
+      <button class="lic-btn" onclick="LICIT.mes(-1)" aria-label="Mes anterior">‹</button>
+      <span class="lic-mes" id="lic-mes">—</span>
+      <button class="lic-btn" onclick="LICIT.mes(1)" aria-label="Mes siguiente">›</button>
+      <button class="lic-btn" onclick="LICIT.hoy()">Hoy</button>
+    </div>
+    <div class="lic-seg" role="group" aria-label="Vista">
+      <button class="lic-btn" id="lic-v-cal" onclick="LICIT.setVista('cal')">Calendario</button>
+      <button class="lic-btn" id="lic-v-lista" onclick="LICIT.setVista('lista')">Lista</button>
+    </div>
+    <span class="lic-upd" id="lic-upd"></span>
+  </div>
+  <div class="lic-filtros" id="lic-filtros"></div>
+  <section class="lic-prox" id="lic-prox"></section>
+  <div class="lic-main sin-det" id="lic-main">
+    <div id="lic-cuerpo"></div>
+    <aside class="lic-det" id="lic-det" hidden></aside>
+  </div>
+</div>
+
+<script>
+// ── Licitaciones: funciones puras (las usan los tests) ──
+const LIC_CATS=[['on','ONs'],['provincia','Provincias y municipios'],['nacion','Nación'],['ff','Fideicomisos'],['pyme','ONs PyME'],['otros','Otras']];
+const LIC_MONEDAS=[['USD','US$'],['DL','Dólar linked'],['ARS','Pesos'],['','Sin dato']];
+const LIC_ESTADO_TXT={programada:'Anunciada',hoy:'Hoy',finalizada:'Finalizada',realizada:'Realizada',cancelada:'Cancelada'};
+const LIC_MINUS=new Set(['TASA','DE','DEL','CORTE','MARGEN','PRECIO','EMISIÓN','EMISION','POR','CADA','DESIERTA','AÑOS','AÑO','MESES','MES','DÍAS','DIAS','SPREAD','TRAMO','CUPÓN','CUPON']);
+const LIC_SIGLAS=new Set(['PBA','CABA','UVA','PF','ICBC','BBVA','BACS','GPAT','CNH','FCA','CGC','TGS','TGN','PAE','MSU','BST','CMF','CER','TAMAR','USD','VDF','VDFA','VDFB','IRSA','SBS','AFS','RDA','CNV','BCRA','VCP','ON','ONS','FF','SRL']);
+
+// Instante del MAE (UTC) → día y hora en Argentina (UTC-3 todo el año). 00:00 = sin hora.
+function licFechaAR(iso){
+  const t=iso?Date.parse(iso):NaN;
+  if(isNaN(t)) return {dia:null,hora:null};
+  const d=new Date(t-3*3600e3), p=n=>String(n).padStart(2,'0');
+  const hora=p(d.getUTCHours())+':'+p(d.getUTCMinutes());
+  return {dia:d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate()), hora:hora==='00:00'?null:hora};
+}
+
+// Horario "10:00 a 16:00" (vacío para los eventos de día completo del cronograma).
+function licHorario(r){
+  const a=licFechaAR(r.inicio), b=licFechaAR(r.fin);
+  if(!a.hora) return '';
+  return a.hora+(b.hora && b.dia===a.dia && b.hora!==a.hora ? ' a '+b.hora : '');
+}
+
+// Estado que se muestra: el guardado manda, salvo que la fecha ya haya pasado.
+function licEstado(r, hoy){
+  if(r.estado==='cancelada') return 'cancelada';
+  if(r.estado==='finalizada') return 'finalizada';
+  const dia=licFechaAR(r.inicio).dia;
+  if(!dia || dia>hoy) return 'programada';
+  if(dia===hoy) return 'hoy';
+  return r.detalle ? 'finalizada' : 'realizada';
+}
+
+// Título corto para las celdas del calendario: sin el texto que repiten todas.
+function licCorto(t){
+  let s=String(t||'').replace(/\s+/g,' ').trim();
+  if(/^LICITACI[OÓ]N DEL MINISTERIO DE ECONOM/i.test(s)) return 'Licitación del Tesoro (cronograma)';
+  if(/^LICITACI[OÓ]N DE LA PROVINCIA DE BUENOS AIRES/i.test(s)) return 'Licitación PBA (cronograma)';
+  const tk=s.match(/\(([A-Z]{1,4}\d[A-Z0-9]{1,4})\)/);
+  if(tk && /TESORO NACIONAL/i.test(s)){
+    const base=s.replace(/^CONVERSI[OÓ]N\s+/i,'');
+    return (/^CONVERSI/i.test(s)?'Canje ':'')+(/^LETRA/i.test(base)?'Letra ':'Bono ')+tk[1];
+  }
+  s=s.replace(/^(ON|FF)\s+/i,'')
+     .replace(/^(PYME CNV\s+)?(GARANTIZADA\s+)?((BAJO|MEDIANO) IMPACTO\s+)?(AMPLIADO\s+)?/i,'')
+     .replace(/^CONVERSI[OÓ]N\b/i,'Canje')
+     .replace(/\b(DE LA )?PROVINCIA DE BUENOS AIRES\b/gi,'PBA')
+     .replace(/\bCIUDAD (AUT[OÓ]NOMA )?DE BUENOS AIRES\b/gi,'CABA')
+     .replace(/\bDE LA (PROVINCIA|MUNICIPALIDAD) DEL?\s+/gi,'')
+     .replace(/\b(LETRAS?) DEL TESORO\b/gi,'$1')
+     .replace(/\b(LETRAS?) DE TESORER[IÍ]A\b/gi,'$1')
+     .replace(/(^|\s)T[IÍ]TULOS? DE DEUDA( P[UÚ]BLICA)?(?=\s|$)/gi,'$1Títulos')
+     .replace(/\bTESORO NACIONAL\b/gi,'Tesoro')
+     .replace(/\bSOCIEDAD AN[OÓ]NIMA\b/gi,'')
+     .replace(/(^|\s)S\.A\.U?\.?(?=\s|$)/gi,' ')
+     .replace(/\bCOMPA[NÑ][IÍ]A FINANCIERA\b/gi,'CF')
+     .replace(/\bCLASE\b/gi,'Cl.').replace(/\bSERIE\b/gi,'S.')
+     .replace(/\s+/g,' ').trim();
+  const conect=/^(de|del|la|las|los|el|y|e|en|con|al|a|por|para|p\/)$/i;
+  const romano=/^(?=[IVXLCDM]+$)M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/;
+  s=s.split(' ').map((w,i)=>{
+    const W=w.toUpperCase(), puro=W.replace(/[^A-ZÁÉÍÓÚÑ]/g,'');
+    if(i>0 && conect.test(w)) return w.toLowerCase();
+    if(LIC_SIGLAS.has(puro) || (puro && !/[AEIOUÁÉÍÓÚ]/.test(puro)) || /\d/.test(w)) return W==='CL.'?'Cl.':w;
+    if(romano.test(W)) return W;
+    const l=w.toLowerCase(); return l.charAt(0).toUpperCase()+l.slice(1);
+  }).join(' ');
+  return s.charAt(0).toUpperCase()+s.slice(1);
+}
+
+// Texto del MAE en mayúsculas → legible: "TASA DE CORTE: 7.00%" → "Tasa de corte: 7.00%", "3.36 AÑOS" → "3.36 años".
+function licSuave(s){
+  if(!s) return s;
+  const t=String(s).replace(/[A-ZÁÉÍÓÚÑ]+/g,w=>LIC_MINUS.has(w)?w.toLowerCase():w);
+  return t.charAt(0).toUpperCase()+t.slice(1);
+}
+
+// Semanas del mes (lunes a viernes, o a domingo) para la grilla; sin semanas que no toquen el mes.
+function licSemanas(anio, mes, conFinde){
+  const p=n=>String(n).padStart(2,'0');
+  const prim=new Date(Date.UTC(anio,mes-1,1)), ult=new Date(Date.UTC(anio,mes,0));
+  const d=new Date(prim); d.setUTCDate(1-((prim.getUTCDay()+6)%7));
+  const out=[];
+  while(d<=ult){
+    const sem=[];
+    for(let i=0;i<7;i++){
+      if(i<5||conFinde) sem.push({dia:d.getUTCFullYear()+'-'+p(d.getUTCMonth()+1)+'-'+p(d.getUTCDate()), enMes:d.getUTCMonth()===mes-1});
+      d.setUTCDate(d.getUTCDate()+1);
+    }
+    if(sem.some(x=>x.enMes)) out.push(sem);
+  }
+  return out;
+}
+
+// Monto del MAE → "US$ 30 M" / "$ 10.000 M". El MAE pone 0 o 1 cuando no hay monto.
+function licMonto(v, mon){
+  const n=+v; if(v==null || !(n>1)) return null;
+  const s=String(mon||'').toUpperCase(), sim=s.startsWith('USD')?'US$':s.startsWith('ARS')?'$':'';
+  const txt=n>=1e6 ? (n/1e6).toLocaleString('es-AR',{maximumFractionDigits:n>=1e8?0:1})+' M' : n.toLocaleString('es-AR');
+  return (sim?sim+' ':'')+txt;
+}
+
+// Plazo entre liquidación y vencimiento: "4 años" / "120 días".
+function licPlazo(liq, venc){
+  const d=(Date.parse(venc)-Date.parse(liq))/864e5;
+  if(!liq || !venc || !(d>0)) return null;
+  return d<365 ? Math.round(d)+' días' : (d/365.25).toLocaleString('es-AR',{maximumFractionDigits:1})+' años';
+}
+
+const LICIT=(function(){
+  const cfg=window.SUPABASE_CONFIG||{}, REST=(cfg.url||'')+'/rest/v1';
+  const HDRS={apikey:cfg.anonKey||'', Authorization:'Bearer '+(cfg.anonKey||'')};
+  const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const DOW=['lun','mar','mié','jue','vie','sáb','dom'];
+  const MON_TAG={USD:'US$',DL:'DL',ARS:'$'};
+  const MON_TXT={USD:'Dólares',DL:'Dólar linked',ARS:'Pesos'};
+  let filas=null, cargando=null, error=null;
+  let vista='cal', anio=0, mes=0, selId=null, diaSel=null;
+  let fCat=new Set(LIC_CATS.map(c=>c[0])), fMon=new Set(LIC_MONEDAS.map(m=>m[0]));
+  try{
+    const g=JSON.parse(localStorage.getItem('lic_prefs')||'null');
+    if(g){ if(Array.isArray(g.cat)) fCat=new Set(g.cat); if(Array.isArray(g.mon)) fMon=new Set(g.mon); if(g.vista==='lista') vista='lista'; }
+  }catch(e){}
+  function guardarPrefs(){ try{ localStorage.setItem('lic_prefs', JSON.stringify({cat:[...fCat], mon:[...fMon], vista})); }catch(e){} }
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const hoyAR=()=>licFechaAR(new Date().toISOString()).dia;
+  const ddmm=dia=>dia?dia.slice(8,10)+'/'+dia.slice(5,7):'';
+  const ddmmaa=dia=>dia?ddmm(dia)+'/'+dia.slice(0,4):'—';
+  const dowDe=dia=>DOW[(new Date(dia+'T12:00:00Z').getUTCDay()+6)%7];
+  const catTxt=c=>(LIC_CATS.find(x=>x[0]===c)||[c,c])[1];
+  const visibles=()=>(filas||[]).filter(r=>fCat.has(r.categoria) && fMon.has(r._mon));
+  const delMes=rs=>{ const pre=anio+'-'+String(mes).padStart(2,'0'); return rs.filter(r=>r._dia && r._dia.startsWith(pre)); };
+
+  async function cargar(){
+    const out=[]; let desde=0;
+    while(true){
+      const url=REST+'/licitaciones?select=*&order=inicio.asc,id.asc', t0=performance.now();
+      const r=await fetch(url,{headers:{...HDRS, Range:desde+'-'+(desde+999), 'Range-Unit':'items'}});
+      if(window.NET) NET.rec(NET.ep(url), performance.now()-t0, r.ok, r.ok?null:('HTTP '+r.status));
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const lote=await r.json(); out.push(...lote);
+      if(lote.length<1000) break;
+      desde+=1000;
+    }
+    out.forEach(x=>{ const a=licFechaAR(x.inicio); x._dia=a.dia; x._corto=licCorto(x.titulo); x._mon=x.moneda||''; });
+    return out;
+  }
+
+  function show(){
+    if(!anio){ const h=hoyAR(); anio=+h.slice(0,4); mes=+h.slice(5,7); }
+    if(!filas && !cargando){
+      cargando=cargar().then(f=>{ filas=f; error=null; })
+        .catch(e=>{ error=e; console.error('[LICIT]', e); })
+        .finally(()=>{ cargando=null; render(); });
+    }
+    render();
+  }
+
+  function render(){
+    document.getElementById('lic-mes').textContent=anio?MESES[mes-1]+' '+anio:'—';
+    document.getElementById('lic-v-cal').classList.toggle('on', vista==='cal');
+    document.getElementById('lic-v-lista').classList.toggle('on', vista==='lista');
+    const cuerpo=document.getElementById('lic-cuerpo');
+    if(!filas){
+      document.getElementById('lic-filtros').innerHTML='';
+      document.getElementById('lic-prox').hidden=true;
+      document.getElementById('lic-det').hidden=true;
+      document.getElementById('lic-main').classList.add('sin-det');
+      cuerpo.innerHTML=error
+        ? '<div class="lic-estado">No se pudo leer el calendario ('+esc(error.message)+'). <button class="lic-btn" onclick="LICIT.reintentar()">Reintentar</button></div>'
+        : '<div class="lic-estado">Cargando licitaciones…</div>';
+      return;
+    }
+    let upd=''; filas.forEach(r=>{ if(r.updated_at && r.updated_at>upd) upd=r.updated_at; });
+    const u=licFechaAR(upd);
+    document.getElementById('lic-upd').textContent=u.dia?'Actualizado el '+ddmm(u.dia)+(u.hora?' a las '+u.hora:'')+' · fuente MAE':'';
+    renderFiltros(); renderProximas();
+    cuerpo.innerHTML = vista==='cal' ? htmlCalendario() : htmlLista();
+    renderDetalle();
+  }
+
+  function renderFiltros(){
+    const mesRs=delMes(filas);
+    const nCat=c=>mesRs.filter(r=>r.categoria===c && fMon.has(r._mon)).length;
+    const nMon=m=>mesRs.filter(r=>r._mon===m && fCat.has(r.categoria)).length;
+    const chip=(on,fn,val,txt,n,color)=>'<button class="lic-f'+(on?' on':'')+'" aria-pressed="'+on+'" onclick="LICIT.'+fn+'(\''+val+'\')"'+(color?' style="--c:'+color+'"':'')+'><span class="sw"></span>'+esc(txt)+' <span class="n">'+n+'</span></button>';
+    document.getElementById('lic-filtros').innerHTML=
+      '<div class="lic-fg"><span class="lic-fl">Tipo</span>'+LIC_CATS.map(([c,t])=>chip(fCat.has(c),'togCat',c,t,nCat(c),'var(--lic-'+c+')')).join('')+'</div>'
+      +'<div class="lic-fg"><span class="lic-fl">Moneda</span>'+LIC_MONEDAS.map(([m,t])=>chip(fMon.has(m),'togMon',m,t,nMon(m),'#8aa0bb')).join('')+'</div>';
+  }
+
+  function itemHTML(r, hoy, conFecha){
+    const manana=new Date(Date.parse(hoy+'T12:00:00Z')+864e5).toISOString().slice(0,10);
+    const cuando=conFecha ? (r._dia===hoy?'Hoy':r._dia===manana?'Mañana':dowDe(r._dia)+' '+ddmm(r._dia)) : '';
+    const hor=licHorario(r);
+    const monto=licMonto(r.monto_licitar, r.moneda_monto);
+    const meta=[monto||MON_TAG[r._mon], r.variable?r.variable.toLowerCase():null,
+                r.vencimiento?'vence '+ddmmaa(r.vencimiento):null].filter(Boolean).join(' · ');
+    return '<button class="lic-pi'+(r.id===selId?' sel':'')+'" style="--c:var(--lic-'+r.categoria+')" onclick="LICIT.ver('+r.id+')">'
+      +'<span class="d">'+esc([cuando,hor].filter(Boolean).join(' · ')||catTxt(r.categoria))+'</span>'
+      +'<span class="t">'+esc(r._corto)+'</span>'+(meta?'<span class="m">'+esc(meta)+'</span>':'')+'</button>';
+  }
+
+  function renderProximas(){
+    const hoy=hoyAR();
+    const rs=visibles().filter(r=>r._dia>=hoy && licEstado(r,hoy)!=='cancelada');
+    const el=document.getElementById('lic-prox'); el.hidden=false;
+    el.innerHTML='<h2>Próximas licitaciones <small>'+(rs.length?rs.length+' anunciada'+(rs.length>1?'s':''):'')+'</small></h2>'
+      +(rs.length ? '<div class="lic-prox-list">'+rs.slice(0,12).map(r=>itemHTML(r,hoy,true)).join('')+'</div>'
+                  : '<div class="lic-vacio">No hay licitaciones anunciadas con estos filtros. El MAE las publica pocos días antes.</div>');
+  }
+
+  function htmlCalendario(){
+    const hoy=hoyAR(), rs=delMes(visibles());
+    const porDia={}; rs.forEach(r=>{ (porDia[r._dia]=porDia[r._dia]||[]).push(r); });
+    const finde=Object.keys(porDia).some(d=>{ const w=new Date(d+'T12:00:00Z').getUTCDay(); return w===0||w===6; });
+    const sems=licSemanas(anio, mes, finde);
+    let h='<div class="lic-cal" style="--cols:'+(finde?7:5)+'">'+DOW.slice(0,finde?7:5).map(d=>'<div class="lic-dow">'+d+'</div>').join('');
+    for(const sem of sems) for(const c of sem){
+      const evs=(porDia[c.dia]||[]).sort((a,b)=>(a.inicio<b.inicio?-1:a.inicio>b.inicio?1:0));
+      const cls=['lic-day', c.enMes?'':'fuera', c.dia===hoy?'hoy':'', evs.length?'':'vacio'].filter(Boolean).join(' ');
+      h+='<div class="'+cls+'"><div class="num"><span class="dw">'+dowDe(c.dia)+'</span><span class="dn">'+(+c.dia.slice(8,10))+'</span></div>';
+      if(c.enMes){
+        const MAX=4, ver=evs.length>MAX+1?evs.slice(0,MAX):evs;
+        h+=ver.map(r=>'<button class="lic-chip '+licEstado(r,hoy)+(r.id===selId?' sel':'')+'" style="--c:var(--lic-'+r.categoria+')" title="'+esc(r.titulo)+'" onclick="LICIT.ver('+r.id+')">'
+            +'<span class="tx">'+esc(r._corto)+'</span>'+(MON_TAG[r._mon]?'<span class="mo">'+MON_TAG[r._mon]+'</span>':'')+'</button>').join('');
+        if(ver.length<evs.length) h+='<button class="lic-mas" onclick="LICIT.verDia(\''+c.dia+'\')">+'+(evs.length-ver.length)+' más</button>';
+      }
+      h+='</div>';
+    }
+    h+='</div>';
+    if(!rs.length) h+='<div class="lic-vacio" style="margin-top:8px">Sin licitaciones en '+MESES[mes-1]+' con estos filtros.</div>';
+    return h;
+  }
+
+  function htmlLista(){
+    const hoy=hoyAR(), rs=delMes(visibles());
+    if(!rs.length) return '<div class="lic-estado">Sin licitaciones en '+MESES[mes-1]+' con estos filtros.</div>';
+    const fila=r=>{ const e=licEstado(r,hoy);
+      return '<tr class="'+(r.id===selId?'sel ':'')+e+'" onclick="LICIT.ver('+r.id+')">'
+        +'<td>'+dowDe(r._dia)+' '+ddmm(r._dia)+'</td><td>'+esc(licHorario(r))+'</td>'
+        +'<td class="tit">'+esc(r.titulo)+(r.emisor?'<small>'+esc(r.emisor)+'</small>':'')+'</td>'
+        +'<td style="--c:var(--lic-'+r.categoria+')"><span class="sw"></span>'+esc(catTxt(r.categoria))+'</td>'
+        +'<td>'+esc(MON_TAG[r._mon]||'')+'</td>'
+        +'<td class="num">'+esc(licMonto(r.monto_licitar,r.moneda_monto)||'')+'</td>'
+        +'<td class="num">'+esc(licMonto(r.monto_adjudicado,r.moneda_monto)||'')+'</td>'
+        +'<td class="res">'+esc(licSuave(r.valor_corte)||(e==='cancelada'?'Cancelada':''))+'</td>'
+        +'<td>'+(r.vencimiento?ddmmaa(r.vencimiento):'')+'</td>'
+        +'<td class="dur">'+esc(licSuave(r.duration)||'')+'</td>'
+        +'<td>'+(r.ticker?'<button class="lic-tk" onclick="event.stopPropagation();LICIT.abrirCalc(\''+esc(r.ticker)+'\')">'+esc(r.ticker)+'</button>':'')+'</td></tr>'; };
+    return '<div class="lic-lista-wrap"><table class="lic-tbl"><thead><tr><th>Fecha</th><th>Horario</th><th>Licitación</th><th>Tipo</th><th>Moneda</th>'
+      +'<th class="num">A licitar</th><th class="num">Adjudicado</th><th>Resultado</th><th>Vencimiento</th><th>Duration</th><th>Calculadora</th></tr></thead><tbody>'
+      +rs.map(fila).join('')+'</tbody></table></div>';
+  }
+
+  function borradorDe(id){
+    return (typeof BORRADORES!=='undefined' && Array.isArray(BORRADORES)) ? BORRADORES.find(b=>b.mae_id===id) : null;
+  }
+
+  function renderDetalle(){
+    const el=document.getElementById('lic-det'), main=document.getElementById('lic-main');
+    const hoy=hoyAR();
+    const r=selId!=null ? (filas||[]).find(x=>x.id===selId) : null;
+    if(!r && !diaSel){ el.hidden=true; main.classList.add('sin-det'); return; }
+    el.hidden=false; main.classList.remove('sin-det');
+    const cerrar='<button class="x" onclick="LICIT.cerrar()" aria-label="Cerrar">✕</button>';
+    if(!r){
+      const evs=visibles().filter(x=>x._dia===diaSel);
+      el.innerHTML='<div class="cab"><span class="tag">'+dowDe(diaSel)+' '+ddmmaa(diaSel)+' · '+evs.length+' licitaciones</span>'+cerrar+'</div>'
+        +'<div class="lic-prox-list" style="margin-top:10px">'+evs.map(x=>itemHTML(x,hoy,false)).join('')+'</div>';
+      return;
+    }
+    const e=licEstado(r,hoy), hor=licHorario(r);
+    const filasDL=[
+      ['Fecha', dowDe(r._dia)+' '+ddmmaa(r._dia)+(hor?' · '+hor:'')],
+      ['Liquidación', r.liquidacion?ddmmaa(r.liquidacion):null],
+      ['Vencimiento', r.vencimiento?ddmmaa(r.vencimiento)+((p=>p?' · '+p:'')(licPlazo(r.liquidacion,r.vencimiento))):null],
+      ['Moneda', MON_TXT[r._mon]||null],
+      ['A licitar', licMonto(r.monto_licitar, r.moneda_monto)],
+      ['Ampliable hasta', r.ampliable],
+      ['Se licita', r.variable?r.variable.charAt(0)+r.variable.slice(1).toLowerCase():null],
+      ['Resultado', licSuave(r.valor_corte), 'res'],
+      ['Adjudicado', licMonto(r.monto_adjudicado, r.moneda_monto)],
+      ['Duration', licSuave(r.duration)],
+      ['Modalidad', [r.modalidad, r.sistema].filter(Boolean).join(' · ')||null],
+      ['Tipo', [r.tipo, r.rueda].filter(Boolean).join(' · ')||null],
+    ].filter(x=>x[1]);
+    const b=borradorDe(r.id);
+    const acc=[];
+    if(r.ticker) acc.push('<button class="lic-btn pri" onclick="LICIT.abrirCalc(\''+esc(r.ticker)+'\')">🧮 Calculadora '+esc(r.ticker)+'</button>');
+    if(b && b.estado==='pendiente') acc.push('<button class="lic-btn" onclick="LICIT.revisarBorrador('+b.id+')">Revisar borrador</button>');
+    acc.push('<a class="lic-btn" href="https://marketdata.mae.com.ar/licitaciones/Todos" target="_blank" rel="noopener">Ver en el MAE ↗</a>');
+    el.innerHTML='<div class="cab"><span class="tag cat" style="--c:var(--lic-'+r.categoria+')">'+esc(catTxt(r.categoria))+'</span>'
+      +'<span class="tag e-'+e+'">'+LIC_ESTADO_TXT[e]+'</span>'+cerrar+'</div>'
+      +'<h3>'+esc(r.titulo)+'</h3>'+(r.emisor?'<div class="em">'+esc(r.emisor)+'</div>':'<div class="em"></div>')
+      +'<dl>'+filasDL.map(([k,v,c])=>'<dt>'+k+'</dt><dd'+(c?' class="'+c+'"':'')+'>'+esc(v)+'</dd>').join('')+'</dl>'
+      +(r.detalle?'':'<div class="bloque">El MAE ya no muestra el detalle de esta licitación (lo publica durante un mes): queda el título y el horario.</div>')
+      +(r.colocador?'<div class="bloque"><b>Colocadores</b>'+esc(r.colocador)+'</div>':'')
+      +(r.observaciones?'<div class="bloque"><b>Observaciones</b>'+esc(r.observaciones)+'</div>':'')
+      +'<div class="acc">'+acc.join('')+'</div>';
+  }
+
+  return {
+    show,
+    reintentar(){ error=null; filas=null; show(); },
+    mes(d){ mes+=d; if(mes<1){ mes=12; anio--; } if(mes>12){ mes=1; anio++; } diaSel=null; render(); },
+    hoy(){ const h=hoyAR(); anio=+h.slice(0,4); mes=+h.slice(5,7); render(); },
+    setVista(v){ vista=v; guardarPrefs(); render(); },
+    togCat(c){ fCat.has(c)?fCat.delete(c):fCat.add(c); guardarPrefs(); render(); },
+    togMon(m){ fMon.has(m)?fMon.delete(m):fMon.add(m); guardarPrefs(); render(); },
+    ver(id){
+      selId=id; diaSel=null;
+      const r=(filas||[]).find(x=>x.id===id);
+      if(r && r._dia){ anio=+r._dia.slice(0,4); mes=+r._dia.slice(5,7); }
+      render();
+      if(window.innerWidth<=1100){ const d=document.getElementById('lic-det'); if(d && !d.hidden) d.scrollIntoView({block:'nearest'}); }
+    },
+    verDia(dia){ diaSel=dia; selId=null; render(); },
+    cerrar(){ selId=null; diaSel=null; render(); },
+    abrirCalc(tk){
+      const b=(typeof bondPorTicker==='function') ? bondPorTicker(tk) : null;
+      if(!b){ alert('El bono '+tk+' no está en el catálogo cargado.'); return; }
+      OPS.selectView('calc'); openPanel(b);
+    },
+    revisarBorrador(id){ OPS.selectView('calc'); if(typeof abrirBorrador==='function') abrirBorrador(id); },
+    _filas(){ return filas; },
+  };
+})();
+window.LICIT = LICIT;
 </script>
 
 <!-- ════════════════ MOVIMIENTOS DE FCI ════════════════ -->
