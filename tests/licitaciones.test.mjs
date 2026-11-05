@@ -113,6 +113,7 @@ test('licMonto y licPlazo', () => {
   assert.equal(B.licMonto(30000000, 'USD'), 'US$ 30 M');
   assert.equal(B.licMonto(10000000000, 'ARS PESOS'), '$ 10.000 M');
   assert.equal(B.licMonto(4757870, 'USD'), 'US$ 4,8 M');
+  assert.equal(B.licMonto(10000000, 'UVA'), 'UVA 10 M');               // ON en UVA (Plaza Logística Clase 4)
   assert.equal(B.licMonto(1, 'USD LINK'), null);                       // el MAE pone 1 cuando no hay monto
   assert.equal(B.licMonto(null, 'USD'), null);
   assert.equal(B.licPlazo('2026-10-19', '2030-10-19'), '4 años');

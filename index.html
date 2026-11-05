@@ -8028,7 +8028,7 @@ body.lic-mode #view-lic{display:block}
 
 <div id="view-lic">
   <h1 class="lic-h">📅 Licitaciones primarias · MAE</h1>
-  <p class="lic-note">Calendario de colocaciones del MAE: ONs, provincias, Tesoro y fideicomisos. El MAE anuncia cada licitación pocos días antes y muestra los resultados (monto adjudicado, tasa o margen de corte) durante un mes; la corrida diaria los guarda, así que quedan acá aunque el MAE los saque. Las ONs que ya tienen calculadora se abren desde el detalle.</p>
+  <p class="lic-note">Calendario de colocaciones del MAE: ONs, provincias, Tesoro y fideicomisos. El MAE anuncia cada licitación pocos días antes; la corrida diaria baja el detalle y los resultados (monto adjudicado, tasa, margen o precio de corte), con historia desde enero de 2026. Las ONs que ya tienen calculadora se abren desde el detalle.</p>
   <div class="lic-bar">
     <div class="lic-seg" role="group" aria-label="Vista">
       <button class="lic-btn" id="lic-v-cal" onclick="LICIT.setVista('cal')">Calendario</button>
@@ -8208,7 +8208,7 @@ function licSemanas(anio, mes, conFinde){
 // Monto del MAE → "US$ 30 M" / "$ 10.000 M". El MAE pone 0 o 1 cuando no hay monto.
 function licMonto(v, mon){
   const n=+v; if(v==null || !(n>1)) return null;
-  const s=String(mon||'').toUpperCase(), sim=s.startsWith('USD')?'US$':s.startsWith('ARS')?'$':'';
+  const s=String(mon||'').toUpperCase(), sim=s.startsWith('USD')?'US$':s.startsWith('ARS')?'$':s.startsWith('UVA')?'UVA':'';
   const txt=n>=1e6 ? (n/1e6).toLocaleString('es-AR',{maximumFractionDigits:n>=1e8?0:1})+' M' : n.toLocaleString('es-AR');
   return (sim?sim+' ':'')+txt;
 }
@@ -8487,7 +8487,7 @@ const LICIT=(function(){
       +'<span class="tag e-'+e+'">'+LIC_ESTADO_TXT[e]+'</span>'+cerrar+'</div>'
       +'<h3>'+esc(r.titulo)+'</h3><div class="em">'+esc(r.emisor||r._emi)+'</div>'
       +'<dl>'+filasDL.map(([k,v,c])=>'<dt>'+k+'</dt><dd'+(c?' class="'+c+'"':'')+'>'+esc(v)+'</dd>').join('')+'</dl>'
-      +(r.detalle?'':'<div class="bloque">El MAE ya no muestra el detalle de esta licitación (lo publica durante un mes): queda el título y el horario.</div>')
+      +(r.detalle?'':'<div class="bloque">Todavía no está el detalle de esta licitación (montos y resultado): por ahora, el título y el horario del calendario del MAE.</div>')
       +(r.colocador?'<div class="bloque"><b>Colocadores</b>'+esc(r.colocador)+'</div>':'')
       +(r.observaciones?'<div class="bloque"><b>Observaciones</b>'+esc(r.observaciones)+'</div>':'')
       +'<div class="acc">'+acc.join('')+'</div>';
