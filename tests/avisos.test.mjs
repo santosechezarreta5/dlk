@@ -35,11 +35,3 @@ test('valorAvisoTxt muestra lo leído de los avisos', () => {
   assert.equal(B.valorAvisoTxt('callable', { valor: 'Si' }), 'sí (sin fechas ni precios)');
   assert.equal(B.valorAvisoTxt('amort', { valor: 'cuotas', sched: [{ pct: 50, fecha: '2028-10-22' }] }), 'cuotas: 50% 22/10/2028');
 });
-
-test('cronogramaBorrador conserva las cuotas del aviso si la ficha sigue en cuotas', () => {
-  const d = { bono: { amort_sched: [{ pct: 50, fecha: '2028-10-22' }, { pct: 50, fecha: '2029-10-22' }] } };
-  assert.equal(B.cronogramaBorrador({ amort: 'cuotas', amortSched: [] }, d).length, 2);
-  assert.deepEqual(B.cronogramaBorrador({ amort: 'bullet', amortSched: [] }, d), []);       // lo pasaron a bullet
-  const propio = [{ pct: 100, fecha: '2030-01-01' }];
-  assert.equal(B.cronogramaBorrador({ amort: 'cuotas', amortSched: propio }, d), propio);
-});

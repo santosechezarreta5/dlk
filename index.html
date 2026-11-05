@@ -373,6 +373,14 @@ th .resize-handle:hover,th .resize-handle.dragging{background:var(--blue);opacit
 .mb-call-rows{display:flex;flex-direction:column;gap:5px;margin-bottom:5px;}
 .mb-call-row{display:flex;gap:6px;align-items:center;}
 .mb-call-row .form-input{max-width:170px;}
+#modal-bond [hidden]{display:none !important;}   /* .form-group{display:flex} le ganaba a hidden */
+.mb-amort-gen{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;font-size:.58rem;color:var(--muted2);margin-bottom:7px;padding:7px 9px;border:1px solid rgba(45,212,191,.18);background:rgba(45,212,191,.04);border-radius:6px;}
+.mb-amort-gen > span{color:var(--teal);font-weight:600;}
+.mb-amort-gen label{display:inline-flex;align-items:center;gap:5px;}
+.mb-amort-gen .form-input,.mb-amort-gen .form-select{width:auto;padding:4px 6px;}
+.mb-amort-gen input[type=number]{width:58px;}
+.mb-amort-pie{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;}
+#mb-amort-suma{font-size:.58rem;font-variant-numeric:tabular-nums;}
 .borr-item{display:grid;grid-template-columns:1fr auto;gap:4px 14px;align-items:center;padding:10px 2px;border-bottom:1px solid var(--border);}
 .borr-item .t{font-size:.68rem;font-weight:700;color:var(--text);}
 .borr-item .d{font-size:.58rem;color:var(--muted2);line-height:1.6;font-variant-numeric:tabular-nums;}
@@ -1122,14 +1130,28 @@ window.SUPABASE_CONFIG = {
         <div class="form-group"><label class="form-label" for="mb-devengo">Devengamiento</label>
           <select class="form-select" id="mb-devengo" title="Ajustado: devenga hasta la fecha de pago efectiva (día hábil). Teórico: hasta la fecha de cupón teórica."><option value="ajustado">Ajustado a día hábil</option><option value="teorico">Teórico (sin ajuste)</option></select></div>
         <div class="form-group"><label class="form-label" for="mb-amort">Amortización</label>
-          <select class="form-select" id="mb-amort"><option value="bullet">Bullet</option><option value="cuotas">Cuotas</option></select></div>
+          <select class="form-select" id="mb-amort" onchange="onMbAmortChange()"><option value="bullet">Bullet</option><option value="cuotas">Cuotas</option></select></div>
+      </div>
+      <div class="form-group" id="mb-amort-wrap" hidden>
+        <label class="form-label">Cronograma de amortización (fecha · % del VN)</label>
+        <div class="mb-amort-gen">
+          <span>⚡ Cuotas iguales:</span>
+          <label>desde <input class="form-input" type="date" id="mb-gen-fecha" aria-label="Fecha de la primera cuota"></label>
+          <label>cada <select class="form-select" id="mb-gen-per" aria-label="Cada cuánto">
+            <option value="1">mes</option><option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">año</option></select></label>
+          <label><input class="form-input" type="number" id="mb-gen-n" min="1" max="120" value="4" aria-label="Cantidad de cuotas"> cuotas</label>
+          <button type="button" class="btn-sm add" onclick="generarMbAmort()">Generar</button>
+        </div>
+        <div id="mb-amort-rows" class="mb-call-rows"></div>
+        <div class="mb-amort-pie"><button type="button" class="btn-sm add" onclick="addMbAmortRow()">+ Agregar cuota</button>
+          <span id="mb-amort-suma"></span></div>
       </div>
       <div class="form-group" id="mb-call-wrap" hidden>
         <label class="form-label">Cronograma de call (callable desde · precio % VN)</label>
         <div id="mb-call-rows" class="mb-call-rows"></div>
         <div><button type="button" class="btn-sm add" onclick="addMbCallRow()">+ Agregar condición</button></div>
       </div>
-      <p class="modal-note">* obligatorios. Luego podés abrir la calculadora para cargar el cronograma de amortizaciones si corresponde.</p>
+      <p class="modal-note">* obligatorios. Si amortiza en cuotas, cargá el cronograma acá: el generador arma cuotas iguales y lo que falte para el 100% se paga al vencimiento.</p>
     </div>
     <div class="modal-foot">
       <button class="btn-secondary" id="mb-btn-descartar" hidden onclick="descartarBorrador(_borrActual&&_borrActual.id)" style="margin-right:auto">Descartar</button>
@@ -5254,6 +5276,9 @@ function openAddModal(){
   ['mb-ticker','mb-cupon'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('mb-callable').value='No';
   setMbCallRows([]);
+  document.getElementById('mb-amort').value='bullet';
+  document.getElementById('mb-gen-fecha').value='';
+  setMbAmortRows([]);
   document.getElementById('mb-venc').value='';
   document.getElementById('mb-emisor-new').style.display='none';
   document.getElementById('mb-emisor-new').value='';
@@ -5416,7 +5441,7 @@ function leerFichaBono(){
     base_dias:document.getElementById('mb-base-dias').value,
     devengo:document.getElementById('mb-devengo').value,
     amort:document.getElementById('mb-amort').value,
-    amortSched:[],
+    amortSched: document.getElementById('mb-amort').value==='cuotas' ? leerMbAmort() : [],
     callSched: callable==='Si' ? leerMbCallRows() : [],
     fecha_emision:document.getElementById('mb-emision')?.value||'',
     fecha_inicio_int:document.getElementById('mb-inicio-int')?.value||'',
@@ -5424,7 +5449,15 @@ function leerFichaBono(){
 }
 async function saveBond(){
   const nb=leerFichaBono(); if(!nb) return;
+  if(!amortValida(nb)) return;
   await guardarEnCatalogo(nb);
+}
+// En cuotas, el cronograma tiene que estar completo para ir al catálogo
+function amortValida(nb){
+  if(nb.amort!=='cuotas') return true;
+  const err=errorAmort(nb.amortSched, nb.fecha_emision, nb.venc);
+  if(err){ toast(err); return false; }
+  return true;
 }
 // Agrega el bono al catálogo: en memoria y, con sesión de admin, en Supabase.
 // Devuelve true si quedó guardado en el catálogo compartido (o en el local, sin Supabase).
@@ -5484,6 +5517,89 @@ function leerMbCallRows(){
     const [d,p]=r.querySelectorAll('input'); return {desde:d.value, precio:parseFloat(p.value)};
   }).filter(c=>c.desde && !isNaN(c.precio)).sort((a,b)=>a.desde.localeCompare(b.desde));
 }
+// ── Cronograma de amortización en la ficha de alta ──
+// Cuotas iguales: n pagos cada `meses` desde `fechaIni`; la última absorbe el redondeo
+// (100/3 → 33,33 · 33,33 · 33,34), igual que el generador de la calculadora.
+function cuotasIguales(fechaIni, meses, n){
+  const base=Math.floor(100/n*100)/100, ult=parseFloat((100-base*(n-1)).toFixed(2));
+  const d0=new Date(fechaIni+'T12:00:00');
+  return Array.from({length:n}, (_,i)=>({fecha:addMonths(d0, meses*i).toISOString().slice(0,10), pct:i===n-1?ult:base}));
+}
+// El cronograma de la ficha: las cuotas cargadas, por fecha; si suman menos de 100%, el resto
+// se paga al vencimiento (como la fila AUTO de la calculadora).
+function cronogramaAmort(filas, venc){
+  const c=(filas||[]).filter(x=>x.fecha && x.pct>0).map(x=>({fecha:x.fecha, pct:+x.pct}))
+    .sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const suma=c.reduce((s,x)=>s+x.pct, 0);
+  if(c.length && suma<100-0.001 && venc){
+    const resto=parseFloat((100-suma).toFixed(4)), enVenc=c.find(x=>x.fecha===venc);
+    if(enVenc) enVenc.pct=parseFloat((enVenc.pct+resto).toFixed(4)); else c.push({fecha:venc, pct:resto});
+  }
+  return c;
+}
+// Lo que impide guardar un cronograma ('' si está bien)
+function errorAmort(sched, emision, venc){
+  if(!(sched||[]).length) return 'Cargá el cronograma de amortización o elegí Bullet.';
+  const suma=sched.reduce((s,x)=>s+x.pct, 0);
+  if(Math.abs(suma-100)>0.01) return `El cronograma de amortización suma ${suma.toFixed(2)}%: tiene que sumar 100%.`;
+  if(venc && sched.some(x=>x.fecha>venc)) return 'Hay una cuota de amortización después del vencimiento.';
+  if(emision && sched.some(x=>x.fecha<=emision)) return 'Hay una cuota de amortización en la fecha de emisión o antes.';
+  return '';
+}
+function addMbAmortRow(fecha='', pct=''){
+  const row=document.createElement('div'); row.className='mb-call-row';
+  row.innerHTML=`<input class="form-input" type="date" value="${escA(fecha)}" aria-label="Fecha de la cuota" oninput="pintarSumaMbAmort()">`
+    +`<input class="form-input" type="number" step="0.01" min="0" max="100" placeholder="% del VN" value="${escA(pct)}" aria-label="Porcentaje del valor nominal" oninput="pintarSumaMbAmort()">`
+    +`<button type="button" class="btn-sm del" aria-label="Quitar cuota" onclick="this.parentElement.remove();pintarSumaMbAmort()">✕</button>`;
+  document.getElementById('mb-amort-rows').appendChild(row);
+  pintarSumaMbAmort();
+}
+function setMbAmortRows(sched){
+  document.getElementById('mb-amort-rows').innerHTML='';
+  (sched||[]).forEach(c=>addMbAmortRow(c.fecha||'', c.pct!=null?c.pct:''));
+  onMbAmortChange();
+}
+function leerMbAmortFilas(){
+  return [...document.querySelectorAll('#mb-amort-rows .mb-call-row')].map(r=>{
+    const [f,p]=r.querySelectorAll('input'); return {fecha:f.value, pct:parseFloat(p.value)};
+  });
+}
+function leerMbAmort(){ return cronogramaAmort(leerMbAmortFilas(), document.getElementById('mb-venc').value); }
+function pintarSumaMbAmort(){
+  const el=document.getElementById('mb-amort-suma'); if(!el) return;
+  const filas=leerMbAmortFilas().filter(x=>x.fecha && x.pct>0);
+  const suma=filas.reduce((s,x)=>s+x.pct, 0), venc=document.getElementById('mb-venc').value;
+  if(!filas.length){ el.textContent='Sin cuotas: generalas o agregalas.'; el.style.color='var(--muted2)'; return; }
+  const resto=100-suma;
+  if(resto>0.001 && venc){
+    el.textContent=`Suma ${suma.toFixed(2)}% · el ${resto.toFixed(2)}% restante se paga al vencimiento (${_fechaDMY(venc)})`;
+    el.style.color='var(--teal)';
+  } else {
+    el.textContent=`Suma ${suma.toFixed(2)}%`+(resto>0.001?' · cargá el vencimiento para pagar el resto ahí':Math.abs(resto)>0.01?' · se pasa de 100%':'');
+    el.style.color=Math.abs(resto)<=0.01 ? 'var(--teal)' : 'var(--amber)';
+  }
+}
+function onMbAmortChange(){
+  const cuotas=document.getElementById('mb-amort').value==='cuotas';
+  document.getElementById('mb-amort-wrap').hidden=!cuotas;
+  if(cuotas){
+    const per=document.getElementById('mb-gen-per'), p=document.getElementById('mb-periodicidad').value;
+    if(!document.querySelector('#mb-amort-rows .mb-call-row') && [...per.options].some(o=>o.value===p)) per.value=p;
+    pintarSumaMbAmort();
+  }
+}
+function generarMbAmort(){
+  const f=document.getElementById('mb-gen-fecha').value, meses=parseInt(document.getElementById('mb-gen-per').value),
+        n=parseInt(document.getElementById('mb-gen-n').value);
+  if(!f){ toast('Ingresá la fecha de la primera cuota.'); return; }
+  if(!(n>=1 && n<=120)){ toast('Cantidad de cuotas inválida (1 a 120).'); return; }
+  if(leerMbAmortFilas().some(x=>x.fecha||!isNaN(x.pct)) && !confirm('¿Reemplazar las cuotas cargadas?')) return;
+  setMbAmortRows(cuotasIguales(f, meses, n));
+}
+// El resto de las cuotas se paga al vencimiento: al cambiarlo, se actualiza la suma
+document.getElementById('mb-venc')?.addEventListener('change', ()=>{
+  if(!document.getElementById('mb-amort-wrap').hidden) pintarSumaMbAmort();
+});
 function onMbCallableChange(){
   const si=document.getElementById('mb-callable').value==='Si';
   document.getElementById('mb-call-wrap').hidden=!si;
@@ -5604,9 +5720,11 @@ function abrirBorrador(id){
   set('mb-callable', b.callable||'No'); set('mb-cupon', b.cupon); set('mb-tipo-cupon', b.tipo_cupon);
   set('mb-periodicidad', b.periodicidad); set('mb-base-dias', b.base_dias); set('mb-devengo', b.devengo);
   set('mb-amort', b.amort);
+  setMbAmortRows(b.amort==='cuotas' ? (b.amort_sched||[]) : []);
   setMbCallRows(b.call_sched||[]);
   (d.supuestos||[]).forEach(k=>{ const c=BORR_CAMPOS[k]; const g=c&&document.getElementById(c[0])?.closest('.form-group'); if(g) g.classList.add('supuesto'); });
   if((d.supuestos||[]).includes('callable')) document.getElementById('mb-call-wrap').classList.add('supuesto');
+  if((d.supuestos||[]).includes('amort')) document.getElementById('mb-amort-wrap').classList.add('supuesto');
   // Lo que salió de los avisos del MAE: en verde, con la cita al pasar el mouse
   const av=f.aviso||{}, avc=av.campos||{};
   Object.entries(avc).forEach(([k,c])=>{
@@ -5623,7 +5741,6 @@ function abrirBorrador(id){
       + Object.entries(avc).map(([k,c])=>`<div><span class="k">${escA(nombreCampo(k))}:</span> ${escA(valorAvisoTxt(k,c))}`
           +`<span class="cita">«${escA(c.cita)}» — ${escA(DOC_MAE_TIPO[docTipoMae(c.doc)]||c.doc||'')}</span></div>`).join('')
       + `</details>` : '';
-  const sched=(b.amort==='cuotas' && (b.amort_sched||[]).length) ? b.amort_sched.map(x=>x.pct+'% '+_fechaDMY(x.fecha)).join(', ') : '';
   document.getElementById('mb-borr-info').innerHTML=
       fila('MAE', [m.titulo, m.valor_Corte, m.duration?'duration '+m.duration:'', m.monto_Adjudicado?'adjudicado '+Number(m.monto_Adjudicado).toLocaleString('es-AR')+' '+(m.monedaMonto||''):''].filter(Boolean).join(' · '))
     + fila('Observaciones', m.observaciones)
@@ -5631,19 +5748,12 @@ function abrirBorrador(id){
          : fila('BYMA', 'todavía sin ficha técnica'))
     + ((f.tickers_posibles||[]).length ? fila('Tickers posibles', f.tickers_posibles.join(' o ')+' (mismo vencimiento y emisor: elegí el de esta clase)') : '')
     + (docs.length ? `<div class="docs"><span class="k">Avisos:</span> `+docs.map(x=>`<a href="${escA(x.url)}" target="_blank" rel="noopener">${escA(DOC_MAE_TIPO[x.tipo]||x.nombre)} ↗</a>`).join('')+`</div>` : '')
-    + (sched ? fila('Cronograma de amortización (del aviso, se guarda al aprobar)', sched) : '')
     + avisoHTML
     + ((d.supuestos||[]).length ? `<div class="aviso">Lo marcado como supuesto no está en los avisos ni en BYMA: verificalo en el suplemento de prospecto${docs.some(x=>x.tipo==='suplemento')?' (enlace arriba)':''}.</div>` : '');
   document.getElementById('mb-borr-info').hidden=false;
   document.getElementById('mb-btn-descartar').hidden=false;
   document.getElementById('mb-btn-guardar-borr').hidden=false;
   document.getElementById('mb-btn-guardar').textContent='Aprobar y agregar al catálogo';
-}
-// La ficha no edita el cronograma de amortización: si sigue en cuotas, se conserva el del
-// borrador (el que leyó la corrida del aviso de resultados)
-function cronogramaBorrador(nb, d){
-  if(nb.amort!=='cuotas') return [];
-  return (nb.amortSched||[]).length ? nb.amortSched : ((d.bono||{}).amort_sched||[]);
 }
 // El bono de la ficha con las columnas de `bonds` (como lo guarda el borrador)
 function aFilaBorrador(nb, base){
@@ -5659,7 +5769,7 @@ async function guardarFichaBono(){
   const d=_borrActual, nb=leerFichaBono(); if(!nb) return;
   nb.isin=(d.bono||{}).isin||'';
   nb.valor_residual=(d.bono||{}).valor_residual||1;
-  nb.amortSched=cronogramaBorrador(nb, d);
+  if(!amortValida(nb)) return;
   if(!await guardarEnCatalogo(nb)) return;            // no se guardó: el borrador sigue pendiente
   const db=Catalog.db();
   const {error}=db ? await db.from('bonos_borrador').update({estado:'aprobado', ticker:nb.ticker,
@@ -5683,10 +5793,11 @@ async function guardarBorrador(){
   const nb=leerFichaBono(); tkInp.value=tk;
   if(!nb) return;
   nb.ticker=tk;
-  nb.amortSched=cronogramaBorrador(nb, d);
   const fila=aFilaBorrador(nb, d.bono||{});
+  const igualSched=(a,b)=>JSON.stringify((a||[]).map(x=>[x.fecha||x.desde, +(x.pct??x.precio)]))===JSON.stringify((b||[]).map(x=>[x.fecha||x.desde, +(x.pct??x.precio)]));
   const cambio=k=>String((d.bono||{})[k]??'')!==String(fila[k]??'')
-    || (k==='callable' && JSON.stringify((d.bono||{}).call_sched||[])!==JSON.stringify(fila.call_sched));
+    || (k==='callable' && !igualSched((d.bono||{}).call_sched, fila.call_sched))
+    || (k==='amort' && !igualSched((d.bono||{}).amort_sched, fila.amort_sched));
   const supuestos=(d.supuestos||[]).filter(k=>!cambio(k));
   const db=Catalog.db(); if(!db){ showErr('Iniciá sesión como admin.'); return; }
   const {error}=await db.from('bonos_borrador').update({bono:fila, ticker:tk||null, supuestos, editado:true}).eq('id', d.id);
