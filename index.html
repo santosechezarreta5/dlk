@@ -2447,27 +2447,52 @@ async function topTenedoresFci(canon){
   }catch(e){ return null; }
 }
 
-// Precio promedio operado en la última semana (VWAP por volumen), misma moneda que el panel.
+// Primer día de la ventana de 7 días corridos que termina en `hasta` (fechas ISO).
+function semanaDesde(hasta){
+  const d=new Date(hasta+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()-6);
+  return d.toISOString().slice(0,10);
+}
+
+// Promedio de las operaciones de la ventana: precio y TNA ponderados por monto (si no hay
+// montos, promedio simple). tnaDe(x) da la TNA de cada operación.
+function promedioOperado(ops, tnaDe){
+  let sp=0, sw=0, sm=0, nm=0, st=0, stw=0, sti=0, nti=0;
+  ops.forEach(x=>{ const p=+x.precio, w=+x.monto, t=tnaDe(x);
+    if(p>0){ if(w>0){sp+=p*w; sw+=w;} sm+=p; nm++; }
+    if(t!=null && isFinite(t)){ if(w>0){st+=t*w; stw+=w;} sti+=t; nti++; } });
+  const vwap = sw>0 ? sp/sw : (nm? sm/nm : null);
+  const tna  = stw>0 ? st/stw : (nti? sti/nti : null);
+  return vwap==null?null:{vwap, tna, dias:new Set(ops.map(x=>x.fecha)).size};
+}
+
+// Última rueda cargada en market_ops (de cualquier bono). La semana se cuenta hasta ahí y
+// no hasta la última operación del bono: si no operó esa semana, no hay promedio.
+let _ultimaRueda=null;
+async function ultimaRuedaCargada(){
+  if(_ultimaRueda) return _ultimaRueda;
+  const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders(); if(!cfg.url||!H) return null;
+  try{
+    const r=await fetch(cfg.url+'/rest/v1/market_ops?select=fecha&order=fecha.desc&limit=1',{headers:H});
+    const j=r.ok?await r.json():[]; _ultimaRueda=j[0]?j[0].fecha:null;
+  }catch(e){}
+  return _ultimaRueda;
+}
+
+// Precio promedio operado en la última semana con datos (VWAP por volumen), misma moneda que el panel.
 async function pxPromedioSemanal(bond){
   const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders(); if(!cfg.url||!H) return null;
   const m = bond.moneda!=='DL' ? 'USD MEP' : 'ARS';
   const canon = canonTk(bond);
+  const hasta=await ultimaRuedaCargada(); if(!hasta) return null;
+  const desde=semanaDesde(hasta);
   const url=cfg.url+'/rest/v1/market_ops?ticker=eq.'+encodeURIComponent(canon)
-    +'&moneda=eq.'+encodeURIComponent(m)+'&outlier=eq.false'
-    +'&select=fecha,precio,monto,tir,tna&order=fecha.desc&limit=40';
+    +'&moneda=eq.'+encodeURIComponent(m)+'&outlier=eq.false&fecha=gte.'+desde
+    +'&select=fecha,precio,monto,tir,tna&order=fecha.desc&limit=1000';
   try{
     const r=await fetch(url,{headers:H}); const j=r.ok?await r.json():[];
     if(!j.length) return null;
-    const lim=new Date(j[0].fecha); lim.setDate(lim.getDate()-6);   // últimos 7 días
-    const sem=j.filter(x=> new Date(x.fecha) >= lim);
-    const dias=new Set(sem.map(x=>x.fecha)).size;
-    let sp=0, sw=0, sm=0, nm=0, st=0, stw=0, sti=0, nti=0;
-    sem.forEach(x=>{ const p=+x.precio, w=+x.monto, t=tnaOp({ticker:canon, tir:x.tir, tna:x.tna, fecha:x.fecha});
-      if(p>0){ if(w>0){sp+=p*w; sw+=w;} sm+=p; nm++; }
-      if(t!=null && isFinite(t)){ if(w>0){st+=t*w; stw+=w;} sti+=t; nti++; } });
-    const vwap = sw>0 ? sp/sw : (nm? sm/nm : null);
-    const tna  = stw>0 ? st/stw : (nti? sti/nti : null);
-    return vwap==null?null:{vwap, tna, dias};
+    const px=promedioOperado(j, x=>tnaOp({ticker:canon, tir:x.tir, tna:x.tna, fecha:x.fecha}));
+    return px && Object.assign(px, {desde, hasta});
   }catch(e){ return null; }
 }
 
@@ -2482,7 +2507,8 @@ async function loadBondExtras(bond){
   if(px){
     const pv = isHD ? px.vwap.toFixed(2) : Math.round(px.vwap).toLocaleString('es-AR');
     const tv = px.tna!=null ? 'TNA '+px.tna.toFixed(2)+'%' : '';
-    html+='<div class="cp-extra-px"><div class="lo-l">Px prom. operado · últ. semana ('
+    const dm=s=>s.slice(8,10)+'/'+s.slice(5,7);
+    html+='<div class="cp-extra-px"><div class="lo-l">Px prom. operado · '+dm(px.desde)+' al '+dm(px.hasta)+' ('
         + px.dias + (px.dias===1?' día':' días') + ')</div>'
         + '<div class="cp-extra-vals"><span class="cp-extra-v">' + pv + '</span>'
         + (tv?'<span class="cp-extra-tir">'+tv+'</span>':'') + '</div></div>';

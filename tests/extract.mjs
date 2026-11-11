@@ -72,6 +72,8 @@ const EXPORTA = [
   'DOC_MAE_TIPO', 'docTipoMae', 'docsMaeOrdenados', 'valorAvisoTxt',
   // cronograma de amortización de la ficha de alta
   'cuotasIguales', 'cronogramaAmort', 'errorAmort',
+  // precio promedio operado de la semana
+  'semanaDesde', 'promedioOperado',
 ];
 
 export async function cargar() {
@@ -118,7 +120,8 @@ export async function cargar() {
     ...['licFechaAR', 'licHorario', 'licEstado', 'licCorto', 'licTitulo', 'licEmisor', 'licMesRango', 'licSuave', 'licSemanas', 'licMonto', 'licPlazo'].map(n => func(src, n)),
     objeto(src, 'DOC_MAE_TIPO'),
     linea(src, 'const DOC_MAE_ORDEN='),
-    ...['docTipoMae', 'docsMaeOrdenados', 'valorAvisoTxt', 'cuotasIguales', 'cronogramaAmort', 'errorAmort'].map(n => func(src, n)),
+    ...['docTipoMae', 'docsMaeOrdenados', 'valorAvisoTxt', 'cuotasIguales', 'cronogramaAmort', 'errorAmort',
+        'semanaDesde', 'promedioOperado'].map(n => func(src, n)),
     `export { ${EXPORTA.join(', ')}, YTC_DIAS_CORTO };`,
   ];
   const mod = partes.join('\n\n');
