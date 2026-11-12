@@ -74,6 +74,8 @@ const EXPORTA = [
   'cuotasIguales', 'cronogramaAmort', 'errorAmort',
   // precio promedio operado de la semana
   'semanaDesde', 'promedioOperado',
+  // monto en circulación
+  'fmtCirc', 'circDe', 'circTitle', 'vrAl', 'pctCirculante',
 ];
 
 export async function cargar() {
@@ -122,6 +124,9 @@ export async function cargar() {
     linea(src, 'const DOC_MAE_ORDEN='),
     ...['docTipoMae', 'docsMaeOrdenados', 'valorAvisoTxt', 'cuotasIguales', 'cronogramaAmort', 'errorAmort',
         'semanaDesde', 'promedioOperado'].map(n => func(src, n)),
+    linea(src, 'const _fmtDMY='),
+    objeto(src, 'CIRC_FUENTE'),
+    ...['fmtCirc', 'circDe', 'circTitle', 'vrAl', 'pctCirculante'].map(n => func(src, n)),
     `export { ${EXPORTA.join(', ')}, YTC_DIAS_CORTO };`,
   ];
   const mod = partes.join('\n\n');

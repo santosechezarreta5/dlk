@@ -132,6 +132,7 @@ h1.h-title{margin:0;}
 .cp-htbl tr:last-child td{border-bottom:0;}
 .cp-htbl .cp-h-f{color:var(--text);max-width:175px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .cp-htbl .cp-h-u{color:var(--teal);text-align:right;font-weight:600;font-family:'IBM Plex Mono',monospace;white-space:nowrap;padding-left:8px;}
+.cp-htbl .cp-h-p{color:var(--text2);text-align:right;font-family:'IBM Plex Mono',monospace;white-space:nowrap;padding-left:10px;width:52px;font-variant-numeric:tabular-nums;}
 .pagos-tbl{width:100%;border-collapse:collapse;font-size:.62rem;}
 .pagos-tbl thead th{position:sticky;top:0;background:var(--card);text-align:left;font-size:.5rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);font-weight:600;padding:4px 8px;border-bottom:1px solid var(--border);}
 .pagos-tbl tbody td{padding:4px 8px;border-bottom:1px solid rgba(30,45,66,.5);white-space:nowrap;}
@@ -1913,6 +1914,7 @@ async function reloadCatalog(opts){
     });
   }
   applyRatings(); // setear b.rating desde el mapa de emisores
+  aplicarCirculacion();
   return bonds;
 }
 
@@ -2425,6 +2427,59 @@ function _fmtUSDc(v){
   return 'US$ '+v.toLocaleString('es-AR',{maximumFractionDigits:0});
 }
 
+// ── Monto en circulación (VN residual) ──────────────────────────────────────
+// Tabla bonos_circulacion, la escribe ons/byma-reporter/circulacion.py: ficha técnica de BYMA,
+// ajuste a mano por reaperturas/recompras o, si BYMA todavía no la tiene, la licitación del MAE.
+let CIRC={};
+const CIRC_FUENTE={byma:'BYMA, ficha técnica', ajuste:'corregido a mano (reapertura o recompra que BYMA no registró)',
+                   licitacion:'licitación del MAE (BYMA todavía no lo tiene)'};
+
+function fmtCirc(v){
+  if(v==null||!isFinite(v)) return '—';
+  const m=v/1e6;
+  if(m>=10) return m.toLocaleString('es-AR',{maximumFractionDigits:0})+' M';
+  if(m>=1)  return m.toLocaleString('es-AR',{minimumFractionDigits:1,maximumFractionDigits:1})+' M';
+  return (v/1e3).toLocaleString('es-AR',{maximumFractionDigits:0})+' k';
+}
+
+function circDe(map, ticker, canon){ return (map&&(map[ticker]||map[canon]))||null; }
+
+function circTitle(c){
+  if(!c) return 'Sin dato de monto en circulación';
+  const n=v=>'US$ '+(+v).toLocaleString('es-AR',{maximumFractionDigits:0});
+  return 'Valor nominal en circulación: '+n(c.monto)
+    +(c.emitido&&Math.abs(c.emitido-c.monto)>1?'\nEmitido: '+n(c.emitido):'')
+    +'\nFuente: '+(CIRC_FUENTE[c.fuente]||c.fuente)+(c.fecha?' · '+_fmtDMY(c.fecha):'');
+}
+
+// Fracción del VN original que sigue sin amortizar a la fecha `hoy` (ISO).
+function vrAl(amortSched, hoy){
+  const s=(amortSched||[]).filter(a=>a.fecha<=hoy).reduce((t,a)=>t+(+a.pct||0),0);
+  return Math.max(0, 1-s/100);
+}
+
+// Parte del circulante que tiene un tenedor: su tenencia (US$ a mercado) sobre el monto en
+// circulación valuado a precio de hoy. El precio es por 100 de VN original y el monto es VN
+// residual, así que se lleva a VN original dividiendo por el residual. Sin precio, a la par.
+function pctCirculante(usd, monto, vr, px){
+  if(!(usd>0) || !(monto>0)) return null;
+  const valor=(px>0 && vr>0) ? monto/vr*px/100 : monto;
+  return usd/valor*100;
+}
+
+function aplicarCirculacion(){
+  bonds.forEach(b=>{ const c=circDe(CIRC, b.ticker, canonTk(b)); b.circ=c?+c.monto:null; b.circInfo=c; });
+}
+
+async function cargarCirculacion(){
+  const cfg=window.SUPABASE_CONFIG||{}, H=_sbHeaders(); if(!cfg.url||!H) return;
+  try{
+    const r=await fetch(cfg.url+'/rest/v1/bonos_circulacion?select=ticker,monto,emitido,fuente,fecha',{headers:H});
+    const j=r.ok?await r.json():[]; const m={}; j.forEach(x=>{ m[x.ticker]=x; }); CIRC=m;
+  }catch(e){ return; }
+  aplicarCirculacion();
+}
+
 // Top 5 GERENTES que tienen este bono (sumando todos sus fondos), en su última
 // fecha de cartera, valuados en US$.
 async function topTenedoresFci(canon){
@@ -2514,10 +2569,19 @@ async function loadBondExtras(bond){
         + (tv?'<span class="cp-extra-tir">'+tv+'</span>':'') + '</div></div>';
   }
   if(ten && ten.holders && ten.holders.length){
-    html+='<div class="cp-holders"><div class="lo-h">Top 5 tenedores por gerente · US$ · '+_fmtDMY(ten.fecha)+'</div><table class="cp-htbl">';
-    ten.holders.forEach(h=>{
-      const usd = ten.venta ? (+h.monto)*1e6/ten.venta : null;
-      html+='<tr><td class="cp-h-f">'+(h.gerente||'')+'</td><td class="cp-h-u">'+_fmtUSDc(usd)+'</td></tr>';
+    const vr=vrAl(bond.amortSched, dkey(new Date())), px=bond.precio_usd_eq;
+    const pcts=ten.holders.map(h=>{ const usd=ten.venta ? (+h.monto)*1e6/ten.venta : null;
+      return {usd, pct:pctCirculante(usd, bond.circ, vr, px)}; });
+    const conPct=pcts.some(x=>x.pct!=null);
+    html+='<div class="cp-holders"><div class="lo-h">Top 5 tenedores por gerente · US$'+(conPct?' · % del circulante':'')
+        +' · '+_fmtDMY(ten.fecha)+'</div><table class="cp-htbl">';
+    const tipPct='Aproximado: tenencia a precio de mercado sobre el monto en circulación ('
+        +'US$ '+fmtCirc(bond.circ)+' VN) valuado '+(px>0?'al precio de hoy':'a la par');
+    ten.holders.forEach((h,i)=>{
+      const {usd, pct}=pcts[i];
+      html+='<tr><td class="cp-h-f">'+(h.gerente||'')+'</td><td class="cp-h-u">'+_fmtUSDc(usd)+'</td>'
+        +(conPct?'<td class="cp-h-p" title="'+tipPct+'">'+(pct!=null?pct.toLocaleString('es-AR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%':'—')+'</td>':'')
+        +'</tr>';
     });
     html+='</table></div>';
   }
@@ -3311,6 +3375,9 @@ function render(){
       vol:      b.vol!=null
                   ? `<span title="${volTitle(b)}" style="color:var(--text2);font-size:.68rem;font-variant-numeric:tabular-nums">${fmtVolUSD(b.vol)}</span>`
                   : `<span title="${volTitle(b)}" style="color:var(--muted2)">—</span>`,
+      circ:     b.circ!=null
+                  ? `<span title="${circTitle(b.circInfo)}" style="color:var(--text2);font-size:.68rem;font-variant-numeric:tabular-nums">${fmtCirc(b.circ)}</span>`
+                  : `<span title="Sin dato de monto en circulación" style="color:var(--muted2)">—</span>`,
       dur:      `<span style="color:var(--text2)">${b.dur!=null?b.dur.toFixed(1)+'a':'—'}</span>`,
       emision:  `<span style="color:var(--text2);font-size:.62rem">${ef}</span>`,
       venc:     `<span style="color:var(--text2);font-size:.62rem">${vf}</span>`,
@@ -3347,6 +3414,7 @@ const COL_DEFS = [
   {id:'ask',      label:'Offer',        sort:'ask',      width:90,  visible:true},
   {id:'askTna',   label:'Offer TNA',    sort:'askTna',   width:80,  visible:true},
   {id:'vol',      label:'Volumen US$',  sort:'vol',      width:90,  visible:true},
+  {id:'circ',     label:'Circulante US$', sort:'circ',   width:95,  visible:true},
   {id:'tir',     label:'TIR %',        sort:'tir',      width:100, visible:false},
   {id:'tna',      label:'TNA %',        sort:'tna',      width:80,  visible:false},
   {id:'ytw',      label:'YTW %',        sort:'ytw',      width:85,  visible:false},
@@ -4070,7 +4138,7 @@ function updateLegend(o){
   if(o.anyHist) h+=`<div class="leg-item" title="Sin bid/offer: se usa el último precio operado"><div class="leg-dot" style="background:transparent;border:1.4px dashed var(--muted2)"></div>últ. operado</div>`;
   document.getElementById('chart-legend').innerHTML=h;
 }
-const SORT_DESC_PRIMERO={vol:true};   // el volumen se mira de mayor a menor
+const SORT_DESC_PRIMERO={vol:true, circ:true};   // volumen y circulante se miran de mayor a menor
 function srt(k){SK===k?SD*=-1:(SK=k,SD=SORT_DESC_PRIMERO[k]?-1:1);document.querySelectorAll('th').forEach(t=>t.classList.remove('asc','desc'));const th=document.querySelector(`th[data-col]`);render();}
 
 // generateCashflows devuelve dias calculados desde today (para saber qué pasó).
@@ -4685,7 +4753,10 @@ function openPanel(bond) {
   var ap=document.getElementById('live-alerts-panel'); if(ap) ap.style.display='none';
   panelDirty = false;
   document.getElementById('cp-title').textContent = bond.emisor;
-  document.getElementById('cp-sub').textContent   = bond.ticker + ' · ' + bond.sector + ' · ' + bond.moneda;
+  { const sub=document.getElementById('cp-sub');
+    sub.textContent = bond.ticker + ' · ' + bond.sector + ' · ' + bond.moneda
+      + (bond.circ!=null ? ' · US$ ' + fmtCirc(bond.circ) + ' en circulación' : '');
+    sub.title = bond.circ!=null ? circTitle(bond.circInfo) : ''; }
   document.getElementById('calc-panel').classList.toggle('soberano', !!bond.soberano);
   pintarTramosCupon(bond);
   // Bono sin bid/offer: mostrar la última operación (fecha · precio · tasa)
@@ -6541,6 +6612,8 @@ if(IS_FILE_PROTO){
     // Inicializar capa de catálogo
     await Catalog.init();
     await reloadCatalog({ preserveRuntime:false });
+    // Monto en circulación: no frena el arranque; si la tabla ya se pintó, se repinta.
+    cargarCirculacion().then(()=>{ if(document.getElementById('tbody').children.length){ try{ render(); }catch(_){} } });
     await loadRatingsIntoMemory(); // ratings por emisor
     await loadFeriadosIntoMemory(); // feriados desde Supabase (seed embebido como fallback)
 
