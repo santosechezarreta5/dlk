@@ -76,6 +76,8 @@ const EXPORTA = [
   'semanaDesde', 'promedioOperado',
   // monto en circulación
   'fmtCirc', 'circDe', 'circTitle', 'vrAl', 'pctCirculante',
+  // exportar la tabla a Excel
+  'serialExcel', 'ruedaDe', 'celdaExcel', 'hojaExcel', 'XL_PCT', 'XL_FECHA',
 ];
 
 export async function cargar() {
@@ -127,6 +129,11 @@ export async function cargar() {
     linea(src, 'const _fmtDMY='),
     objeto(src, 'CIRC_FUENTE'),
     ...['fmtCirc', 'circDe', 'circTitle', 'vrAl', 'pctCirculante'].map(n => func(src, n)),
+    linea(src, 'const XL_PCT='),
+    func(src, 'ytwTexto'),
+    // getRating lee el mapa de calificaciones de la página; acá alcanza con un campo del bono.
+    "function getRating(b){ return b._rating || ''; }",
+    ...['serialExcel', 'ruedaDe', 'celdaExcel', 'hojaExcel'].map(n => func(src, n)),
     `export { ${EXPORTA.join(', ')}, YTC_DIAS_CORTO };`,
   ];
   const mod = partes.join('\n\n');

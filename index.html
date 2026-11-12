@@ -796,6 +796,7 @@ window.SUPABASE_CONFIG = {
           <button class="col-cfg-btn" onclick="toggleColMenu()" id="col-cfg-btn">⚙ Columnas</button>
           <div class="col-cfg-menu" id="col-cfg-menu"></div>
         </div>
+        <button class="col-cfg-btn" onclick="exportarExcel()" id="xls-btn" title="Descargar la tabla como se ve: con los filtros, el orden y las columnas visibles">⬇ Excel</button>
         <div class="cnt-b">Mostrando <b id="cnt">—</b> de <span id="total-count">108</span></div>
       </div>
     </div>
@@ -3334,6 +3335,8 @@ function render(){
     const askCalc = (tabAsk&&tabAsk>0) ? calcTIRForPrice(b, tabAsk)  : null;
     b.bidTna = bidCalc ? bidCalc.tna : null;
     b.askTna = askCalc ? askCalc.tna : null;
+    // Lo que muestra la fila, para exportar a Excel exactamente lo mismo (ver celdaExcel)
+    b._fila = {bid:showBid, ask:showAsk, tna:tnaDisp, pesos:!isHDBond || hdCurrencyView==='ars'};
 
     // ── Cell builders ─────────────────────────────────────────────────────────
     function bidAskCell(p, calc, colorVar){
@@ -3520,6 +3523,121 @@ function toggleColMenu(){
   const open=m.classList.toggle('open');
   if(open) buildColMenu();
 }
+// ── Exportar la tabla a Excel ────────────────────────────────────────────────
+// Lo que se ve: los bonos filtrados, en el orden de la tabla, con las columnas visibles. Los
+// precios, tasas y montos van como números y las fechas como fechas, no como el texto de la tabla.
+const XL_PCT='0.00%', XL_PX2='#,##0.00', XL_PX0='#,##0', XL_FECHA='dd/mm/yyyy';
+
+// Fecha ISO → número de serie de Excel (días desde 30/12/1899), sin depender del huso horario.
+function serialExcel(iso){
+  if(!iso) return null;
+  const [y,m,d]=iso.split('-').map(Number);
+  return (Date.UTC(y,m-1,d)-Date.UTC(1899,11,30))/864e5;
+}
+
+// Rueda a la que corresponden los precios en vivo: hoy si es hábil y el mercado ya abrió
+// (11 h); si no, el hábil anterior, porque data912 sigue mostrando el último cierre.
+function ruedaDe(ahora){
+  const d=new Date(ahora); d.setHours(12,0,0,0);
+  const habil=x=> x.getDay()!==0 && x.getDay()!==6 && !isHoliday(x);
+  if(!(habil(d) && ahora.getHours()>=11)) do { d.setDate(d.getDate()-1); } while(!habil(d));
+  return dkey(d);
+}
+
+// Celda de una columna para un bono: {v, z} (z = formato de Excel) o null si está vacía.
+// 'precioAl' es la fecha del precio con el que se calcularon las tasas de la fila: la rueda
+// para los precios en vivo, la de la última operación para los que no tienen bid/offer.
+function celdaExcel(id, b, rueda){
+  const f=b._fila||{};
+  const pct=x=> x!=null&&isFinite(x) ? {v:Number((x/100).toPrecision(12)), z:XL_PCT} : null;
+  const num=(x,z)=> x!=null&&isFinite(x) ? {v:x, z} : null;
+  const txt=x=> x ? {v:String(x)} : null;
+  const fecha=s=>{ const n=serialExcel(s); return n==null?null:{v:n, z:XL_FECHA}; };
+  switch(id){
+    case 'ticker':    return txt(b.ticker);
+    case 'emisor':    return txt(b.emisor);
+    case 'sector':    return txt(b.sector);
+    case 'subsector': return txt(b.subsector);
+    case 'bid': case 'ask': { const p=f[id]; return p>0 ? {v:p, z:f.pesos?XL_PX0:XL_PX2} : null; }
+    case 'bidTna':    return pct(b.bidTna);
+    case 'askTna':    return pct(b.askTna);
+    case 'vol':       return num(b.vol, XL_PX0);
+    case 'circ':      return num(b.circ, XL_PX0);
+    case 'tir':       return pct(b.tir);
+    case 'tna':       return pct(f.tna!==undefined ? f.tna : b.tna);
+    case 'ytw': { const t=ytwTexto(b); if(t==null) return null;
+                  return / en \d+d$/.test(t) ? {v:t} : pct(b.ytwTna); }   // horizonte corto: retorno sin anualizar
+    case 'dur':       return b.dur!=null ? {v:Math.round(b.dur*100)/100, z:'0.00'} : null;
+    case 'emision':   return fecha(b.fecha_emision);
+    case 'venc':      return fecha(b.venc);
+    case 'callable':  return {v:b.callable==='Si'?'Sí':'No'};
+    case 'rating':    return txt(getRating(b));
+    case 'leg':       return txt(b.leg);
+    case 'jur':       return txt(b.jur);
+    case 'precioAl':
+      if(b.manualOverride) return {v:'manual'};
+      if(b.priceSrc==='hist' && b.histDate) return fecha(b.histDate);
+      return (f.bid>0 || f.ask>0 || b.precio>0) ? fecha(rueda) : null;
+  }
+  return null;
+}
+
+// Hoja de SheetJS armada a mano: títulos de columna, autofiltro y ancho de columnas. Con
+// `encabezado`, va en A1 y la tabla arranca en la fila 3.
+function hojaExcel(titulos, filas, encabezado){
+  const col=n=>{ let s=''; for(n++; n>0; n=Math.floor((n-1)/26)) s=String.fromCharCode(65+(n-1)%26)+s; return s; };
+  const ancho=x=> !x ? 0 : x.z===XL_FECHA ? 10 : x.z===XL_PCT ? 7
+    : typeof x.v==='number' ? x.v.toLocaleString('es-AR',{maximumFractionDigits:2}).length : String(x.v).length;
+  const ws={}, f0=encabezado ? 3 : 1;          // fila (1-based) de los títulos de columna
+  if(encabezado) ws.A1={t:'s', v:encabezado};
+  titulos.forEach((t,c)=>{ ws[col(c)+f0]={t:'s', v:t}; });
+  filas.forEach((fila,r)=>fila.forEach((x,c)=>{
+    if(!x) return;
+    ws[col(c)+(f0+1+r)] = typeof x.v==='number' ? (x.z?{t:'n', v:x.v, z:x.z}:{t:'n', v:x.v}) : {t:'s', v:x.v};
+  }));
+  const fin=col(Math.max(titulos.length-1,0))+(f0+filas.length);
+  ws['!ref']='A1:'+fin; ws['!autofilter']={ref:'A'+f0+':'+fin};
+  ws['!cols']=titulos.map((t,c)=>({wch:Math.min(45, Math.max(t.length, ...filas.map(f=>ancho(f[c])))+2)}));
+  return ws;
+}
+
+// Filtros aplicados, como [etiqueta, valor] (los mismos que muestran los chips).
+function filtrosActivos(){
+  const out=[];
+  ['sector','subsector','anio','call','precio','rating','leg','jur'].forEach(k=>{
+    if(F[k]) [...F[k]].filter(v=>v!=='all').forEach(v=>out.push([FCHIP_LBL[k], fchipText(k,v)])); });
+  [...F.emisor].forEach(v=>out.push([FCHIP_LBL.emisor, v]));
+  const sv=(document.getElementById('srch')||{}).value;
+  if(sv) out.push(['Búsqueda', sv]);
+  return out;
+}
+
+function exportarExcel(){
+  if(typeof XLSX==='undefined'){ toast('No se cargó la librería de Excel. Recargá la página y probá de nuevo.'); return; }
+  const filas=visible();
+  if(!filas.length){ toast('No hay bonos para exportar con estos filtros.', 'warn'); return; }
+  // Las columnas visibles y, al final, la fecha del precio de cada fila
+  const cols=[...COL_DEFS.filter(c=>c.visible), {id:'precioAl', label:'Precio al'}];
+  const moneda = activeType==='DL' ? '$' : ({ars:'$', cable:'US$ cable'}[hdCurrencyView]||'US$ MEP');
+  const titulo=c=> (c.id==='bid'||c.id==='ask') ? c.label+' ('+moneda+')' : c.id==='dur' ? 'Duration (años)' : c.label;
+  const ahora=new Date(), rueda=ruedaDe(ahora), dos=n=>String(n).padStart(2,'0');
+  const cuando=_fmtDMY(dkey(ahora))+' '+dos(ahora.getHours())+':'+dos(ahora.getMinutes());
+  const pestana={HD:'Hard dollar', DL:'Dollar linked', SOB:'Soberanos'}[activeType]||activeType;
+  const hist=filas.filter(b=>b.priceSrc==='hist').length;
+  const encabezado='Bonos '+pestana+' · precios y tasas al '+_fmtDMY(rueda)+' · precios en '+moneda
+    +' · exportado el '+cuando+(hist?' · '+hist+' sin bid/offer: tasa de la última operación (ver "Precio al")':'');
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, hojaExcel(cols.map(titulo), filas.map(b=>cols.map(c=>celdaExcel(c.id,b,rueda))), encabezado), 'Bonos');
+  // Segunda hoja: qué se exportó (pestaña, precios, orden y filtros)
+  const orden=(COL_DEFS.find(c=>c.sort===SK)||{label:SK}).label+(SD>0?' (ascendente)':' (descendente)');
+  const fil=filtrosActivos();
+  const info=[['Precios y tasas al', _fmtDMY(rueda)], ['Exportado', cuando], ['Pestaña', pestana],
+    ['Precios', moneda], ['Bonos', String(filas.length)], ['Orden', orden],
+    ...(fil.length ? fil : [['Filtros', 'ninguno']])];
+  XLSX.utils.book_append_sheet(wb, hojaExcel(['Dato','Valor'], info.map(r=>r.map(v=>({v})))), 'Info');
+  XLSX.writeFile(wb, 'bonos_'+activeType+'_'+rueda+(rueda===dkey(ahora)?'_'+dos(ahora.getHours())+'h'+dos(ahora.getMinutes()):'')+'.xlsx');
+}
+
 // Close col menu on outside click
 document.addEventListener('click',e=>{
   if(!e.target.closest('.col-cfg-wrap')) document.getElementById('col-cfg-menu')?.classList.remove('open');
