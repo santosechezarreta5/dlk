@@ -78,6 +78,8 @@ const EXPORTA = [
   'fmtCirc', 'circDe', 'circTitle', 'vrAl', 'pctCirculante',
   // exportar la tabla a Excel
   'serialExcel', 'ruedaDe', 'celdaExcel', 'hojaExcel', 'XL_PCT', 'XL_FECHA',
+  // filtros de ON en Movimientos de FCI
+  'mesesPorAnio', 'estadoAnio', 'resumenMeses', 'ordenRatings',
 ];
 
 export async function cargar() {
@@ -134,6 +136,9 @@ export async function cargar() {
     // getRating lee el mapa de calificaciones de la página; acá alcanza con un campo del bono.
     "function getRating(b){ return b._rating || ''; }",
     ...['serialExcel', 'ruedaDe', 'celdaExcel', 'hojaExcel'].map(n => func(src, n)),
+    linea(src, 'const MESES_CORTO='),
+    linea(src, 'const RATING_OPTIONS ='),
+    ...['mesesPorAnio', 'estadoAnio', 'resumenMeses', 'ordenRatings'].map(n => func(src, n)),
     `export { ${EXPORTA.join(', ')}, YTC_DIAS_CORTO };`,
   ];
   const mod = partes.join('\n\n');
